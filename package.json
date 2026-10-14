@@ -20,12 +20,15 @@
     "@fastify/jwt": "^10.2.4",
     "bcryptjs": "^3.0.3",
     "docx": "^9.10.0",
+    "docx-templates": "^4.15.0",
     "drizzle-orm": "^0.45.4",
     "exceljs": "^4.4.0",
     "fastify": "^5.12.5",
     "fastify-plugin": "^6.0.1",
     "html-to-docx": "^1.8.0",
+    "jszip": "^3.10.2",
     "mammoth": "^1.13.0",
+    "node-html-parser": "^9.0.4",
     "zod": "^4.6.6"
   },
   "devDependencies": {

@@ -24,6 +24,7 @@ export const shiftStatusEnum = pgEnum("shift_status", [
     "NO_SHOW",
 ]);
 export const swapStatusEnum = pgEnum("swap_status", ["PENDING", "APPROVED", "DENIED"]);
+export const vacationStatusEnum = pgEnum("vacation_status", ["PENDING", "APPROVED", "REJECTED"]);
 
 // ─── ORGANIZATIONS ─────────────────────────────────────
 export const organizations = pgTable("organizations", {
@@ -154,6 +155,15 @@ export const vacations = pgTable("vacations", {
   startDate: date("start_date").notNull(),
   endDate: date("end_date").notNull(),
   comment: varchar("comment", { length: 255 }),
+  status: vacationStatusEnum("status").default("APPROVED").notNull(),
+  // Предыдущие значения (для preview изменений)
+  previousStartDate: date("previous_start_date"),
+  previousEndDate: date("previous_end_date"),
+  previousComment: varchar("previous_comment", { length: 255 }),
+  reviewedBy: uuid("reviewed_by").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  reviewedAt: timestamp("reviewed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

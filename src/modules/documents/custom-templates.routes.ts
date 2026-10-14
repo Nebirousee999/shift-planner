@@ -29,7 +29,7 @@ export async function customTemplatesRoutes(app: FastifyInstance) {
       }
 
       try {
-        const buffer = await buildSampleDocx(docType.title);
+        const buffer = await buildSampleDocx(docType.id, docType.title);
         const filename = `Шаблон_${docType.title}.docx`;
 
         reply

@@ -17,6 +17,7 @@ import { exportRoutes } from "./modules/export/export.routes.js";
 import { analyticsRoutes } from "./modules/analytics/analytics.routes.js";
 import { organizationRoutes } from "./modules/organization/organization.routes.js";
 import { customTemplatesRoutes } from "./modules/documents/custom-templates.routes.js";
+import { batchRoutes } from "./modules/documents/batch.routes.js";
 
 const app = Fastify({ logger: true });
 
@@ -49,6 +50,7 @@ await app.register(exportRoutes, { prefix: "/api/export" });
 await app.register(analyticsRoutes, { prefix: "/api/analytics" });
 await app.register(organizationRoutes, { prefix: "/api/organization" });
 await app.register(customTemplatesRoutes, { prefix: "/api/documents/custom" });
+await app.register(batchRoutes, { prefix: "/api/documents/batch" });
 
 const port = Number(process.env.PORT ?? 3001);
 await app.listen({ port, host: "0.0.0.0" });

@@ -36,6 +36,13 @@
       "when": 1791894754865,
       "tag": "0004_shocking_serpent_society",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791981606292,
+      "tag": "0005_omniscient_mysterio",
+      "breakpoints": true
     }
   ]
 }

@@ -32,6 +32,13 @@ export async function swapsRoutes(app: FastifyInstance) {
     return swapsService.incoming(userId);
   });
 
+  // ─── Счётчик входящих pending-предложений ───────────
+  app.get("/incoming/count", async (req) => {
+    const { sub: userId } = req.user!;
+    const all = await swapsService.incoming(userId);
+    return { count: all.length };
+  });
+
   // Создать запрос — любой
   app.post("/", async (req, reply) => {
     const parsed = createSchema.safeParse(req.body);

@@ -15,15 +15,16 @@ import {
   BookOpen,
   Upload,
   FileDown,
-  Lock,
-  Users as UsersIcon,
   Check,
   Eye,
   HelpCircle,
+  FileSpreadsheet,
+  Package,
 } from "lucide-react";
 import { useDocuments } from "../store/documents";
 import { documentsApi, type DocumentType } from "../api/documents";
 import { customTemplatesApi } from "../api/customTemplates";
+import { batchApi } from "../api/batch";
 import { organizationApi, type Organization } from "../api/organization";
 import { meApi, type Colleague } from "../api/me";
 import NavBar from "../components/NavBar";
@@ -101,7 +102,18 @@ function getDocMeta(type: string): {
   return { icon: FileText, bg: "bg-slate-100", text: "text-slate-600" };
 }
 
-const ORG_FIELDS = ["orgName", "city", "directorName", "orgInn", "orgAddress"];
+// Поля, которые заполняются автоматически (скрыты из формы)
+const HIDDEN_FIELDS = [
+  "orgName",
+  "city",
+  "directorName",
+  "orgInn",
+  "orgAddress",
+  "responsiblePosition",
+  "employeePosition",
+  "position",
+  "personPosition",
+];
 
 export default function DocumentsPage() {
   const {
@@ -118,6 +130,9 @@ export default function DocumentsPage() {
 
   const [selected, setSelected] = useState<DocumentType | null>(null);
   const [formValues, setFormValues] = useState<Record<string, string>>({});
+  const [multiSelectValues, setMultiSelectValues] = useState<
+    Record<string, string[]>
+  >({});
   const [generating, setGenerating] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
@@ -126,12 +141,16 @@ export default function DocumentsPage() {
   const [org, setOrg] = useState<Organization | null>(null);
   const [colleagues, setColleagues] = useState<Colleague[]>([]);
 
-  // Кастомный шаблон
+  // Свой шаблон
   const [useCustom, setUseCustom] = useState(false);
   const [customExists, setCustomExists] = useState(false);
   const [customFileName, setCustomFileName] = useState<string | null>(null);
-  const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
+
+  // Массовая генерация из Excel
+  const [useBatch, setUseBatch] = useState(false);
+  const [batchFile, setBatchFile] = useState<File | null>(null);
+  const [batchGenerating, setBatchGenerating] = useState(false);
 
   useEffect(() => {
     fetchTemplates();
@@ -140,11 +159,20 @@ export default function DocumentsPage() {
     meApi.colleagues().then(setColleagues).catch(() => {});
   }, [fetchTemplates, fetchGenerated]);
 
+  const buildFinalParams = (): Record<string, any> => {
+    const params: Record<string, any> = { ...formValues };
+    for (const [key, ids] of Object.entries(multiSelectValues)) {
+      params[key] = ids;
+    }
+    return params;
+  };
+
   const openForm = (tpl: DocumentType) => {
     setSelected(tpl);
     const initial: Record<string, string> = {};
+    const initialMulti: Record<string, string[]> = {};
+
     for (const f of tpl.fields) {
-      // Организация
       if (f.name === "orgName" && org?.name) {
         initial[f.name] = org.name;
       } else if (f.name === "city" && org?.city) {
@@ -159,19 +187,26 @@ export default function DocumentsPage() {
         initial[f.name] = todayISO();
       } else if (f.type === "employee_select" && !f.defaultValue) {
         initial[f.name] = "";
+      } else if (f.type === "employee_multi_select") {
+        initialMulti[f.name] = colleagues.map((c) => c.id);
       } else {
         initial[f.name] = f.defaultValue ?? "";
       }
     }
+
     setFormValues(initial);
+    setMultiSelectValues(initialMulti);
     setUseCustom(false);
-    setSelectedEmployees([]);
+    setUseBatch(false);
+    setBatchFile(null);
 
     customTemplatesApi
       .check(tpl.id)
       .then((r) => {
         setCustomExists(r.exists);
         setCustomFileName(r.fileName);
+        // Если шаблон уже загружен — включаем useCustom по умолчанию
+        if (r.exists) setUseCustom(true);
       })
       .catch(() => {
         setCustomExists(false);
@@ -184,23 +219,47 @@ export default function DocumentsPage() {
   const closeForm = () => {
     setSelected(null);
     setFormValues({});
+    setMultiSelectValues({});
     setUseCustom(false);
-    setSelectedEmployees([]);
+    setUseBatch(false);
+    setBatchFile(null);
   };
 
+  // ─── Обычная генерация ──────────────────────────────
   const onGenerate = async () => {
     if (!selected) return;
 
+    const params = buildFinalParams();
+
     for (const f of selected.fields) {
-      if (f.required && !formValues[f.name]?.trim()) {
+      if (
+        f.required &&
+        !HIDDEN_FIELDS.includes(f.name) &&
+        f.type !== "employee_multi_select" &&
+        !String(params[f.name] ?? "").trim()
+      ) {
         alert(`Заполните поле: ${f.label}`);
+        return;
+      }
+      if (
+        f.required &&
+        f.type === "employee_multi_select" &&
+        (!params[f.name] || params[f.name].length === 0)
+      ) {
+        alert(`Выберите хотя бы одного сотрудника в поле «${f.label}»`);
         return;
       }
     }
 
     setGenerating(true);
     try {
-      const doc = await generate(selected.id, formValues);
+      if (selected.notStored) {
+        await documentsApi.generateStream(selected.id, params);
+        closeForm();
+        return;
+      }
+
+      const doc = await generate(selected.id, params);
       closeForm();
       const ok = confirm(
         `Документ «${doc.title}» создан!\n\nСкачать сейчас?`
@@ -209,7 +268,48 @@ export default function DocumentsPage() {
         await download(doc.id, `${doc.title}.docx`);
       }
     } catch (e: any) {
-      alert(e.response?.data?.error ?? "Ошибка генерации");
+      alert(e.response?.data?.error ?? e.message ?? "Ошибка генерации");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  // ─── Генерация по своему шаблону ────────────────────
+  const onGenerateCustom = async () => {
+    if (!selected) return;
+
+    const params = buildFinalParams();
+
+    for (const f of selected.fields) {
+      if (
+        f.required &&
+        !HIDDEN_FIELDS.includes(f.name) &&
+        f.type !== "employee_multi_select" &&
+        !String(params[f.name] ?? "").trim()
+      ) {
+        alert(`Заполните поле: ${f.label}`);
+        return;
+      }
+      if (
+        f.required &&
+        f.type === "employee_multi_select" &&
+        (!params[f.name] || params[f.name].length === 0)
+      ) {
+        alert(`Выберите хотя бы одного сотрудника в поле «${f.label}»`);
+        return;
+      }
+    }
+
+    setGenerating(true);
+    try {
+      await customTemplatesApi.render(
+        selected.id,
+        params,
+        [],
+        selected.title
+      );
+    } catch (e: any) {
+      alert(e.message ?? "Ошибка");
     } finally {
       setGenerating(false);
     }
@@ -232,6 +332,7 @@ export default function DocumentsPage() {
     }
   };
 
+  // ─── Свой шаблон ────────────────────────────────────
   const onDownloadSample = async () => {
     if (!selected) return;
     try {
@@ -278,28 +379,19 @@ export default function DocumentsPage() {
     }
   };
 
-  const onGenerateCustom = async () => {
-    if (!selected) return;
-    setGenerating(true);
-    try {
-      await customTemplatesApi.render(
-        selected.id,
-        formValues,
-        selectedEmployees
-      );
-    } catch (e: any) {
-      alert(e.message ?? "Ошибка");
-    } finally {
-      setGenerating(false);
-    }
-  };
-
+  // ─── Превью ─────────────────────────────────────────
   const onPreview = async () => {
     if (!selected) return;
 
-    // Проверяем обязательные поля
+    const params = buildFinalParams();
+
     for (const f of selected.fields) {
-      if (f.required && !formValues[f.name]?.trim()) {
+      if (
+        f.required &&
+        !HIDDEN_FIELDS.includes(f.name) &&
+        f.type !== "employee_multi_select" &&
+        !String(params[f.name] ?? "").trim()
+      ) {
         alert(`Заполните поле: ${f.label}`);
         return;
       }
@@ -309,13 +401,9 @@ export default function DocumentsPage() {
     try {
       let blob: Blob;
       if (useCustom) {
-        blob = await customTemplatesApi.preview(
-          selected.id,
-          formValues,
-          selectedEmployees
-        );
+        blob = await customTemplatesApi.preview(selected.id, params, []);
       } else {
-        blob = await documentsApi.preview(selected.id, formValues);
+        blob = await documentsApi.preview(selected.id, params);
       }
       setPreviewBlob(blob);
       setPreviewName(selected.title);
@@ -323,6 +411,40 @@ export default function DocumentsPage() {
       alert(e.message ?? "Ошибка превью");
     } finally {
       setPreviewing(false);
+    }
+  };
+
+  // ─── Массовая генерация ─────────────────────────────
+  const onDownloadExcelTemplate = async () => {
+    if (!selected) return;
+    try {
+      await batchApi.downloadTemplate(selected.id, selected.title);
+    } catch (e: any) {
+      alert(e.message ?? "Ошибка скачивания шаблона");
+    }
+  };
+
+  const onUploadBatchFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".xlsx")) {
+      alert("Загрузите файл в формате .xlsx");
+      e.target.value = "";
+      return;
+    }
+    setBatchFile(file);
+  };
+
+  const onGenerateBatch = async () => {
+    if (!selected || !batchFile) return;
+    setBatchGenerating(true);
+    try {
+      await batchApi.generateBatch(selected.id, batchFile, selected.title);
+      closeForm();
+    } catch (e: any) {
+      alert(e.message ?? "Ошибка генерации");
+    } finally {
+      setBatchGenerating(false);
     }
   };
 
@@ -360,7 +482,7 @@ export default function DocumentsPage() {
         {loading && <p className="text-slate-500 text-sm">Загрузка...</p>}
         {error && <p className="text-red-500 text-sm">{error}</p>}
 
-        {/* ═══ РЕЖИМ 1: КАТАЛОГ ═══ */}
+        {/* ═══ КАТАЛОГ ═══ */}
         {!selected && (
           <>
             {Object.entries(byCategory).map(([category, docs]) => {
@@ -414,7 +536,6 @@ export default function DocumentsPage() {
               );
             })}
 
-            {/* История */}
             {generated.length > 0 && (
               <div className="mt-10">
                 <div className="flex items-center gap-2 mb-4">
@@ -493,9 +614,10 @@ export default function DocumentsPage() {
           </>
         )}
 
-        {/* ═══ РЕЖИМ 2: ФОРМА ═══ */}
+        {/* ═══ ФОРМА ═══ */}
         {selected && (
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 animate-fade-in">
+            {/* Заголовок */}
             <div className="flex items-start gap-4 mb-6 pb-6 border-b border-slate-100">
               {(() => {
                 const meta = getDocMeta(selected.id);
@@ -518,128 +640,290 @@ export default function DocumentsPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-              {selected.fields.map((f) => (
-                <div
-                  key={f.name}
-                  className={
-                    f.type === "textarea"
-                      ? "md:col-span-2"
-                      : f.type === "text" &&
-                        (f.name === "orgName" || f.name === "description")
-                      ? "md:col-span-2"
-                      : ""
-                  }
-                >
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                    {f.label}
-                    {f.required && (
-                      <span className="text-red-500 ml-1">*</span>
-                    )}
-                  </label>
-
-                  {/* Textarea */}
-                  {f.type === "textarea" ? (
-                    <textarea
-                      value={formValues[f.name] ?? ""}
-                      onChange={(e) =>
-                        setFormValues((v) => ({
-                          ...v,
-                          [f.name]: e.target.value,
-                        }))
-                      }
-                      placeholder={f.placeholder}
-                      rows={5}
-                      className="w-full font-mono text-xs"
-                    />
-                  ) : // Поля организации — read-only
-                  ORG_FIELDS.includes(f.name) && formValues[f.name] ? (
-                    <div className="flex items-center gap-2 text-sm py-2 px-3 bg-slate-50 rounded-lg border border-slate-200">
-                      <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span className="text-slate-900">
-                        {formValues[f.name]}
-                      </span>
-                    </div>
-                  ) : // Dropdown сотрудника
-                  f.type === "employee_select" ? (
-                    <select
-                      value={formValues[f.name] ?? ""}
-                      onChange={(e) => {
-                        const employeeName = e.target.value;
-                        const employee = colleagues.find((c) => c.name === employeeName);
-
-                        setFormValues((v) => {
-                          const updated = { ...v, [f.name]: employeeName };
-
-                          // Автоподстановка должности в связанные поля
-                          if (employee?.position) {
-                            // Стандартные имена полей должности
-                            const positionFields = [
-                              "responsiblePosition",
-                              "position",
-                              "employeePosition",
-                            ];
-                            for (const pf of positionFields) {
-                              if (selected?.fields.some((field) => field.name === pf)) {
-                                updated[pf] = employee.position;
-                              }
-                            }
-                          }
-
-                          return updated;
-                        });
-                      }}
-                      className="w-full"
-                    >
-                      <option value="">— Выберите сотрудника —</option>
-                      {colleagues.map((c) => (
-                        <option key={c.id} value={c.name}>
-                          {c.name}
-                          {c.position ? ` — ${c.position}` : ""}
-                          {c.role !== "EMPLOYEE"
-                            ? ` (${c.role === "OWNER" ? "владелец" : "менеджер"})`
-                            : ""}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    // Обычный input (в т.ч. date)
-                    <input
-                      type={f.type === "date" ? "date" : "text"}
-                      value={formValues[f.name] ?? ""}
-                      onChange={(e) =>
-                        setFormValues((v) => ({
-                          ...v,
-                          [f.name]: e.target.value,
-                        }))
-                      }
-                      placeholder={f.placeholder}
-                    />
-                  )}
+            {/* Предупреждение для ПДн */}
+            {selected.notStored && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-6 flex items-start gap-3">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-800">
+                  <b>Документ содержит персональные данные.</b> В истории не
+                  сохраняется. Можно сгенерировать один документ вручную или
+                  загрузить Excel с данными нескольких сотрудников.
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
 
-            {/* ─── Свой шаблон ─── */}
-            <div className="bg-slate-50 rounded-xl p-4 mb-4">
+            {/* ─── Массовая генерация из Excel ─── */}
+            {selected.notStored && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
+                <div className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    id="use-batch"
+                    checked={useBatch}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setUseBatch(checked);
+                      if (!checked) setBatchFile(null);
+                    }}
+                    className="!w-4 !h-4 mt-1 !p-0 cursor-pointer"
+                  />
+                  <div className="flex-1">
+                    <label
+                      htmlFor="use-batch"
+                      className="font-medium text-sm text-slate-900 cursor-pointer select-none"
+                    >
+                      Массовая генерация из Excel
+                    </label>
+                    <p className="text-xs text-slate-600 mt-1">
+                      Скачайте шаблон Excel, заполните по одной строке на
+                      каждого сотрудника, загрузите обратно — получите ZIP с
+                      готовыми документами.
+                    </p>
+
+                    <div className="flex flex-wrap gap-2 mt-3 items-center">
+                      <button
+                        type="button"
+                        onClick={onDownloadExcelTemplate}
+                        disabled={!useBatch}
+                        className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors border ${
+                          useBatch
+                            ? "bg-white border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer"
+                            : "bg-slate-100 border-slate-100 text-slate-400 cursor-not-allowed"
+                        }`}
+                      >
+                        <FileSpreadsheet className="w-3.5 h-3.5" />
+                        Скачать шаблон Excel
+                      </button>
+
+                      <label
+                        className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors border ${
+                          useBatch
+                            ? "bg-white border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer"
+                            : "bg-slate-100 border-slate-100 text-slate-400 cursor-not-allowed"
+                        }`}
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        {batchFile ? "Заменить файл" : "Загрузить Excel"}
+                        <input
+                          type="file"
+                          accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                          onChange={onUploadBatchFile}
+                          className="hidden"
+                          disabled={!useBatch}
+                        />
+                      </label>
+
+                      {batchFile && useBatch && (
+                        <span className="inline-flex items-center gap-1.5 text-xs text-emerald-700">
+                          <Check className="w-3.5 h-3.5" />
+                          {batchFile.name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ─── Форма полей (скрывается при массовой генерации) ─── */}
+            {!useBatch && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                {selected.fields
+                  .filter((f) => !HIDDEN_FIELDS.includes(f.name))
+                  .map((f) => {
+                    const isFullWidth =
+                      f.type === "textarea" ||
+                      f.type === "employee_multi_select" ||
+                      (f.type === "text" && f.name === "description");
+                    return (
+                      <div
+                        key={f.name}
+                        className={isFullWidth ? "md:col-span-2" : ""}
+                      >
+                        <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                          {f.label}
+                          {f.required && (
+                            <span className="text-red-500 ml-1">*</span>
+                          )}
+                        </label>
+
+                        {f.type === "textarea" ? (
+                          <textarea
+                            value={formValues[f.name] ?? ""}
+                            onChange={(e) =>
+                              setFormValues((v) => ({
+                                ...v,
+                                [f.name]: e.target.value,
+                              }))
+                            }
+                            placeholder={f.placeholder}
+                            rows={5}
+                            className="w-full font-mono text-xs"
+                          />
+                        ) : f.type === "employee_select" ? (
+                          <select
+                            value={formValues[f.name] ?? ""}
+                            onChange={(e) => {
+                              const employeeName = e.target.value;
+                              const employee = colleagues.find(
+                                (c) => c.name === employeeName
+                              );
+
+                              setFormValues((v) => {
+                                const updated = {
+                                  ...v,
+                                  [f.name]: employeeName,
+                                };
+
+                                if (employee?.position) {
+                                  const positionFields = [
+                                    "responsiblePosition",
+                                    "position",
+                                    "employeePosition",
+                                    "personPosition",
+                                  ];
+                                  for (const pf of positionFields) {
+                                    if (
+                                      selected?.fields.some(
+                                        (field) => field.name === pf
+                                      )
+                                    ) {
+                                      updated[pf] = employee.position;
+                                    }
+                                  }
+                                }
+
+                                return updated;
+                              });
+                            }}
+                            className="w-full"
+                          >
+                            <option value="">— Выберите сотрудника —</option>
+                            {colleagues.map((c) => (
+                              <option key={c.id} value={c.name}>
+                                {c.name}
+                                {c.position ? ` — ${c.position}` : ""}
+                              </option>
+                            ))}
+                          </select>
+                        ) : f.type === "employee_multi_select" ? (
+                          <div className="border border-slate-200 rounded-xl">
+                            <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-100 bg-slate-50/50 rounded-t-xl flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setMultiSelectValues((v) => ({
+                                    ...v,
+                                    [f.name]: colleagues.map((c) => c.id),
+                                  }))
+                                }
+                                className="text-xs font-medium text-brand-600 hover:text-brand-700 hover:bg-brand-50 px-2.5 py-1 rounded-lg transition-colors"
+                              >
+                                Выбрать всех
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setMultiSelectValues((v) => ({
+                                    ...v,
+                                    [f.name]: [],
+                                  }))
+                                }
+                                className="text-xs font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-100 px-2.5 py-1 rounded-lg transition-colors"
+                              >
+                                Сбросить
+                              </button>
+                              <span className="ml-auto text-xs text-slate-500">
+                                Выбрано:{" "}
+                                <b>{multiSelectValues[f.name]?.length ?? 0}</b>{" "}
+                                из {colleagues.length}
+                              </span>
+                            </div>
+                            <div className="max-h-64 overflow-y-auto p-2">
+                              {colleagues.length === 0 && (
+                                <div className="text-xs text-slate-400 text-center py-3">
+                                  Нет сотрудников
+                                </div>
+                              )}
+                              {colleagues.map((c) => {
+                                const checked =
+                                  multiSelectValues[f.name]?.includes(c.id) ??
+                                  false;
+                                return (
+                                  <label
+                                    key={c.id}
+                                    className={`flex items-center gap-2.5 p-2 rounded-lg cursor-pointer transition-colors ${
+                                      checked
+                                        ? "bg-brand-50/40"
+                                        : "hover:bg-slate-50"
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={(e) => {
+                                        setMultiSelectValues((v) => {
+                                          const current = v[f.name] ?? [];
+                                          const updated = e.target.checked
+                                            ? [...current, c.id]
+                                            : current.filter(
+                                                (id) => id !== c.id
+                                              );
+                                          return { ...v, [f.name]: updated };
+                                        });
+                                      }}
+                                      className="!w-4 !h-4 !p-0"
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                      <div className="text-sm font-medium text-slate-900 truncate">
+                                        {c.name}
+                                      </div>
+                                      <div className="text-xs text-slate-500 truncate">
+                                        {c.position
+                                          ? `${c.position} · `
+                                          : ""}
+                                        {c.email}
+                                      </div>
+                                    </div>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : (
+                          <input
+                            type={f.type === "date" ? "date" : "text"}
+                            value={formValues[f.name] ?? ""}
+                            onChange={(e) =>
+                              setFormValues((v) => ({
+                                ...v,
+                                [f.name]: e.target.value,
+                              }))
+                            }
+                            placeholder={f.placeholder}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+
+            {/* ─── Свой шаблон — виден всегда, кнопки активны при useCustom ─── */}
+            <div className="bg-slate-50 rounded-xl p-4 mb-4 border border-slate-200">
               <div className="flex items-start gap-3">
                 <input
                   type="checkbox"
                   id="use-custom"
                   checked={useCustom}
                   onChange={(e) => setUseCustom(e.target.checked)}
-                  disabled={!customExists}
-                  className="!w-4 !h-4 mt-1 !p-0"
+                  className="!w-4 !h-4 mt-1 !p-0 cursor-pointer"
                 />
                 <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <label
                       htmlFor="use-custom"
-                      className={`font-medium text-sm select-none ${
-                        customExists
-                          ? "text-slate-900 cursor-pointer"
-                          : "text-slate-400 cursor-not-allowed"
-                      }`}
+                      className="font-medium text-sm text-slate-900 cursor-pointer select-none"
                     >
                       Свой шаблон документа
                     </label>
@@ -654,25 +938,33 @@ export default function DocumentsPage() {
                     </a>
                   </div>
                   <p className="text-xs text-slate-500 mt-1">
-                    Скачайте образец, отредактируйте в Word, загрузите
-                    обратно. Плейсхолдеры вида{" "}
-                    <code className="px-1 bg-white rounded text-brand-600">
-                      {"{Организация}"}
-                    </code>{" "}
-                    подставятся автоматически.
+                    {useCustom
+                      ? "Скачайте образец, отредактируйте в Word, загрузите обратно. Плейсхолдеры вида {Организация} подставятся автоматически."
+                      : "Поставьте галочку, чтобы скачать образец и загрузить свой .docx."}
                   </p>
 
                   <div className="flex flex-wrap gap-2 mt-3">
                     <button
                       type="button"
                       onClick={onDownloadSample}
-                      className="inline-flex items-center gap-1.5 text-xs bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors"
+                      disabled={!useCustom}
+                      className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors border ${
+                        useCustom
+                          ? "bg-white border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer"
+                          : "bg-slate-100 border-slate-100 text-slate-400 cursor-not-allowed"
+                      }`}
                     >
                       <FileDown className="w-3.5 h-3.5" />
                       Скачать образец
                     </button>
 
-                    <label className="inline-flex items-center gap-1.5 text-xs bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer">
+                    <label
+                      className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors border ${
+                        useCustom
+                          ? "bg-white border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer"
+                          : "bg-slate-100 border-slate-100 text-slate-400 cursor-not-allowed"
+                      }`}
+                    >
                       <Upload className="w-3.5 h-3.5" />
                       {uploading
                         ? "Загрузка..."
@@ -684,7 +976,7 @@ export default function DocumentsPage() {
                         accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                         onChange={onUploadTemplate}
                         className="hidden"
-                        disabled={uploading}
+                        disabled={!useCustom || uploading}
                       />
                     </label>
 
@@ -692,7 +984,12 @@ export default function DocumentsPage() {
                       <button
                         type="button"
                         onClick={onDeleteCustom}
-                        className="inline-flex items-center gap-1.5 text-xs text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
+                        disabled={!useCustom}
+                        className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors ${
+                          useCustom
+                            ? "text-red-600 hover:bg-red-50 cursor-pointer"
+                            : "text-slate-400 cursor-not-allowed"
+                        }`}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                         Удалить шаблон
@@ -710,89 +1007,48 @@ export default function DocumentsPage() {
               </div>
             </div>
 
-            {/* ─── Селектор сотрудников ─── */}
-            {useCustom && colleagues.length > 0 && (
-              <div className="bg-slate-50 rounded-xl p-4 mb-4">
-                <div className="flex items-center gap-2 mb-3 flex-wrap">
-                  <UsersIcon className="w-4 h-4 text-slate-500" />
-                  <div className="text-sm font-medium text-slate-900">
-                    Сотрудники для подстановки
-                  </div>
-                  <span className="text-xs text-slate-500">
-                    (необязательно, можно выбрать нескольких)
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {colleagues.map((c) => {
-                    const checked = selectedEmployees.includes(c.id);
-                    return (
-                      <label
-                        key={c.id}
-                        className={`flex items-center gap-2.5 p-2.5 rounded-lg border-2 cursor-pointer transition-all ${
-                          checked
-                            ? "border-brand-500 bg-brand-50/40"
-                            : "border-slate-200 bg-white hover:bg-slate-50"
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => {
-                            setSelectedEmployees((prev) =>
-                              e.target.checked
-                                ? [...prev, c.id]
-                                : prev.filter((id) => id !== c.id)
-                            );
-                          }}
-                          className="!w-4 !h-4 !p-0"
-                        />
-                        <div className="min-w-0">
-                          <div className="text-sm font-medium text-slate-900 truncate">
-                            {c.name}
-                          </div>
-                          <div className="text-xs text-slate-500 truncate">
-                            {c.email}
-                          </div>
-                        </div>
-                      </label>
-                    );
-                  })}
-                </div>
-                {selectedEmployees.length > 0 && (
-                  <div className="mt-2 text-xs text-slate-500">
-                    Выбрано: {selectedEmployees.length}. Плейсхолдер{" "}
-                    <code className="px-1 bg-white rounded">
-                      {"{СписокСотрудников}"}
-                    </code>{" "}
-                    подставит их список.
-                  </div>
-                )}
-              </div>
-            )}
-
             {/* ─── Кнопки ─── */}
             <div className="flex items-center gap-3 pt-4 border-t border-slate-100 flex-wrap">
-              <button
-                onClick={useCustom ? onGenerateCustom : onGenerate}
-                disabled={generating || previewing}
-                className="inline-flex items-center gap-2 bg-brand-600 text-white px-5 py-2.5 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium shadow-sm hover:shadow transition-all"
-              >
-                <Sparkles className="w-4 h-4" />
-                {generating
-                  ? "Генерация..."
-                  : useCustom
-                  ? "Сгенерировать по своему шаблону"
-                  : "Сгенерировать DOCX"}
-              </button>
+              {useBatch ? (
+                <button
+                  onClick={onGenerateBatch}
+                  disabled={!batchFile || batchGenerating}
+                  className="inline-flex items-center gap-2 bg-brand-600 text-white px-5 py-2.5 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium shadow-sm hover:shadow transition-all"
+                >
+                  <Package className="w-4 h-4" />
+                  {batchGenerating
+                    ? "Генерация..."
+                    : useCustom
+                    ? "Сгенерировать пакет по своему шаблону (ZIP)"
+                    : "Сгенерировать пакет документов (ZIP)"}
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={useCustom ? onGenerateCustom : onGenerate}
+                    disabled={generating || previewing}
+                    className="inline-flex items-center gap-2 bg-brand-600 text-white px-5 py-2.5 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium shadow-sm hover:shadow transition-all"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    {generating
+                      ? "Генерация..."
+                      : useCustom
+                      ? "Сгенерировать по своему шаблону"
+                      : selected.notStored
+                      ? "Скачать без сохранения в истории"
+                      : "Сгенерировать DOCX"}
+                  </button>
 
-              <button
-                onClick={onPreview}
-                disabled={generating || previewing}
-                className="inline-flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2.5 rounded-xl hover:bg-slate-50 disabled:opacity-50 text-sm font-medium transition-all"
-              >
-                <Eye className="w-4 h-4" />
-                {previewing ? "Загрузка..." : "Показать превью"}
-              </button>
+                  <button
+                    onClick={onPreview}
+                    disabled={generating || previewing}
+                    className="inline-flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2.5 rounded-xl hover:bg-slate-50 disabled:opacity-50 text-sm font-medium transition-all"
+                  >
+                    <Eye className="w-4 h-4" />
+                    {previewing ? "Загрузка..." : "Показать превью"}
+                  </button>
+                </>
+              )}
 
               <button
                 onClick={closeForm}
@@ -803,15 +1059,18 @@ export default function DocumentsPage() {
             </div>
 
             <p className="text-xs text-slate-400 mt-4">
-              После генерации документ сохранится в истории — вы сможете
-              скачать его повторно в любой момент. Превью не сохраняет
-              документ в историю.
+              {useBatch
+                ? useCustom
+                  ? "Документы будут сгенерированы по вашему шаблону. Данные подставятся из Excel."
+                  : "Результат — ZIP-архив с документами для каждого сотрудника (по стандартному шаблону)."
+                : selected.notStored
+                ? "Этот документ не сохраняется в истории из-за содержания персональных данных."
+                : "После генерации документ сохранится в истории — вы сможете скачать его повторно в любой момент."}
             </p>
           </div>
         )}
       </main>
 
-      {/* ═══ Модалка превью ═══ */}
       {previewBlob && (
         <DocxPreviewModal
           blob={previewBlob}

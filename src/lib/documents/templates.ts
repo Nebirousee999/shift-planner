@@ -1,4 +1,9 @@
-export type FieldType = "text" | "date" | "textarea" | "employee_select";
+export type FieldType =
+  | "text"
+  | "date"
+  | "textarea"
+  | "employee_select"
+  | "employee_multi_select";
 
 export type DocumentField = {
   name: string;
@@ -21,15 +26,17 @@ export type DocumentType = {
     | "Согласия"
     | "Правила";
   fields: DocumentField[];
+  notStored?: boolean;
+  /** Альбомная ориентация страницы */
+  landscape?: boolean;
 };
 
 export const DOCUMENT_TYPES: DocumentType[] = [
-  // ═══ ПРИКАЗЫ ═══════════════════════════════════════════
+  // ═══ ПРИКАЗЫ ═══
   {
     id: "order_safety_responsible",
     title: "Приказ о назначении ответственного за охрану труда",
-    description:
-      "Назначает сотрудника ответственным за охрану труда в организации.",
+    description: "Назначает сотрудника ответственным за охрану труда в организации.",
     category: "Приказы",
     fields: [
       { name: "orgName", label: "Название организации", type: "text", required: true },
@@ -44,8 +51,7 @@ export const DOCUMENT_TYPES: DocumentType[] = [
   {
     id: "order_fire_safety",
     title: "Приказ о назначении ответственного за пожарную безопасность",
-    description:
-      "Назначает ответственного за пожарную безопасность и проведение инструктажей.",
+    description: "Назначает ответственного за пожарную безопасность и проведение инструктажей.",
     category: "Приказы",
     fields: [
       { name: "orgName", label: "Название организации", type: "text", required: true },
@@ -74,8 +80,7 @@ export const DOCUMENT_TYPES: DocumentType[] = [
   {
     id: "order_hire",
     title: "Приказ о приёме на работу",
-    description:
-      "Оформляет приём сотрудника на работу с указанием должности и оклада.",
+    description: "Оформляет приём сотрудника на работу с указанием должности и оклада.",
     category: "Приказы",
     fields: [
       { name: "orgName", label: "Название организации", type: "text", required: true },
@@ -93,7 +98,7 @@ export const DOCUMENT_TYPES: DocumentType[] = [
     id: "order_vacation_schedule_table",
     title: "График отпусков на год (таблица)",
     description:
-      "Утверждённый график отпусков сотрудников — таблица на весь год.",
+      "Таблица отпусков сотрудников за год. Данные берутся из раздела «Отпуска».",
     category: "Приказы",
     fields: [
       { name: "orgName", label: "Название организации", type: "text", required: true },
@@ -101,16 +106,14 @@ export const DOCUMENT_TYPES: DocumentType[] = [
       { name: "year", label: "Год", type: "text", required: true, defaultValue: String(new Date().getFullYear()) },
       { name: "approveDate", label: "Дата утверждения", type: "date", required: true },
       { name: "directorName", label: "ФИО директора", type: "text", required: true },
-      { name: "entries", label: "Сотрудники и даты отпусков (по одному на строку: ФИО; кол-во дней; дата начала)", type: "textarea", required: true, placeholder: "Иванов И.И.; 14; 01.07.2026\nПетров П.П.; 14; 15.08.2026" },
     ],
   },
 
-  // ═══ ИНСТРУКЦИИ ════════════════════════════════════════
+  // ═══ ИНСТРУКЦИИ ═══
   {
     id: "instruction_safety",
     title: "Инструкция по охране труда",
-    description:
-      "Типовая инструкция по охране труда для сотрудника определённой должности.",
+    description: "Типовая инструкция по охране труда для сотрудника определённой должности.",
     category: "Инструкции",
     fields: [
       { name: "orgName", label: "Название организации", type: "text", required: true },
@@ -123,28 +126,29 @@ export const DOCUMENT_TYPES: DocumentType[] = [
     ],
   },
 
-  // ═══ ЖУРНАЛЫ ═══════════════════════════════════════════
+  // ═══ ЖУРНАЛЫ ═══
   {
     id: "journal_briefing",
     title: "Журнал регистрации инструктажей по охране труда",
     description:
-      "Таблица для ведения учёта инструктажей: сотрудники, даты, подписи.",
+      "Таблица для ведения учёта инструктажей: выбранные сотрудники, даты, подписи.",
     category: "Журналы",
+    landscape: true,
     fields: [
       { name: "orgName", label: "Название организации", type: "text", required: true },
       { name: "year", label: "Год", type: "text", required: true, defaultValue: String(new Date().getFullYear()) },
-      { name: "responsible", label: "Ответственный за инструктаж (ФИО)", type: "employee_select", required: true },
-      { name: "entries", label: "Сотрудники (по одному на строку: ФИО; должность; дата инструктажа)", type: "textarea", required: true, placeholder: "Иванов И.И.; продавец; 01.10.2026\nПетров П.П.; менеджер; 02.10.2026" },
+      { name: "responsible", label: "Ответственный за инструктаж", type: "employee_select", required: true },
+      { name: "employees", label: "Сотрудники для журнала", type: "employee_multi_select", required: true },
     ],
   },
 
-  // ═══ ДОГОВОРЫ ══════════════════════════════════════════
+  // ═══ ДОГОВОРЫ ═══
   {
     id: "contract_employment",
     title: "Трудовой договор",
-    description:
-      "Стандартный трудовой договор между работодателем и сотрудником.",
+    description: "Стандартный трудовой договор между работодателем и сотрудником.",
     category: "Договоры",
+    notStored: true,
     fields: [
       { name: "orgName", label: "Название организации", type: "text", required: true },
       { name: "orgInn", label: "ИНН организации", type: "text", required: true, placeholder: "7701234567" },
@@ -163,13 +167,13 @@ export const DOCUMENT_TYPES: DocumentType[] = [
     ],
   },
 
-  // ═══ СОГЛАСИЯ ══════════════════════════════════════════
+  // ═══ СОГЛАСИЯ ═══
   {
     id: "consent_personal_data",
     title: "Согласие на обработку персональных данных",
-    description:
-      "Согласие сотрудника на обработку персональных данных в соответствии с 152-ФЗ.",
+    description: "Согласие сотрудника на обработку персональных данных в соответствии с 152-ФЗ.",
     category: "Согласия",
+    notStored: true,
     fields: [
       { name: "orgName", label: "Название организации", type: "text", required: true },
       { name: "orgAddress", label: "Адрес организации", type: "text", required: true },
@@ -180,12 +184,11 @@ export const DOCUMENT_TYPES: DocumentType[] = [
     ],
   },
 
-  // ═══ ПРАВИЛА ═══════════════════════════════════════════
+  // ═══ ПРАВИЛА ═══
   {
     id: "rules_internal",
     title: "Правила внутреннего трудового распорядка",
-    description:
-      "Локальный нормативный акт, регулирующий режим работы и отдыха.",
+    description: "Локальный нормативный акт, регулирующий режим работы и отдыха.",
     category: "Правила",
     fields: [
       { name: "orgName", label: "Название организации", type: "text", required: true },

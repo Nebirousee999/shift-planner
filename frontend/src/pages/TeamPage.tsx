@@ -11,10 +11,17 @@ import {
   Phone,
   Coins,
   Users as UsersIcon,
+  FileSpreadsheet,
+  Upload,
+  Check,
+  Pencil,
+  Save,
 } from "lucide-react";
 import { useUsers } from "../store/users";
 import { useAuth } from "../store/auth";
 import NavBar from "../components/NavBar";
+import type { TeamUser } from "../api/users";
+import { alertDialog, confirmDialog } from "../store/dialogs";
 
 const schema = z.object({
   name: z.string().min(2, "Минимум 2 символа").max(255),
@@ -31,6 +38,20 @@ const schema = z.object({
 
 type Form = z.infer<typeof schema>;
 
+const editSchema = z.object({
+  name: z.string().min(2, "Минимум 2 символа").max(255),
+  role: z.enum(["OWNER", "MANAGER", "EMPLOYEE"]),
+  position: z.string().max(255).optional().or(z.literal("")),
+  hourlyRate: z
+    .string()
+    .regex(/^\d+(\.\d{1,2})?$/, "Только цифры")
+    .optional()
+    .or(z.literal("")),
+  phone: z.string().max(20).optional(),
+});
+
+type EditForm = z.infer<typeof editSchema>;
+
 const ROLE_LABELS: Record<string, string> = {
   OWNER: "Владелец",
   MANAGER: "Менеджер",
@@ -44,14 +65,8 @@ const ROLE_COLORS: Record<string, string> = {
 };
 
 const AVATAR_COLORS = [
-  "bg-blue-500",
-  "bg-violet-500",
-  "bg-emerald-500",
-  "bg-amber-500",
-  "bg-rose-500",
-  "bg-cyan-500",
-  "bg-indigo-500",
-  "bg-pink-500",
+  "bg-blue-500", "bg-violet-500", "bg-emerald-500", "bg-amber-500",
+  "bg-rose-500", "bg-cyan-500", "bg-indigo-500", "bg-pink-500",
 ];
 
 function getInitials(name: string): string {
@@ -72,9 +87,16 @@ function getAvatarColor(id: string): string {
 
 export default function TeamPage() {
   const { user: currentUser } = useAuth();
-  const { items, loading, error, fetch, create, remove } = useUsers();
+  const { items, loading, error, fetch, create, remove, update, downloadExcelTemplate, importFromExcel } = useUsers();
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState("");
+
+  // Импорт Excel
+  const [importing, setImporting] = useState(false);
+  const [batchFile, setBatchFile] = useState<File | null>(null);
+
+  // Редактирование
+  const [editingUser, setEditingUser] = useState<TeamUser | null>(null);
 
   const {
     register,
@@ -111,28 +133,104 @@ export default function TeamPage() {
       const result = await create(payload);
 
       if (result.tempPassword) {
-        alert(
-          `Сотрудник создан!\n\nВременный пароль: ${result.tempPassword}\n\nПередайте его сотруднику — он сможет сменить пароль после входа.`
+        await alertDialog(
+          `Сотрудник создан!\n\nВременный пароль: ${result.tempPassword}\n\nПередайте его сотруднику.`,
+          { title: "Готово", variant: "success" }
         );
       }
 
       reset();
       setShowForm(false);
     } catch (e: any) {
-      alert(e.response?.data?.error ?? "Ошибка создания");
+      await alertDialog(e.response?.data?.error ?? "Ошибка создания", {
+        title: "Ошибка",
+        variant: "error",
+      });
     }
   };
 
   const handleDelete = async (id: string, name: string) => {
     if (id === currentUser?.id) {
-      alert("Нельзя удалить самого себя");
+      await alertDialog("Нельзя удалить самого себя", {
+        title: "Нельзя выполнить",
+        variant: "error",
+      });
       return;
     }
-    if (!confirm(`Удалить сотрудника «${name}»?`)) return;
+    const ok = await confirmDialog(`Удалить сотрудника «${name}»?`, {
+      title: "Удаление сотрудника",
+      confirmLabel: "Удалить",
+      variant: "danger",
+    });
+    if (!ok) return;
     try {
       await remove(id);
     } catch (e: any) {
       alert(e.response?.data?.error ?? "Ошибка удаления");
+    }
+  };
+
+  const onDownloadTemplate = async () => {
+    try {
+      await downloadExcelTemplate();
+    } catch (e: any) {
+      await alertDialog(e.message ?? "Ошибка скачивания", {
+        title: "Ошибка",
+        variant: "error",
+      });
+    }
+  };
+
+  const onUploadExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".xlsx")) {
+      await alertDialog("Загрузите файл в формате .xlsx", {
+        title: "Неверный формат",
+        variant: "error",
+      });
+      e.target.value = "";
+      return;
+    }
+    setBatchFile(file);
+  };
+
+  const onImport = async () => {
+    if (!batchFile) return;
+    setImporting(true);
+    try {
+      const result = await importFromExcel(batchFile);
+
+      let msg = `Импорт завершён.\n\nСоздано: ${result.created}\nПропущено: ${result.skipped}`;
+      if (result.createdUsers.length > 0) {
+        msg += "\n\nВременные пароли:\n";
+        msg += result.createdUsers
+          .slice(0, 10)
+          .map((u) => `${u.name} (${u.email}): ${u.tempPassword}`)
+          .join("\n");
+        if (result.createdUsers.length > 10) {
+          msg += `\n... и ещё ${result.createdUsers.length - 10}`;
+        }
+      }
+      if (result.errors.length > 0) {
+        msg += "\n\nОшибки:\n" + result.errors.slice(0, 5).join("\n");
+        if (result.errors.length > 5) {
+          msg += `\n... и ещё ${result.errors.length - 5}`;
+        }
+      }
+
+      await alertDialog(msg, {
+        title: "Импорт завершён",
+        variant: "success",
+      });
+      setBatchFile(null);
+    } catch (e: any) {
+      await alertDialog(e.message ?? "Ошибка импорта", {
+        title: "Ошибка",
+        variant: "error",
+      });
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -143,6 +241,7 @@ export default function TeamPage() {
       (u) =>
         u.name.toLowerCase().includes(q) ||
         u.email.toLowerCase().includes(q) ||
+        (u.position ?? "").toLowerCase().includes(q) ||
         ROLE_LABELS[u.role].toLowerCase().includes(q)
     );
   }, [items, search]);
@@ -152,7 +251,7 @@ export default function TeamPage() {
       <NavBar />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-        {/* Заголовок страницы */}
+        {/* Заголовок */}
         <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
           <div>
             <h1 className="text-3xl font-bold text-slate-900">Сотрудники</h1>
@@ -176,6 +275,61 @@ export default function TeamPage() {
               </>
             )}
           </button>
+        </div>
+
+        {/* Импорт Excel */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 mb-6">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
+              <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="font-medium text-sm text-slate-900">
+                Импорт из Excel
+              </div>
+              <div className="text-xs text-slate-500 mt-0.5">
+                Загрузите всех сотрудников разом. Шаблон с колонками «Имя, Email, Роль, Должность, Ставка, Телефон».
+              </div>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={onDownloadTemplate}
+                className="inline-flex items-center gap-1.5 text-xs bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                Скачать шаблон
+              </button>
+
+              <label className="inline-flex items-center gap-1.5 text-xs bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer">
+                <Upload className="w-3.5 h-3.5" />
+                {batchFile ? "Заменить файл" : "Загрузить Excel"}
+                <input
+                  type="file"
+                  accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  onChange={onUploadExcel}
+                  className="hidden"
+                />
+              </label>
+
+              {batchFile && (
+                <>
+                  <span className="inline-flex items-center gap-1.5 text-xs text-emerald-700 max-w-[200px] truncate">
+                    <Check className="w-3.5 h-3.5 shrink-0" />
+                    {batchFile.name}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={onImport}
+                    disabled={importing}
+                    className="inline-flex items-center gap-1.5 text-xs bg-brand-600 text-white px-3 py-1.5 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors"
+                  >
+                    {importing ? "Импорт..." : "Импортировать"}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Форма добавления */}
@@ -227,6 +381,18 @@ export default function TeamPage() {
 
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                    Должность
+                  </label>
+                  <input {...register("position")} placeholder="продавец" />
+                  {errors.position && (
+                    <p className="text-red-500 text-xs mt-1">
+                      {errors.position.message}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">
                     Ставка, ₽/час
                   </label>
                   <input
@@ -241,7 +407,7 @@ export default function TeamPage() {
                   )}
                 </div>
 
-                <div className="md:col-span-2">
+                <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">
                     Телефон
                   </label>
@@ -278,7 +444,7 @@ export default function TeamPage() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Поиск по имени, email или роли..."
+              placeholder="Поиск по имени, email, должности..."
               className="!pl-9"
             />
           </div>
@@ -287,7 +453,7 @@ export default function TeamPage() {
         {loading && <p className="text-slate-500 text-sm">Загрузка...</p>}
         {error && <p className="text-red-500 text-sm">{error}</p>}
 
-        {/* Пустое состояние */}
+        {/* Пусто */}
         {!loading && items.length === 0 && (
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center">
             <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
@@ -297,8 +463,7 @@ export default function TeamPage() {
               Пока нет сотрудников
             </h3>
             <p className="text-sm text-slate-500 mb-6 max-w-sm mx-auto">
-              Добавьте первого сотрудника, чтобы назначать ему смены и
-              отслеживать рабочее время
+              Добавьте первого сотрудника вручную или загрузите Excel со всеми сразу
             </p>
             <button
               onClick={() => setShowForm(true)}
@@ -340,9 +505,7 @@ export default function TeamPage() {
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
                         <div
-                          className={`w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0 ${getAvatarColor(
-                            u.id
-                          )}`}
+                          className={`w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0 ${getAvatarColor(u.id)}`}
                         >
                           {getInitials(u.name)}
                         </div>
@@ -356,6 +519,11 @@ export default function TeamPage() {
                             )}
                           </div>
                           <div className="text-xs text-slate-500 truncate">
+                            {u.position && (
+                              <span className="text-slate-600">
+                                {u.position} ·{" "}
+                              </span>
+                            )}
                             {u.email}
                           </div>
                         </div>
@@ -363,9 +531,7 @@ export default function TeamPage() {
                     </td>
                     <td className="px-5 py-3.5">
                       <span
-                        className={`inline-flex text-xs px-2.5 py-1 rounded-full font-medium ${
-                          ROLE_COLORS[u.role]
-                        }`}
+                        className={`inline-flex text-xs px-2.5 py-1 rounded-full font-medium ${ROLE_COLORS[u.role]}`}
                       >
                         {ROLE_LABELS[u.role]}
                       </span>
@@ -396,15 +562,24 @@ export default function TeamPage() {
                       </div>
                     </td>
                     <td className="px-5 py-3.5 text-right">
-                      {u.id !== currentUser?.id && (
+                      <div className="inline-flex items-center gap-1">
                         <button
-                          onClick={() => handleDelete(u.id, u.name)}
-                          className="inline-flex items-center gap-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 px-2.5 py-1.5 rounded-lg text-xs transition-colors"
-                          title="Удалить"
+                          onClick={() => setEditingUser(u)}
+                          className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 p-1.5 rounded-lg transition-colors"
+                          title="Редактировать"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Pencil className="w-3.5 h-3.5" />
                         </button>
-                      )}
+                        {u.id !== currentUser?.id && (
+                          <button
+                            onClick={() => handleDelete(u.id, u.name)}
+                            className="text-slate-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-colors"
+                            title="Удалить"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -423,6 +598,177 @@ export default function TeamPage() {
           </div>
         )}
       </main>
+
+      {/* ─── Модалка редактирования ─── */}
+      {editingUser && (
+        <EditUserModal
+          user={editingUser}
+          onClose={() => setEditingUser(null)}
+          onSave={async (data) => {
+            try {
+              await update(editingUser.id, data);
+              setEditingUser(null);
+            } catch (e: any) {
+              await alertDialog(e.response?.data?.error ?? "Ошибка сохранения", {
+                title: "Ошибка",
+                variant: "error",
+              });
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Модалка редактирования ─────────────────────────
+function EditUserModal({
+  user,
+  onClose,
+  onSave,
+}: {
+  user: TeamUser;
+  onClose: () => void;
+  onSave: (
+    data: Partial<{
+      name: string;
+      phone: string | null;
+      role: "OWNER" | "MANAGER" | "EMPLOYEE";
+      position: string | null;
+      hourlyRate: string | null;
+    }>
+  ) => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<EditForm>({
+    resolver: zodResolver(editSchema),
+    defaultValues: {
+      name: user.name,
+      role: user.role,
+      position: user.position ?? "",
+      hourlyRate: user.hourlyRate ?? "",
+      phone: user.phone ?? "",
+    },
+  });
+
+  const onSubmit = async (data: EditForm) => {
+    setBusy(true);
+    try {
+      await onSave({
+        name: data.name,
+        role: data.role,
+        position: data.position || null,
+        hourlyRate: data.hourlyRate || null,
+        phone: data.phone || null,
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full p-6 animate-fade-in"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between mb-5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center">
+              <Pencil className="w-5 h-5 text-brand-600" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-slate-900">
+                Редактировать сотрудника
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">{user.email}</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              Имя
+            </label>
+            <input {...register("name")} />
+            {errors.name && (
+              <p className="text-red-500 text-xs mt-1">{errors.name.message}</p>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Роль
+              </label>
+              <select {...register("role")}>
+                <option value="EMPLOYEE">Сотрудник</option>
+                <option value="MANAGER">Менеджер</option>
+                <option value="OWNER">Владелец</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Должность
+              </label>
+              <input {...register("position")} placeholder="продавец" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Ставка, ₽/час
+              </label>
+              <input {...register("hourlyRate")} placeholder="350" />
+              {errors.hourlyRate && (
+                <p className="text-red-500 text-xs mt-1">
+                  {errors.hourlyRate.message}
+                </p>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Телефон
+              </label>
+              <input {...register("phone")} placeholder="+7 999 123-45-67" />
+            </div>
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <button
+              type="submit"
+              disabled={busy}
+              className="flex-1 inline-flex items-center justify-center gap-2 bg-brand-600 text-white px-4 py-2.5 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium transition-all"
+            >
+              <Save className="w-4 h-4" />
+              {busy ? "Сохранение..." : "Сохранить"}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2.5 rounded-xl text-slate-600 hover:bg-slate-100 text-sm font-medium transition-colors"
+            >
+              Отмена
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

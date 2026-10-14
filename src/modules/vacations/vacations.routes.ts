@@ -5,7 +5,7 @@ import { vacationsService } from "./vacations.service.js";
 const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 
 const createSchema = z.object({
-  userId: z.string().uuid().optional(), // сотрудник может указать только себя
+  userId: z.string().uuid().optional(),
   startDate: z.string().regex(dateRegex),
   endDate: z.string().regex(dateRegex),
   comment: z.string().max(255).optional(),
@@ -25,19 +25,38 @@ const checkSchema = z.object({
 export async function vacationsRoutes(app: FastifyInstance) {
   app.addHook("preHandler", app.authenticate);
 
-  // Все отпуска организации
+  // ─── Список всех отпусков ──────────────────────────
   app.get("/", async (req) => {
     const { orgId } = req.user!;
     return vacationsService.list(orgId);
   });
 
-  // Мои отпуска
+  // ─── Мои отпуска ───────────────────────────────────
   app.get("/mine", async (req) => {
     const { sub: userId } = req.user!;
     return vacationsService.mine(userId);
   });
 
-  // Проверка: в отпуске ли сотрудник на дату
+  // ─── Pending: только для менеджера ─────────────────
+  app.get(
+    "/pending",
+    { preHandler: app.requireRole(["OWNER", "MANAGER"]) },
+    async (req) => {
+      const { orgId } = req.user!;
+      return vacationsService.listPending(orgId);
+    }
+  );
+
+  app.get(
+    "/pending/count",
+    { preHandler: app.requireRole(["OWNER", "MANAGER"]) },
+    async (req) => {
+      const { orgId } = req.user!;
+      return vacationsService.pendingCount(orgId);
+    }
+  );
+
+  // ─── Проверка попадания в отпуск ───────────────────
   app.get("/check", async (req, reply) => {
     const parsed = checkSchema.safeParse(req.query);
     if (!parsed.success) {
@@ -52,7 +71,7 @@ export async function vacationsRoutes(app: FastifyInstance) {
     return { onVacation: !!found, vacation: found };
   });
 
-  // Создать отпуск
+  // ─── Создать отпуск ────────────────────────────────
   app.post("/", async (req, reply) => {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -61,7 +80,6 @@ export async function vacationsRoutes(app: FastifyInstance) {
 
     try {
       const { sub: userId, orgId, role } = req.user!;
-      // Сотрудник создаёт только себе; владелец/менеджер может — кому угодно
       const targetUserId =
         role === "OWNER" || role === "MANAGER"
           ? parsed.data.userId ?? userId
@@ -73,6 +91,7 @@ export async function vacationsRoutes(app: FastifyInstance) {
         startDate: parsed.data.startDate,
         endDate: parsed.data.endDate,
         comment: parsed.data.comment,
+        requesterRole: role,
       });
       return reply.code(201).send(vac);
     } catch (e: any) {
@@ -89,6 +108,7 @@ export async function vacationsRoutes(app: FastifyInstance) {
     }
   });
 
+  // ─── Обновить отпуск ───────────────────────────────
   app.patch<{ Params: { id: string } }>("/:id", async (req, reply) => {
     const parsed = updateSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -117,6 +137,48 @@ export async function vacationsRoutes(app: FastifyInstance) {
     }
   });
 
+  // ─── Модерация ─────────────────────────────────────
+  app.post<{ Params: { id: string } }>(
+    "/:id/approve",
+    { preHandler: app.requireRole(["OWNER", "MANAGER"]) },
+    async (req, reply) => {
+      try {
+        const { sub: userId, orgId } = req.user!;
+        return await vacationsService.approve(req.params.id, orgId, userId);
+      } catch (e: any) {
+        const map: Record<string, string> = {
+          NOT_FOUND: "Отпуск не найден",
+          NOT_PENDING: "Отпуск не в статусе ожидания",
+        };
+        if (map[e.message])
+          return reply.code(400).send({ error: map[e.message] });
+        app.log.error(e);
+        return reply.code(500).send({ error: "Ошибка одобрения" });
+      }
+    }
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/:id/reject",
+    { preHandler: app.requireRole(["OWNER", "MANAGER"]) },
+    async (req, reply) => {
+      try {
+        const { sub: userId, orgId } = req.user!;
+        return await vacationsService.reject(req.params.id, orgId, userId);
+      } catch (e: any) {
+        const map: Record<string, string> = {
+          NOT_FOUND: "Отпуск не найден",
+          NOT_PENDING: "Отпуск не в статусе ожидания",
+        };
+        if (map[e.message])
+          return reply.code(400).send({ error: map[e.message] });
+        app.log.error(e);
+        return reply.code(500).send({ error: "Ошибка отклонения" });
+      }
+    }
+  );
+
+  // ─── Удалить ───────────────────────────────────────
   app.delete<{ Params: { id: string } }>("/:id", async (req, reply) => {
     try {
       const { sub: userId, orgId, role } = req.user!;

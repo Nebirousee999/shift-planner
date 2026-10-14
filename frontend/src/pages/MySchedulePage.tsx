@@ -14,12 +14,15 @@ import {
   XCircle,
   Palmtree,
   Plus,
+  AlertCircle,
 } from "lucide-react";
 import { meApi, type MyShift, type Colleague } from "../api/me";
 import { useTimeEntries } from "../store/timeEntries";
 import { useSwaps } from "../store/swaps";
 import { useVacations } from "../store/vacations";
 import { useAuth } from "../store/auth";
+import { useNotifications } from "../store/notifications";
+import { alertDialog } from "../store/dialogs";
 import NavBar from "../components/NavBar";
 import { weekDates, dayLabel, shortDate } from "../lib/dates";
 
@@ -102,7 +105,7 @@ export default function MySchedulePage() {
       setShifts(s);
       setColleagues(cols);
     } catch {
-      alert("Ошибка загрузки");
+      await alertDialog("Ошибка загрузки", { variant: "error" });
     } finally {
       setLoading(false);
     }
@@ -118,7 +121,9 @@ export default function MySchedulePage() {
     try {
       await clockIn();
     } catch (e: any) {
-      alert(e.response?.data?.error ?? "Ошибка");
+      await alertDialog(e.response?.data?.error ?? "Ошибка", {
+        variant: "error",
+      });
     } finally {
       setBusy(false);
     }
@@ -129,7 +134,9 @@ export default function MySchedulePage() {
     try {
       await clockOut();
     } catch (e: any) {
-      alert(e.response?.data?.error ?? "Ошибка");
+      await alertDialog(e.response?.data?.error ?? "Ошибка", {
+        variant: "error",
+      });
     } finally {
       setBusy(false);
     }
@@ -153,10 +160,19 @@ export default function MySchedulePage() {
         shiftId: swapShift.id,
         swapWithUserId: swapTarget || undefined,
       });
+
+      // Обновляем счётчики уведомлений
+      useNotifications.getState().refresh();
+
       closeSwapModal();
-      alert("Запрос на обмен отправлен");
+      await alertDialog("Запрос на обмен отправлен", {
+        title: "Готово",
+        variant: "success",
+      });
     } catch (e: any) {
-      alert(e.response?.data?.error ?? "Ошибка");
+      await alertDialog(e.response?.data?.error ?? "Ошибка", {
+        variant: "error",
+      });
     } finally {
       setSwapBusy(false);
     }
@@ -165,40 +181,52 @@ export default function MySchedulePage() {
   const onAccept = async (id: string) => {
     try {
       await accept(id);
+      useNotifications.getState().refresh();
       await loadAll();
-      alert("Обмен принят — смена перешла к вам");
+      await alertDialog("Обмен принят — смена перешла к вам", {
+        title: "Готово",
+        variant: "success",
+      });
     } catch (e: any) {
-      alert(e.response?.data?.error ?? "Ошибка");
+      await alertDialog(e.response?.data?.error ?? "Ошибка", {
+        variant: "error",
+      });
     }
   };
 
   const onDecline = async (id: string) => {
     try {
       await decline(id);
+      useNotifications.getState().refresh();
       await loadAll();
     } catch (e: any) {
-      alert(e.response?.data?.error ?? "Ошибка");
+      await alertDialog(e.response?.data?.error ?? "Ошибка", {
+        variant: "error",
+      });
     }
   };
 
   const onCancelSwap = async (id: string) => {
-    if (!confirm("Отменить запрос на обмен?")) return;
     try {
       await cancel(id);
+      useNotifications.getState().refresh();
       await loadAll();
     } catch (e: any) {
-      alert(e.response?.data?.error ?? "Ошибка");
+      await alertDialog(e.response?.data?.error ?? "Ошибка", {
+        variant: "error",
+      });
     }
   };
 
+  // ─── Отпуска ────────────────────────────────────────
   const onAddVacation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!vacForm.startDate || !vacForm.endDate) {
-      alert("Заполните даты");
+      await alertDialog("Заполните даты", { variant: "error" });
       return;
     }
     if (vacForm.startDate > vacForm.endDate) {
-      alert("Дата начала позже окончания");
+      await alertDialog("Дата начала позже окончания", { variant: "error" });
       return;
     }
     setVacBusy(true);
@@ -208,21 +236,33 @@ export default function MySchedulePage() {
         endDate: vacForm.endDate,
         comment: vacForm.comment || undefined,
       });
+
+      // Обновляем счётчики уведомлений
+      useNotifications.getState().refresh();
+
       setVacForm({ startDate: "", endDate: "", comment: "" });
       setShowVacForm(false);
+      await alertDialog(
+        "Отпуск отправлен на согласование руководителю",
+        { title: "Готово", variant: "success" }
+      );
     } catch (err: any) {
-      alert(err.response?.data?.error ?? "Ошибка");
+      await alertDialog(err.response?.data?.error ?? "Ошибка", {
+        variant: "error",
+      });
     } finally {
       setVacBusy(false);
     }
   };
 
   const onDeleteVacation = async (id: string) => {
-    if (!confirm("Удалить этот отпуск?")) return;
     try {
       await removeVacation(id);
+      useNotifications.getState().refresh();
     } catch (err: any) {
-      alert(err.response?.data?.error ?? "Ошибка");
+      await alertDialog(err.response?.data?.error ?? "Ошибка", {
+        variant: "error",
+      });
     }
   };
 
@@ -240,9 +280,7 @@ export default function MySchedulePage() {
   }
   const sortedWeeks = Array.from(groups.keys()).sort();
 
-  // Коллеги без себя
   const otherColleagues = colleagues.filter((c) => c.id !== user?.id);
-
   const incomingActive = incoming.filter((r) => r.status === "PENDING");
   const outgoingActive = outgoing.filter((r) => r.status === "PENDING");
 
@@ -254,7 +292,7 @@ export default function MySchedulePage() {
       <NavBar />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-        {/* Заголовок + кнопка смены */}
+        {/* Заголовок */}
         <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
           <div>
             <h1 className="text-3xl font-bold text-slate-900">Мой график</h1>
@@ -304,7 +342,7 @@ export default function MySchedulePage() {
           </div>
         )}
 
-        {/* ═══ Входящие предложения ═══════════════════════ */}
+        {/* Входящие предложения обмена */}
         {incomingActive.length > 0 && (
           <div className="bg-white rounded-2xl border border-amber-200 shadow-sm p-5 mb-6 animate-fade-in">
             <h3 className="font-semibold text-slate-900 mb-3 flex items-center gap-2">
@@ -355,7 +393,7 @@ export default function MySchedulePage() {
           </div>
         )}
 
-        {/* ═══ Мои исходящие ══════════════════════════════ */}
+        {/* Мои исходящие */}
         {outgoingActive.length > 0 && (
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 mb-6">
             <h3 className="font-semibold text-slate-900 mb-3 flex items-center gap-2">
@@ -396,7 +434,7 @@ export default function MySchedulePage() {
           </div>
         )}
 
-        {/* ═══ Мои отпуска ═════════════════════════════════ */}
+        {/* Мои отпуска */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 mb-6">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <h3 className="font-semibold text-slate-900 flex items-center gap-2">
@@ -482,19 +520,33 @@ export default function MySchedulePage() {
             <div className="space-y-2">
               {myVacations.map((v) => {
                 const isPast = v.endDate < today;
+                const isPending = v.status === "PENDING";
+
+                let borderColor = "border-emerald-500";
+                let bgColor = "bg-emerald-50/40";
+                if (isPast) {
+                  borderColor = "border-slate-300";
+                  bgColor = "bg-slate-50 opacity-70";
+                } else if (isPending) {
+                  borderColor = "border-amber-500";
+                  bgColor = "bg-amber-50/40";
+                }
+
                 return (
                   <div
                     key={v.id}
-                    className={`flex items-center justify-between gap-3 border-l-4 pl-3 py-2 rounded-r-lg ${
-                      isPast
-                        ? "border-slate-300 bg-slate-50 opacity-70"
-                        : "border-emerald-500 bg-emerald-50/40"
-                    }`}
+                    className={`flex items-center justify-between gap-3 border-l-4 pl-3 py-2 rounded-r-lg ${borderColor} ${bgColor}`}
                   >
                     <div className="text-sm min-w-0">
-                      <div className="font-medium text-slate-900">
+                      <div className="font-medium text-slate-900 flex items-center gap-2 flex-wrap">
                         {formatShortDate(v.startDate)} —{" "}
                         {formatShortDate(v.endDate)}
+                        {isPending && (
+                          <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">
+                            <AlertCircle className="w-3 h-3" />
+                            На согласовании
+                          </span>
+                        )}
                       </div>
                       {v.comment && (
                         <div className="text-xs text-slate-500 truncate mt-0.5">
@@ -518,7 +570,7 @@ export default function MySchedulePage() {
 
         {loading && <p className="text-slate-500 text-sm">Загрузка...</p>}
 
-        {/* Пустое состояние смен */}
+        {/* Смены */}
         {!loading && shifts.length === 0 && (
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center">
             <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
@@ -534,7 +586,6 @@ export default function MySchedulePage() {
           </div>
         )}
 
-        {/* ═══ Смены по неделям ══════════════════════════ */}
         {sortedWeeks.map((weekStart) => {
           const weekShifts = groups.get(weekStart)!;
           const weekStatus = weekShifts[0]?.weekStatus;
@@ -658,7 +709,7 @@ export default function MySchedulePage() {
         })}
       </main>
 
-      {/* ═══ Модалка выбора коллеги для обмена ═══════════ */}
+      {/* Модалка выбора коллеги */}
       {swapShift && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"

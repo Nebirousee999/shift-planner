@@ -1,3 +1,4 @@
+import HTMLtoDOCX from "html-to-docx";
 import {
   Document,
   Packer,
@@ -9,6 +10,7 @@ import {
   TableCell,
   WidthType,
   BorderStyle,
+  PageOrientation,
 } from "docx";
 import { getDocumentType } from "./templates.js";
 
@@ -48,6 +50,37 @@ function p(
   });
 }
 
+/**
+ * Аналог p(), но подсвечивает все {плейсхолдеры} жёлтой заливкой.
+ */
+function pYellow(
+  text: string,
+  opts: {
+    bold?: boolean;
+    align?: any;
+    size?: number;
+    spacing?: number;
+  } = {}
+) {
+  const regex = /(\{[^{}]+\})/g;
+  const parts = text.split(regex).filter((part) => part.length > 0);
+
+  const runs = parts.map((part) => {
+    const isPlaceholder = /^\{[^{}]+\}$/.test(part);
+    return new TextRun({
+      text: part,
+      bold: opts.bold,
+      size: opts.size ?? 24,
+      highlight: isPlaceholder ? "yellow" : undefined,
+    });
+  });
+
+  return new Paragraph({
+    alignment: opts.align,
+    spacing: { after: opts.spacing ?? 200 },
+    children: runs.length > 0 ? runs : [new TextRun({ text: " " })],
+  });
+}
 // Оранжевый цвет для плейсхолдеров (amber-500)
 const PLACEHOLDER_COLOR = "F59E0B";
 
@@ -362,44 +395,52 @@ function generateHireOrder(params: any): Document {
 // ═══════════════════════════════════════════════════════
 function generateVacationScheduleTable(params: any): Document {
   const date = formatDate(params.approveDate);
-  const entries = lines(params.entries);
+  const vacations: any[] = params.__vacations ?? [];
 
-  const rows: string[][] = entries.map((line, i) => {
-    const parts = line.split(";").map((s) => s.trim());
-    const name = parts[0] ?? "";
-    const days = parts[1] ?? "";
-    const start = parts[2] ?? "";
-    return [String(i + 1), name, days, start];
+  const rows: string[][] = vacations.map((v, i) => {
+    const start = new Date(v.startDate + "T00:00:00Z");
+    const end = new Date(v.endDate + "T00:00:00Z");
+    const days =
+      Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+    return [
+      String(i + 1),
+      v.userName ?? "—",
+      String(days),
+      formatDate(v.startDate),
+    ];
   });
 
-  return new Document({
-    sections: [
-      {
-        children: [
-          p(params.orgName, { bold: true, align: AlignmentType.CENTER }),
-          p("УТВЕРЖДЕНО", { align: AlignmentType.RIGHT, spacing: 100 }),
-          p(`Приказом от ${date}`, {
-            align: AlignmentType.RIGHT,
-            spacing: 100,
-          }),
-          p(`Директор: ___________ / ${params.directorName} /`, {
-            align: AlignmentType.RIGHT,
-            spacing: 400,
-          }),
-          p(`ГРАФИК ОТПУСКОВ на ${params.year} год`, {
-            bold: true,
-            align: AlignmentType.CENTER,
-            spacing: 400,
-          }),
-          blank(1),
-          makeTable(
-            ["№", "ФИО сотрудника", "Кол-во дней", "Дата начала отпуска"],
-            rows
-          ),
-        ],
-      },
-    ],
-  });
+  const children: Paragraph[] = [
+    p(params.orgName, { bold: true, align: AlignmentType.CENTER }),
+    p("УТВЕРЖДЕНО", { align: AlignmentType.RIGHT, spacing: 100 }),
+    p(`Приказом от ${date}`, { align: AlignmentType.RIGHT, spacing: 100 }),
+    p(`Директор: ___________ / ${params.directorName} /`, {
+      align: AlignmentType.RIGHT,
+      spacing: 400,
+    }),
+    p(`ГРАФИК ОТПУСКОВ на ${params.year} год`, {
+      bold: true,
+      align: AlignmentType.CENTER,
+      spacing: 400,
+    }),
+    blank(1),
+    makeTable(
+      ["№", "ФИО сотрудника", "Кол-во дней", "Дата начала отпуска"],
+      rows
+    ),
+  ];
+
+  if (vacations.length === 0) {
+    children.push(
+      blank(1),
+      p(
+        "В разделе «Отпуска» нет данных за указанный год. Добавьте отпуска сотрудникам — они появятся здесь.",
+        { align: AlignmentType.LEFT, italic: true, size: 20 }
+      )
+    );
+  }
+
+  return new Document({ sections: [{ children }] });
 }
 
 // ═══════════════════════════════════════════════════════
@@ -462,14 +503,16 @@ function generateSafetyInstruction(params: any): Document {
 // 7. ЖУРНАЛ РЕГИСТРАЦИИ ИНСТРУКТАЖЕЙ
 // ═══════════════════════════════════════════════════════
 function generateBriefingJournal(params: any): Document {
-  const entries = lines(params.entries);
-  const rows = entries.map((line) => {
-    const parts = line.split(";").map((s) => s.trim());
-    const name = parts[0] ?? "";
-    const position = parts[1] ?? "";
-    const date = parts[2] ?? "";
-    return [name, position, date, "вводный", "__________", "__________"];
-  });
+  const employees: any[] = params.__employees ?? [];
+
+  const rows = employees.map((e) => [
+    e.name ?? "—",
+    e.position ?? "—",
+    "__________",
+    "вводный",
+    "__________",
+    "__________",
+  ]);
 
   return new Document({
     sections: [
@@ -567,14 +610,20 @@ function generateEmploymentContract(params: any): Document {
           ),
 
           p("РЕКВИЗИТЫ И ПОДПИСИ СТОРОН", { bold: true, spacing: 300 }),
-          p(`Работодатель: ${params.orgName}`, { spacing: 100 }),
+
+          p("РАБОТОДАТЕЛЬ", { bold: true, spacing: 100 }),
+          p(`Организация: ${params.orgName}`, { spacing: 100 }),
+          p(`ИНН: ${params.orgInn ?? "—"}`, { spacing: 100 }),
           p(`Адрес: ${params.orgAddress}`, { spacing: 100 }),
           p(`Директор: ______________ / ${params.directorName} /`, {
             spacing: 300,
           }),
-          p(`Работник: ${params.employeeName}`, { spacing: 100 }),
-          p(`Адрес: ${params.employeeAddress}`, { spacing: 100 }),
-          p(`Подпись: ______________`, { spacing: 100 }),
+
+          p("РАБОТНИК", { bold: true, spacing: 100 }),
+          p(`ФИО: ${params.employeeName}`, { spacing: 100 }),
+          p(`Паспорт: ${params.employeePassport ?? "—"}`, { spacing: 100 }),
+          p(`Адрес: ${params.employeeAddress ?? "—"}`, { spacing: 100 }),
+          p(`Подпись: ______________`, { spacing: 200 }),
         ],
       },
     ],
@@ -773,70 +822,526 @@ export function buildFilename(typeId: string, params: any): string {
 // ═══════════════════════════════════════════════════════
 // ОБРАЗЕЦ ШАБЛОНА (DOCX) — плейсхолдеры оранжевым
 // ═══════════════════════════════════════════════════════
-export async function buildSampleDocx(
-  templateTitle: string
-): Promise<Buffer> {
-  const children: Paragraph[] = [
-    // ─── Шапка ───────────────────────────────────────
-    pWithHighlight("{Название организации}", {
+// ═══════════════════════════════════════════════════════
+// ОБРАЗЦЫ ШАБЛОНОВ ПО ТИПУ ДОКУМЕНТА
+// ═══════════════════════════════════════════════════════
+
+// Общая шапка приказа
+function sampleHeaderDoc(): Paragraph[] {
+  return [
+    pYellow("{Название организации}", {
       bold: true,
       align: AlignmentType.CENTER,
-      spacing: 100,
+      spacing: 120,
     }),
-    pWithHighlight("ПРИКАЗ № {orderNumber}", {
+    pYellow("ПРИКАЗ № {orderNumber}", {
       bold: true,
       align: AlignmentType.CENTER,
-      spacing: 100,
+      spacing: 120,
     }),
-    pWithHighlight("{Город}", {
-      align: AlignmentType.CENTER,
-      spacing: 100,
-    }),
-    pWithHighlight("от {orderDate}", {
+    pYellow("{Город}", { align: AlignmentType.CENTER, spacing: 120 }),
+    pYellow("от {Дата приказа}", {
       align: AlignmentType.CENTER,
       spacing: 400,
     }),
+  ];
+}
 
-    // ─── Заголовок ───────────────────────────────────
-    pWithHighlight(templateTitle, {
+// Общий хвост со справкой
+function sampleFooterDoc(): Paragraph[] {
+  return [
+    p("", { spacing: 400 }),
+    p("СПРАВКА. После редактирования эту часть текста удалить!", {
       bold: true,
-      align: AlignmentType.CENTER,
-      spacing: 400,
+      spacing: 120,
     }),
-
-    // ─── Основная часть ──────────────────────────────
-    pWithHighlight(
-      "В соответствии с действующим законодательством Российской Федерации, ПРИКАЗЫВАЮ:",
-      { align: AlignmentType.JUSTIFIED, spacing: 300 }
+    p("Доступные плейсхолдеры:", { bold: true, spacing: 200 }),
+    pYellow(
+      "Организация: {Организация}, {Город}, {Директор}, {ИНН}, {Адрес}, {Сегодня}",
+      { spacing: 100, size: 20 }
     ),
-
-    pWithHighlight(
-      "1. Назначить {Сотрудник} ответственным за соблюдение требований.",
-      { align: AlignmentType.JUSTIFIED, spacing: 200 }
+    pYellow(
+      "Сотрудник: {Сотрудник}, {Email сотрудника}, {Телефон сотрудника}, {Ставка сотрудника}, {Должность сотрудника}",
+      { spacing: 100, size: 20 }
     ),
-
-    pWithHighlight(
-      "2. Установить должностной оклад в размере {salary} рублей в месяц.",
-      { align: AlignmentType.JUSTIFIED, spacing: 200 }
-    ),
-
-    pWithHighlight(
-      "3. Контроль за исполнением настоящего приказа оставляю за собой.",
-      { align: AlignmentType.JUSTIFIED, spacing: 400 }
-    ),
-
-    // ─── Подписи ─────────────────────────────────────
-    pWithHighlight("Директор: _________________________ / {Директор} /", {
-      align: AlignmentType.LEFT,
-      spacing: 200,
+    pYellow("Список: {СписокСотрудников}", {
+      spacing: 100,
+      size: 20,
     }),
-
-    pWithHighlight(
-      "С приказом ознакомлен(а): _________________________ / {Сотрудник} /",
-      { align: AlignmentType.LEFT }
+    pYellow(
+      "Из формы: {orderNumber}, {Дата приказа}, {salary}, {position}",
+      { spacing: 100, size: 20 }
+    ),
+    pYellow(
+      "Все плейсхолдеры вида {Ключ} автоматически заменяются реальными данными при генерации.",
+      { spacing: 200, size: 20 }
     ),
   ];
+}
 
-  const doc = new Document({ sections: [{ children }] });
+// ─── Словарь образцов ────────────────────────────────
+function buildSampleChildren(
+  typeId: string,
+  templateTitle: string
+): Paragraph[] {
+  switch (typeId) {
+    // 1. ПРИКАЗ ОБ ОХРАНЕ ТРУДА
+    case "order_safety_responsible":
+      return [
+        ...sampleHeaderDoc(),
+        p(templateTitle, {
+          bold: true,
+          align: AlignmentType.CENTER,
+          spacing: 400,
+        }),
+        p(
+          "В соответствии со статьёй 217 Трудового кодекса Российской Федерации, ПРИКАЗЫВАЮ:",
+          { align: AlignmentType.JUSTIFIED, spacing: 300 }
+        ),
+        pYellow(
+          "1. Назначить {Сотрудник} - {Должность сотрудника} ответственным за организацию и соблюдение требований охраны труда.",
+          { align: AlignmentType.JUSTIFIED, spacing: 200 }
+        ),
+        p("2. Утвердить должностную инструкцию ответственного.", {
+          align: AlignmentType.JUSTIFIED,
+          spacing: 200,
+        }),
+        p("3. Контроль за исполнением настоящего приказа оставляю за собой.", {
+          align: AlignmentType.JUSTIFIED,
+          spacing: 400,
+        }),
+        pYellow("Директор: _____________ / {Директор} /", {
+          align: AlignmentType.LEFT,
+          spacing: 200,
+        }),
+        pYellow(
+          "С приказом ознакомлен(а): _____________ / {Сотрудник} /",
+          { align: AlignmentType.LEFT, spacing: 200 }
+        ),
+        ...sampleFooterDoc(),
+      ];
+
+    // 2. ПРИКАЗ О ПОЖАРНОЙ БЕЗОПАСНОСТИ
+    case "order_fire_safety":
+      return [
+        ...sampleHeaderDoc(),
+        p(templateTitle, {
+          bold: true,
+          align: AlignmentType.CENTER,
+          spacing: 400,
+        }),
+        p(
+          "В соответствии с Федеральным законом от 21.12.1994 № 69-ФЗ «О пожарной безопасности», ПРИКАЗЫВАЮ:",
+          { align: AlignmentType.JUSTIFIED, spacing: 300 }
+        ),
+        pYellow(
+          "1. Назначить {Сотрудник} - {Должность сотрудника} ответственным за пожарную безопасность.",
+          { align: AlignmentType.JUSTIFIED, spacing: 200 }
+        ),
+        p(
+          "2. Возложить на ответственного проведение противопожарных инструктажей.",
+          { align: AlignmentType.JUSTIFIED, spacing: 200 }
+        ),
+        p("3. Контроль за исполнением настоящего приказа оставляю за собой.", {
+          align: AlignmentType.JUSTIFIED,
+          spacing: 400,
+        }),
+        pYellow("Директор: _____________ / {Директор} /", {
+          align: AlignmentType.LEFT,
+          spacing: 200,
+        }),
+        pYellow(
+          "С приказом ознакомлен(а): _____________ / {Сотрудник} /",
+          { align: AlignmentType.LEFT, spacing: 200 }
+        ),
+        ...sampleFooterDoc(),
+      ];
+
+    // 3. ПРИКАЗ ОБ УТВЕРЖДЕНИИ ГРАФИКА ОТПУСКОВ
+    case "order_vacation_schedule":
+      return [
+        ...sampleHeaderDoc(),
+        pYellow("Об утверждении графика отпусков на {year} год", {
+          bold: true,
+          align: AlignmentType.CENTER,
+          spacing: 400,
+        }),
+        p(
+          "В соответствии со статьёй 123 Трудового кодекса Российской Федерации, ПРИКАЗЫВАЮ:",
+          { align: AlignmentType.JUSTIFIED, spacing: 300 }
+        ),
+        pYellow(
+          "1. Утвердить график отпусков сотрудников на {year} год.",
+          { align: AlignmentType.JUSTIFIED, spacing: 200 }
+        ),
+        p(
+          "2. Ознакомить всех сотрудников с графиком отпусков под подпись.",
+          { align: AlignmentType.JUSTIFIED, spacing: 200 }
+        ),
+        p("3. Контроль за исполнением настоящего приказа оставляю за собой.", {
+          align: AlignmentType.JUSTIFIED,
+          spacing: 400,
+        }),
+        pYellow("Директор: _____________ / {Директор} /", {
+          align: AlignmentType.LEFT,
+          spacing: 200,
+        }),
+        ...sampleFooterDoc(),
+      ];
+
+    // 4. ПРИКАЗ О ПРИЁМЕ НА РАБОТУ
+    case "order_hire":
+      return [
+        ...sampleHeaderDoc(),
+        p("О приёме на работу", {
+          bold: true,
+          align: AlignmentType.CENTER,
+          spacing: 400,
+        }),
+        pYellow(
+          "ПРИНЯТЬ на работу {Сотрудник} на должность {position} с окладом {salary} рублей в месяц.",
+          { align: AlignmentType.JUSTIFIED, spacing: 300 }
+        ),
+        pYellow("Дата начала работы: {startDate}.", {
+          align: AlignmentType.JUSTIFIED,
+          spacing: 200,
+        }),
+        p("Основание: трудовой договор.", {
+          align: AlignmentType.JUSTIFIED,
+          spacing: 400,
+        }),
+        pYellow("Директор: _____________ / {Директор} /", {
+          align: AlignmentType.LEFT,
+          spacing: 200,
+        }),
+        pYellow(
+          "С приказом ознакомлен(а): _____________ / {Сотрудник} /",
+          { align: AlignmentType.LEFT, spacing: 200 }
+        ),
+        ...sampleFooterDoc(),
+      ];
+
+    // 5. ГРАФИК ОТПУСКОВ (ТАБЛИЦА)
+    case "order_vacation_schedule_table":
+      return [
+        pYellow("{Название организации}", {
+          bold: true,
+          align: AlignmentType.CENTER,
+          spacing: 120,
+        }),
+        p("УТВЕРЖДЕНО", { align: AlignmentType.RIGHT, spacing: 100 }),
+        pYellow("Приказом от {Дата утверждения}", {
+          align: AlignmentType.RIGHT,
+          spacing: 100,
+        }),
+        pYellow("Директор: ________ / {Директор} /", {
+          align: AlignmentType.RIGHT,
+          spacing: 400,
+        }),
+        pYellow("ГРАФИК ОТПУСКОВ на {year} год", {
+          bold: true,
+          align: AlignmentType.CENTER,
+          spacing: 400,
+        }),
+        p("№ | ФИО сотрудника | Кол-во дней | Дата начала отпуска", {
+          bold: true,
+          align: AlignmentType.CENTER,
+          spacing: 200,
+        }),
+        p("1 | {Сотрудник} | 14 | 01.07.2026", {
+          align: AlignmentType.LEFT,
+          spacing: 100,
+        }),
+        p("2 | (следующий сотрудник) | 14 | 15.08.2026", {
+          align: AlignmentType.LEFT,
+          spacing: 100,
+        }),
+        p("", { spacing: 200 }),
+        p(
+          "Плейсхолдер {СписокСотрудников} подставит список выбранных сотрудников.",
+          { spacing: 200, size: 20 }
+        ),
+        ...sampleFooterDoc(),
+      ];
+
+    // 6. ИНСТРУКЦИЯ ПО ОХРАНЕ ТРУДА
+    case "instruction_safety":
+      return [
+        pYellow("{Название организации}", {
+          bold: true,
+          align: AlignmentType.CENTER,
+          spacing: 120,
+        }),
+        p("УТВЕРЖДАЮ", { align: AlignmentType.RIGHT, spacing: 100 }),
+        pYellow("Директор: ___________ / {Директор} /", {
+          align: AlignmentType.RIGHT,
+          spacing: 100,
+        }),
+        pYellow("от {Дата утверждения}", {
+          align: AlignmentType.RIGHT,
+          spacing: 400,
+        }),
+        pYellow(
+          "ИНСТРУКЦИЯ № {instructionNumber} по охране труда для должности «{position}»",
+          { bold: true, align: AlignmentType.CENTER, spacing: 400 }
+        ),
+        p("1. ОБЩИЕ ТРЕБОВАНИЯ ОХРАНЫ ТРУДА", {
+          bold: true,
+          spacing: 200,
+        }),
+        p(
+          "К работе допускаются лица, прошедшие вводный и первичный инструктаж по охране труда, ознакомленные с настоящей инструкцией.",
+          { align: AlignmentType.JUSTIFIED, spacing: 200 }
+        ),
+        p("2. ОСНОВНЫЕ ОПАСНЫЕ И ВРЕДНЫЕ ФАКТОРЫ", {
+          bold: true,
+          spacing: 200,
+        }),
+        p("- Электрический ток в розетках и оборудовании", {
+          spacing: 100,
+        }),
+        p("- Скользкие полы в мокрых зонах", { spacing: 100 }),
+        p("- Острые предметы и оборудование", { spacing: 200 }),
+        p("3. ТРЕБОВАНИЯ ПЕРЕД НАЧАЛОМ РАБОТЫ", {
+          bold: true,
+          spacing: 200,
+        }),
+        p("- Надеть спецодежду, привести её в порядок", {
+          spacing: 100,
+        }),
+        p("- Проверить исправность оборудования", { spacing: 100 }),
+        p("- Осмотреть рабочее место", { spacing: 200 }),
+        p("4. ТРЕБОВАНИЯ ПО ОКОНЧАНИИ РАБОТЫ", {
+          bold: true,
+          spacing: 200,
+        }),
+        p(
+          "Привести в порядок рабочее место, выключить оборудование, снять спецодежду.",
+          { align: AlignmentType.JUSTIFIED, spacing: 400 }
+        ),
+        ...sampleFooterDoc(),
+      ];
+
+    // 7. ЖУРНАЛ РЕГИСТРАЦИИ ИНСТРУКТАЖЕЙ
+    case "journal_briefing":
+      return [
+        pYellow("{Название организации}", {
+          bold: true,
+          align: AlignmentType.CENTER,
+          spacing: 120,
+        }),
+        pYellow(
+          "ЖУРНАЛ РЕГИСТРАЦИИ ИНСТРУКТАЖЕЙ ПО ОХРАНЕ ТРУДА на {year} год",
+          { bold: true, align: AlignmentType.CENTER, spacing: 200 }
+        ),
+        pYellow(
+          "Ответственный за проведение инструктажа: {Сотрудник}",
+          { spacing: 300 }
+        ),
+        p("", { spacing: 200 }),
+        pYellow("{Таблица журнала регистрации}", {
+          spacing: 200,
+        }),
+        p("", { spacing: 200 }),
+        ...sampleFooterDoc(),
+      ];
+    // 8. ТРУДОВОЙ ДОГОВОР
+    case "contract_employment":
+      return [
+        pYellow("ТРУДОВОЙ ДОГОВОР № {contractNumber}", {
+          bold: true,
+          align: AlignmentType.CENTER,
+          spacing: 200,
+        }),
+        pYellow("{Город}", { align: AlignmentType.CENTER, spacing: 100 }),
+        pYellow("от {Дата договора}", {
+          align: AlignmentType.CENTER,
+          spacing: 400,
+        }),
+        pYellow(
+          "{Название организации} (ИНН {ИНН}), в лице директора {Директор}, именуемое «Работодатель», и {Сотрудник}, именуемый «Работник», заключили настоящий договор:",
+          { align: AlignmentType.JUSTIFIED, spacing: 300 }
+        ),
+        p("1. ПРЕДМЕТ ДОГОВОРА", { bold: true, spacing: 200 }),
+        pYellow(
+          "1.1. Работодатель принимает Работника на должность {Должность сотрудника}.",
+          { align: AlignmentType.JUSTIFIED, spacing: 100 }
+        ),
+        pYellow("1.2. Дата начала работы: {Дата начала}.", {
+          align: AlignmentType.JUSTIFIED,
+          spacing: 200,
+        }),
+        p("2. ОПЛАТА ТРУДА", { bold: true, spacing: 200 }),
+        pYellow(
+          "2.1. Работнику устанавливается оклад в размере {Оклад} рублей в месяц.",
+          { align: AlignmentType.JUSTIFIED, spacing: 200 }
+        ),
+        p("3. РЕЖИМ РАБОТЫ И ОТДЫХА", { bold: true, spacing: 200 }),
+        p("3.1. 40-часовая рабочая неделя с выходными согласно графику.", {
+          align: AlignmentType.JUSTIFIED,
+          spacing: 400,
+        }),
+
+        p("РЕКВИЗИТЫ И ПОДПИСИ СТОРОН", { bold: true, spacing: 300 }),
+
+        pYellow("РАБОТОДАТЕЛЬ", { bold: true, spacing: 100 }),
+        pYellow("Организация: {Название организации}", { spacing: 100 }),
+        pYellow("ИНН: {ИНН}", { spacing: 100 }),
+        pYellow("Адрес: {Адрес организации}", { spacing: 100 }),
+        pYellow("Директор: ______________ / {Директор} /", {
+          spacing: 300,
+        }),
+
+        pYellow("РАБОТНИК", { bold: true, spacing: 100 }),
+        pYellow("ФИО: {Сотрудник}", { spacing: 100 }),
+        pYellow("Паспорт: {employeePassport}", { spacing: 100 }),
+        pYellow("Адрес: {Адрес сотрудника}", { spacing: 100 }),
+        pYellow("Подпись: ______________", { spacing: 200 }),
+
+        ...sampleFooterDoc(),
+      ];
+    // 9. СОГЛАСИЕ НА ОБРАБОТКУ ПЕРСОНАЛЬНЫХ ДАННЫХ
+    case "consent_personal_data":
+      return [
+        p("СОГЛАСИЕ", {
+          bold: true,
+          align: AlignmentType.CENTER,
+          spacing: 100,
+        }),
+        p("на обработку персональных данных", {
+          bold: true,
+          align: AlignmentType.CENTER,
+          spacing: 200,
+        }),
+        pYellow("{Название организации}", {
+          align: AlignmentType.CENTER,
+          spacing: 100,
+        }),
+        pYellow("{Сегодня}", { align: AlignmentType.CENTER, spacing: 400 }),
+        pYellow(
+          "Я, {Сотрудник}, даю своё согласие {Название организации} на обработку моих персональных данных в соответствии с Федеральным законом № 152-ФЗ.",
+          { align: AlignmentType.JUSTIFIED, spacing: 300 }
+        ),
+        p(
+          "Согласие даётся на обработку следующих персональных данных: ФИО, дата рождения, паспортные данные, адрес регистрации, контактный телефон, email.",
+          { align: AlignmentType.JUSTIFIED, spacing: 200 }
+        ),
+        p(
+          "Цель обработки: трудовые отношения, ведение кадрового учёта.",
+          { align: AlignmentType.JUSTIFIED, spacing: 300 }
+        ),
+        pYellow("Подпись: ______________ / {Сотрудник} /", {
+          spacing: 200,
+        }),
+        pYellow("Дата: {Сегодня}", { spacing: 200 }),
+        ...sampleFooterDoc(),
+      ];
+
+    // 10. ПРАВИЛА ВНУТРЕННЕГО ТРУДОВОГО РАСПОРЯДКА
+    case "rules_internal":
+      return [
+        pYellow("{Название организации}", {
+          bold: true,
+          align: AlignmentType.CENTER,
+          spacing: 120,
+        }),
+        p("УТВЕРЖДАЮ", { align: AlignmentType.RIGHT, spacing: 100 }),
+        pYellow("Директор: ___________ / {Директор} /", {
+          align: AlignmentType.RIGHT,
+          spacing: 100,
+        }),
+        pYellow("от {Дата утверждения}", {
+          align: AlignmentType.RIGHT,
+          spacing: 400,
+        }),
+        p("ПРАВИЛА ВНУТРЕННЕГО ТРУДОВОГО РАСПОРЯДКА", {
+          bold: true,
+          align: AlignmentType.CENTER,
+          spacing: 400,
+        }),
+        p("1. ОБЩИЕ ПОЛОЖЕНИЯ", { bold: true, spacing: 200 }),
+        pYellow(
+          "Настоящие Правила регулируют трудовые отношения между работниками и {Название организации}.",
+          { align: AlignmentType.JUSTIFIED, spacing: 200 }
+        ),
+        p("2. РЕЖИМ РАБОТЫ И ОТДЫХА", { bold: true, spacing: 200 }),
+        p("2.1. Рабочее время: с 09:00 до 18:00.", {
+          align: AlignmentType.JUSTIFIED,
+          spacing: 100,
+        }),
+        p("2.2. Перерыв для отдыха и питания: с 13:00 до 14:00.", {
+          align: AlignmentType.JUSTIFIED,
+          spacing: 100,
+        }),
+        p("2.3. Выходные дни: суббота, воскресенье.", {
+          align: AlignmentType.JUSTIFIED,
+          spacing: 200,
+        }),
+        p("3. ОПЛАТА ТРУДА", { bold: true, spacing: 200 }),
+        p(
+          "3.1. Заработная плата выплачивается два раза в месяц.",
+          { align: AlignmentType.JUSTIFIED, spacing: 200 }
+        ),
+        p("4. ТРУДОВАЯ ДИСЦИПЛИНА", { bold: true, spacing: 200 }),
+        p(
+          "4.1. Работники обязаны соблюдать трудовую дисциплину и правила охраны труда.",
+          { align: AlignmentType.JUSTIFIED, spacing: 200 }
+        ),
+        p("5. ЗАКЛЮЧИТЕЛЬНЫЕ ПОЛОЖЕНИЯ", { bold: true, spacing: 200 }),
+        p(
+          "Настоящие Правила вступают в силу с момента их утверждения.",
+          { align: AlignmentType.JUSTIFIED, spacing: 400 }
+        ),
+        ...sampleFooterDoc(),
+      ];
+
+    // По умолчанию
+    default:
+      return [
+        ...sampleHeaderDoc(),
+        p(templateTitle, {
+          bold: true,
+          align: AlignmentType.CENTER,
+          spacing: 400,
+        }),
+        p("Основная часть документа.", {
+          align: AlignmentType.JUSTIFIED,
+          spacing: 200,
+        }),
+        ...sampleFooterDoc(),
+      ];
+  }
+}
+
+// ─── Экспортируемая функция ───────────────────────────
+export async function buildSampleDocx(
+  typeId: string,
+  templateTitle: string
+): Promise<Buffer> {
+  const children = buildSampleChildren(typeId, templateTitle);
+
+  const docType = getDocumentType(typeId);
+  const isLandscape = docType?.landscape === true;
+
+  const doc = new Document({
+    creator: "Планировщик смен",
+    title: templateTitle,
+    description: "Образец шаблона",
+    sections: [
+      {
+        properties: {
+          page: {
+            size: {
+              orientation: isLandscape
+                ? PageOrientation.LANDSCAPE
+                : PageOrientation.PORTRAIT,
+            },
+          },
+        },
+        children,
+      },
+    ],
+  });
+
   return Packer.toBuffer(doc);
 }

@@ -75,10 +75,12 @@ export const customTemplatesApi = {
   },
 
   // Сгенерировать по кастомному шаблону
+  // Сгенерировать по кастомному шаблону
   render: async (
     type: string,
     params: Record<string, any>,
-    employeeIds: string[] = []
+    employeeIds: string[] = [],
+    title?: string
   ): Promise<void> => {
     const res = await fetch(`${API_URL}/documents/custom/${type}/render`, {
       method: "POST",
@@ -95,7 +97,7 @@ export const customTemplatesApi = {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "Документ.docx";
+    a.download = title ? `${title}.docx` : "Документ.docx";
     document.body.appendChild(a);
     a.click();
     a.remove();

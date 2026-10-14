@@ -7,6 +7,12 @@ export type Vacation = {
   startDate: string;
   endDate: string;
   comment: string | null;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  previousStartDate: string | null;
+  previousEndDate: string | null;
+  previousComment: string | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
   createdAt: string;
   userName?: string;
 };
@@ -20,6 +26,18 @@ export const vacationsApi = {
   mine: async (): Promise<Vacation[]> => {
     const { data } = await api.get<Vacation[]>("/vacations/mine");
     return data;
+  },
+
+  listPending: async (): Promise<Vacation[]> => {
+    const { data } = await api.get<Vacation[]>("/vacations/pending");
+    return data;
+  },
+
+  pendingCount: async (): Promise<number> => {
+    const { data } = await api.get<{ count: number }>(
+      "/vacations/pending/count"
+    );
+    return data.count;
   },
 
   check: async (
@@ -51,6 +69,16 @@ export const vacationsApi = {
     }>
   ): Promise<Vacation> => {
     const { data } = await api.patch<Vacation>(`/vacations/${id}`, input);
+    return data;
+  },
+
+  approve: async (id: string): Promise<Vacation> => {
+    const { data } = await api.post<Vacation>(`/vacations/${id}/approve`, {});
+    return data;
+  },
+
+  reject: async (id: string): Promise<Vacation> => {
+    const { data } = await api.post<Vacation>(`/vacations/${id}/reject`, {});
     return data;
   },
 

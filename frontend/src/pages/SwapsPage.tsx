@@ -8,8 +8,13 @@ import {
   AlertCircle,
   Inbox,
   CalendarDays,
+  Check,
+  X,
 } from "lucide-react";
 import { useSwaps } from "../store/swaps";
+import { useNotifications } from "../store/notifications";
+import { swapsApi } from "../api/swaps";
+import { alertDialog, confirmDialog } from "../store/dialogs";
 import NavBar from "../components/NavBar";
 
 type Tab = "all" | "PENDING" | "APPROVED" | "DENIED";
@@ -96,12 +101,42 @@ export default function SwapsPage() {
     };
   }, [all]);
 
+  // ─── Модерация (на странице владельца) ─────────────
+  const onAccept = async (id: string) => {
+    try {
+      await swapsApi.accept(id);
+      useNotifications.getState().refresh();
+      await fetchAll();
+    } catch (e: any) {
+      await alertDialog(e.response?.data?.error ?? "Ошибка", {
+        variant: "error",
+      });
+    }
+  };
+
+  const onDecline = async (id: string) => {
+    const ok = await confirmDialog("Отклонить запрос?", {
+      title: "Отклонение",
+      variant: "danger",
+    });
+    if (!ok) return;
+
+    try {
+      await swapsApi.decline(id);
+      useNotifications.getState().refresh();
+      await fetchAll();
+    } catch (e: any) {
+      await alertDialog(e.response?.data?.error ?? "Ошибка", {
+        variant: "error",
+      });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50">
       <NavBar />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-        {/* Заголовок */}
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-slate-900">Обмены смен</h1>
           <p className="text-sm text-slate-500 mt-1">
@@ -143,7 +178,7 @@ export default function SwapsPage() {
         {loading && <p className="text-slate-500 text-sm">Загрузка...</p>}
         {error && <p className="text-red-500 text-sm">{error}</p>}
 
-        {/* Пустое состояние */}
+        {/* Пусто */}
         {!loading && filtered.length === 0 && (
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center">
             <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
@@ -166,24 +201,24 @@ export default function SwapsPage() {
           </div>
         )}
 
-        {/* Список запросов */}
+        {/* Список */}
         {filtered.length > 0 && (
           <div className="space-y-3">
             {filtered.map((r) => {
               const meta = STATUS_META[r.status];
               const StatusIcon = meta.icon;
+              const canModerate = r.status === "PENDING";
+
               return (
                 <div
                   key={r.id}
                   className="group relative bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:border-slate-300 transition-all overflow-hidden animate-fade-in"
                 >
-                  {/* Цветная полоса статуса */}
                   <div
                     className={`absolute left-0 top-0 bottom-0 w-1.5 ${meta.bar}`}
                   />
 
                   <div className="p-5 pl-6 flex items-center justify-between gap-4 flex-wrap">
-                    {/* Левая часть: смена */}
                     <div className="flex items-center gap-4 min-w-0 flex-1">
                       <div className="w-11 h-11 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
                         <CalendarDays className="w-5 h-5 text-slate-600" />
@@ -208,7 +243,6 @@ export default function SwapsPage() {
                       </div>
                     </div>
 
-                    {/* Центральная часть: от кого → кому */}
                     <div className="flex items-center gap-3 flex-wrap">
                       <PersonChip
                         name={r.requestedByName ?? "—"}
@@ -222,7 +256,6 @@ export default function SwapsPage() {
                       />
                     </div>
 
-                    {/* Правая часть: статус + дата */}
                     <div className="flex items-center gap-3 ml-auto">
                       <div className="text-xs text-slate-400 hidden md:block">
                         {formatDateTime(r.createdAt)}
@@ -233,6 +266,25 @@ export default function SwapsPage() {
                         <StatusIcon className="w-3.5 h-3.5" />
                         {meta.label}
                       </span>
+
+                      {canModerate && (
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => onAccept(r.id)}
+                            className="inline-flex items-center gap-1 bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-emerald-700 text-xs font-medium transition-colors"
+                            title="Принять"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => onDecline(r.id)}
+                            className="inline-flex items-center gap-1 text-red-600 hover:bg-red-50 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                            title="Отклонить"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -258,9 +310,7 @@ function PersonChip({
     <div className="flex items-center gap-2">
       <div
         className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${
-          muted
-            ? "bg-slate-100 text-slate-400"
-            : "bg-slate-100 text-slate-600"
+          muted ? "bg-slate-100 text-slate-400" : "bg-slate-100 text-slate-600"
         }`}
       >
         {muted ? <User className="w-3.5 h-3.5" /> : initials(name)}

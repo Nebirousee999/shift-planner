@@ -1,12 +1,13 @@
 import { eq, and } from "drizzle-orm";
 import mammoth from "mammoth";
-import HTMLtoDOCX from "html-to-docx";
 import { db } from "../../../db/client.js";
 import {
   documentCustomTemplates,
   organizations,
   users,
 } from "../../../db/schema.js";
+import { htmlToDocxBuffer } from "../../lib/documents/html-to-docx.js";
+import { getDocumentType } from "../../lib/documents/templates.js";
 
 // ─── Утилиты ────────────────────────────────────────
 function formatDateRU(iso: string): string {
@@ -28,33 +29,96 @@ export function substitute(
   values: Record<string, string>
 ): string {
   return content.replace(/\{([^{}]+)\}/g, (match, key) => {
-    const trimmed = key.replace(/\s+/g, " ").trim();
+    const trimmed = String(key).replace(/\s+/g, " ").trim();
     return values[trimmed] ?? match;
   });
 }
 
-// DOCX → HTML (при загрузке)
+// ─── Разворачиваем параграфы вокруг табличных плейсхолдеров ───
+function unwrapTablePlaceholders(html: string): string {
+  const PLACEHOLDER = "{Таблица журнала регистрации}";
+  let result = html;
+  let changed = true;
+  let safety = 0;
+
+  const escapeRegex = (s: string) =>
+    s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  while (changed && safety < 10) {
+    safety++;
+    changed = false;
+
+    const patterns = [
+      new RegExp(`<p[^>]*>\\s*${escapeRegex(PLACEHOLDER)}\\s*</p>`, "gi"),
+      new RegExp(`<span[^>]*>\\s*${escapeRegex(PLACEHOLDER)}\\s*</span>`, "gi"),
+      new RegExp(`<strong[^>]*>\\s*${escapeRegex(PLACEHOLDER)}\\s*</strong>`, "gi"),
+      new RegExp(`<b[^>]*>\\s*${escapeRegex(PLACEHOLDER)}\\s*</b>`, "gi"),
+      new RegExp(`<em[^>]*>\\s*${escapeRegex(PLACEHOLDER)}\\s*</em>`, "gi"),
+      new RegExp(`<i[^>]*>\\s*${escapeRegex(PLACEHOLDER)}\\s*</i>`, "gi"),
+      new RegExp(`<div[^>]*>\\s*${escapeRegex(PLACEHOLDER)}\\s*</div>`, "gi"),
+    ];
+
+    for (const pat of patterns) {
+      const next = result.replace(pat, PLACEHOLDER);
+      if (next !== result) {
+        result = next;
+        changed = true;
+      }
+    }
+  }
+
+  return result;
+}
+
+// ─── DOCX → HTML (при загрузке) ────────────────────
 async function docxBufferToHtml(buffer: Buffer): Promise<string> {
   const result = await mammoth.convertToHtml({ buffer });
   return result.value;
 }
 
-// HTML → DOCX (при генерации)
-async function htmlToDocxBuffer(bodyHtml: string): Promise<Buffer> {
-  const html = `<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"></head>
-<body style="font-family: 'Times New Roman', serif; font-size: 12pt; line-height: 1.5;">
-${bodyHtml}
-</body>
-</html>`;
+// ─── Список сотрудников как HTML-таблица ───────────
+function buildEmployeeListHtml(
+  employees: { name: string; position: string | null }[]
+): string {
+  if (employees.length === 0) {
+    return "<p><i>Список сотрудников пуст.</i></p>";
+  }
 
-  const buffer = await HTMLtoDOCX(html, null, {
-    table: { row: { cantSplit: true } },
-    footer: false,
-    pageNumber: false,
-  });
-  return buffer as Buffer;
+  const header =
+    "<table><tr>" +
+    "<th>№</th>" +
+    "<th>ФИО</th>" +
+    "<th>Должность</th>" +
+    "<th>Дата</th>" +
+    "<th>Вид</th>" +
+    "<th>Подпись инструктируемого</th>" +
+    "<th>Подпись инструктирующего</th>" +
+    "</tr>";
+
+  const rows = employees
+    .map(
+      (e, i) =>
+        `<tr>` +
+        `<td>${i + 1}</td>` +
+        `<td>${escapeHtml(e.name)}</td>` +
+        `<td>${escapeHtml(e.position ?? "—")}</td>` +
+        `<td>__________</td>` +
+        `<td>вводный</td>` +
+        `<td>__________</td>` +
+        `<td>__________</td>` +
+        `</tr>`
+    )
+    .join("");
+
+  return `${header}${rows}</table>`;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 export const customTemplatesService = {
@@ -78,7 +142,6 @@ export const customTemplatesService = {
       .where(eq(documentCustomTemplates.orgId, orgId));
   },
 
-  // Загрузка .docx → сохраняем HTML
   async uploadDocx(input: {
     orgId: string;
     type: string;
@@ -128,7 +191,6 @@ export const customTemplatesService = {
       );
   },
 
-  // Собираем значения для подстановки
   async buildValues(input: {
     orgId: string;
     params: Record<string, any>;
@@ -149,6 +211,7 @@ export const customTemplatesService = {
     values["ИНН"] = org?.inn ?? "";
     values["Адрес"] = org?.legalAddress ?? "";
     values["Юридический адрес"] = org?.legalAddress ?? "";
+    values["Адрес организации"] = org?.legalAddress ?? "";
     values["Сегодня"] = today();
 
     const paramLabels: Record<string, string> = {
@@ -158,6 +221,8 @@ export const customTemplatesService = {
       salary: "Оклад",
       position: "Должность",
       employeeName: "ФИО сотрудника",
+      employeeAddress: "Адрес сотрудника",
+      employeePassport: "Паспорт сотрудника",
       year: "Год",
       instructionNumber: "Номер инструкции",
       approveDate: "Дата утверждения",
@@ -181,7 +246,17 @@ export const customTemplatesService = {
       }
     }
 
-    // Сотрудники
+    values["СписокСотрудников"] = "";
+    values["Сотрудники"] = "";
+    values["Сотрудник"] = "";
+    values["ФИО сотрудника"] = "";
+    values["Email сотрудника"] = "";
+    values["Телефон сотрудника"] = "";
+    values["Ставка сотрудника"] = "";
+    values["Должность сотрудника"] = "";
+    values["Должность"] = "";
+    values["Таблица журнала регистрации"] = "";
+
     if (input.employeeIds && input.employeeIds.length > 0) {
       const list = await db
         .select()
@@ -196,6 +271,13 @@ export const customTemplatesService = {
       });
       values["СписокСотрудников"] = lines.join("\n");
       values["Сотрудники"] = lines.join("\n");
+
+      values["Таблица журнала регистрации"] = buildEmployeeListHtml(
+        selected.map((u) => ({
+          name: u.name,
+          position: u.position ?? null,
+        }))
+      );
 
       if (selected.length > 0) {
         const main = selected[0];
@@ -214,7 +296,6 @@ export const customTemplatesService = {
     return values;
   },
 
-  // Генерация по кастомному шаблону
   async renderToDocx(input: {
     orgId: string;
     type: string;
@@ -224,22 +305,44 @@ export const customTemplatesService = {
     const tpl = await this.get(input.orgId, input.type);
     if (!tpl) return null;
 
+    const employeeIds: string[] = [];
+    if (Array.isArray(input.params?.employees)) {
+      for (const id of input.params.employees) {
+        if (typeof id === "string" && !employeeIds.includes(id)) {
+          employeeIds.push(id);
+        }
+      }
+    }
+    if (Array.isArray(input.employeeIds)) {
+      for (const id of input.employeeIds) {
+        if (typeof id === "string" && !employeeIds.includes(id)) {
+          employeeIds.push(id);
+        }
+      }
+    }
+
     const values = await this.buildValues({
       orgId: input.orgId,
       params: input.params,
-      employeeIds: input.employeeIds,
+      employeeIds,
     });
 
-    // Заменяем плейсхолдеры в HTML
-    const filledHtml = substitute(tpl.content, values);
+    // Разворачиваем параграфы вокруг табличных плейсхолдеров
+    let content = unwrapTablePlaceholders(tpl.content);
 
-    // Заменяем \n на <br> для списка сотрудников
-    const withBreaks = filledHtml.replace(
+    // Заменяем плейсхолдеры
+    let filledHtml = substitute(content, values);
+
+    // \n → <br>
+    filledHtml = filledHtml.replace(
       /\{СписокСотрудников\}/g,
-      values["СписокСотрудников"] ?? ""
+      (values["СписокСотрудников"] ?? "").replace(/\n/g, "<br>")
     );
 
-    // Генерируем DOCX из HTML
-    return htmlToDocxBuffer(withBreaks);
+    // Ориентация из типа документа
+    const docType = getDocumentType(input.type);
+    const landscape = docType?.landscape ?? false;
+
+    return htmlToDocxBuffer(filledHtml, { landscape });
   },
 };

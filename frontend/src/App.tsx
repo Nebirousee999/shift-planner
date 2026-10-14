@@ -16,7 +16,7 @@ import VacationsPage from "./pages/VacationsPage";
 import TimesheetPage from "./pages/TimesheetPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import HelpPage from "./pages/HelpPage";
-
+import DialogHost from "./components/DialogHost";
 function ProtectedRoute({
   children,
   adminOnly = false,
@@ -52,6 +52,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <DialogHost />
       <Routes>
         <Route
           path="/login"

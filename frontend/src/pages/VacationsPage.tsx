@@ -1,10 +1,4 @@
-import {
-  useEffect,
-  useState,
-  useMemo,
-  useRef,
-  useCallback,
-} from "react";
+import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import {
   Plus,
   X,
@@ -12,14 +6,18 @@ import {
   ChevronLeft,
   ChevronRight,
   Palmtree,
+  Check,
+  AlertCircle,
+  Bell,
 } from "lucide-react";
 import { useVacations } from "../store/vacations";
 import { useUsers } from "../store/users";
 import { useAuth } from "../store/auth";
-import type { Vacation } from "../api/vacations";
+import { useNotifications } from "../store/notifications";
+import { vacationsApi, type Vacation } from "../api/vacations";
+import { alertDialog, confirmDialog } from "../store/dialogs";
 import NavBar from "../components/NavBar";
 
-// ─── Константы ───────────────────────────────────────
 const MONTHS_RU = [
   "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
   "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
@@ -30,7 +28,6 @@ const CELL_WIDTH = 36;
 const ROW_HEIGHT = 44;
 const USER_COL_WIDTH = 200;
 
-// ─── Утилиты ─────────────────────────────────────────
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
@@ -101,7 +98,6 @@ type Block = {
   daysCount: number;
 };
 
-// Отпуск, обрезанный по границам текущего месяца (для отображения)
 function blockFromRange(
   v: Vacation,
   start: string,
@@ -125,7 +121,6 @@ function blockFromRange(
   };
 }
 
-// ─── Состояние drag ──────────────────────────────────
 type DragMode = "move" | "resize-start" | "resize-end";
 
 type DragRef = {
@@ -145,15 +140,11 @@ type DragPreview = {
   end: string;
 } | null;
 
-// ─── Модалка ─────────────────────────────────────────
 type ModalMode =
   | { kind: "closed" }
   | { kind: "create"; userId: string | null }
   | { kind: "edit"; vacation: Vacation };
 
-// ═══════════════════════════════════════════════════════
-// ОСНОВНОЙ КОМПОНЕНТ
-// ═══════════════════════════════════════════════════════
 export default function VacationsPage() {
   const { user } = useAuth();
   const { all, loading, error, fetchAll, create, update, remove } =
@@ -161,6 +152,7 @@ export default function VacationsPage() {
   const { items: users, fetch: fetchUsers } = useUsers();
 
   const [modal, setModal] = useState<ModalMode>({ kind: "closed" });
+  const [pending, setPending] = useState<Vacation[]>([]);
 
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
@@ -179,9 +171,12 @@ export default function VacationsPage() {
   useEffect(() => {
     fetchAll();
     fetchUsers();
-  }, [fetchAll, fetchUsers]);
+    if (isAdmin) {
+      vacationsApi.listPending().then(setPending).catch(() => {});
+    }
+  }, [fetchAll, fetchUsers, isAdmin]);
 
-  // ─── Drag ───────────────────────────────────────────
+  // Drag
   const dragRef = useRef<DragRef>(null);
   const [dragPreview, setDragPreview] = useState<DragPreview>(null);
 
@@ -224,13 +219,11 @@ export default function VacationsPage() {
       if (!ds) return;
 
       if (!ds.moved) {
-        // Был клик — открыть модалку
         const vac = all.find((v) => v.id === ds.vacationId);
         if (vac) setModal({ kind: "edit", vacation: vac });
         return;
       }
 
-      // Ничего не изменилось — выходим
       if (
         ds.currentStart === ds.originalStart &&
         ds.currentEnd === ds.originalEnd
@@ -243,8 +236,11 @@ export default function VacationsPage() {
           startDate: ds.currentStart,
           endDate: ds.currentEnd,
         });
+        // После ручного редактирования — счётчики не меняются (владелец редактирует своё)
       } catch (err: any) {
-        alert(err.response?.data?.error ?? "Ошибка сохранения");
+        await alertDialog(err.response?.data?.error ?? "Ошибка сохранения", {
+          variant: "error",
+        });
       }
     };
 
@@ -262,7 +258,9 @@ export default function VacationsPage() {
     mode: DragMode
   ) => {
     if (!canEdit(v.userId)) {
-      alert("Можно редактировать только свой отпуск");
+      alertDialog("Можно редактировать только свой отпуск", {
+        variant: "error",
+      });
       return;
     }
     e.preventDefault();
@@ -281,7 +279,6 @@ export default function VacationsPage() {
     setDragPreview({ id: v.id, start: v.startDate, end: v.endDate });
   };
 
-  // ─── Навигация по месяцам ───────────────────────────
   const prevMonth = () => {
     if (month === 0) {
       setMonth(11);
@@ -299,10 +296,11 @@ export default function VacationsPage() {
     setMonth(today.getMonth());
   };
 
-  // ─── Данные для отображения ─────────────────────────
   const rows = useMemo(() => {
     return users.map((u) => {
-      const userVacations = all.filter((v) => v.userId === u.id);
+      const userVacations = all.filter(
+        (v) => v.userId === u.id && v.status === "APPROVED"
+      );
       const blocks = userVacations
         .map((v) => blockFromRange(v, v.startDate, v.endDate, days))
         .filter((b): b is Block => b !== null);
@@ -321,12 +319,53 @@ export default function VacationsPage() {
   }, [rows]);
 
   const onDelete = async (id: string) => {
-    if (!confirm("Удалить отпуск?")) return;
+    const ok = await confirmDialog("Удалить отпуск?", {
+      title: "Удаление отпуска",
+      confirmLabel: "Удалить",
+      variant: "danger",
+    });
+    if (!ok) return;
     try {
       await remove(id);
       setModal({ kind: "closed" });
     } catch (e: any) {
-      alert(e.response?.data?.error ?? "Ошибка");
+      await alertDialog(e.response?.data?.error ?? "Ошибка", {
+        variant: "error",
+      });
+    }
+  };
+
+  // ─── Модерация ─────────────────────────────────────
+  const onApprove = async (id: string) => {
+    try {
+      await vacationsApi.approve(id);
+      useNotifications.getState().refresh();
+      setPending((prev) => prev.filter((p) => p.id !== id));
+      await fetchAll();
+    } catch (e: any) {
+      await alertDialog(e.response?.data?.error ?? "Ошибка", {
+        variant: "error",
+      });
+    }
+  };
+
+  const onReject = async (id: string) => {
+    const ok = await confirmDialog("Отклонить изменения отпуска?", {
+      title: "Отклонение",
+      confirmLabel: "Отклонить",
+      variant: "danger",
+    });
+    if (!ok) return;
+
+    try {
+      await vacationsApi.reject(id);
+      useNotifications.getState().refresh();
+      setPending((prev) => prev.filter((p) => p.id !== id));
+      await fetchAll();
+    } catch (e: any) {
+      await alertDialog(e.response?.data?.error ?? "Ошибка", {
+        variant: "error",
+      });
     }
   };
 
@@ -358,13 +397,125 @@ export default function VacationsPage() {
           </button>
         </div>
 
+        {/* ═══ Запросы на согласование ═══ */}
+        {isAdmin && pending.length > 0 && (
+          <div className="bg-amber-50 border border-amber-300 rounded-2xl p-5 mb-6 animate-fade-in">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center">
+                <Bell className="w-4 h-4 text-amber-700" />
+              </div>
+              <div className="flex-1">
+                <h2 className="font-semibold text-amber-900">
+                  Требуют одобрения
+                </h2>
+                <p className="text-xs text-amber-700">
+                  Сотрудники изменили свои отпуска — проверьте и одобрите
+                </p>
+              </div>
+              <span className="px-2.5 py-1 rounded-full bg-amber-200 text-amber-900 text-xs font-bold">
+                {pending.length}
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              {pending.map((p) => {
+                const isEdit = !!p.previousStartDate;
+
+                return (
+                  <div
+                    key={p.id}
+                    className="bg-white rounded-xl border border-amber-200 p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0 ${avatarColor(
+                            p.userId
+                          )}`}
+                        >
+                          {initials(p.userName ?? "—")}
+                        </div>
+                        <div>
+                          <div className="font-medium text-slate-900">
+                            {p.userName}
+                          </div>
+                          <div className="text-xs text-slate-500">
+                            {isEdit
+                              ? "Изменил(а) свой отпуск"
+                              : "Запросил(а) новый отпуск"}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => onApprove(p.id)}
+                          className="inline-flex items-center gap-1.5 bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 text-xs font-medium transition-colors"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          Одобрить
+                        </button>
+                        <button
+                          onClick={() => onReject(p.id)}
+                          className="inline-flex items-center gap-1.5 text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          Отклонить
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Preview: старая версия (полупрозрачная) + новая (чёткая) */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {isEdit && (
+                        <div className="bg-slate-50 rounded-lg p-3 opacity-50 border border-slate-200">
+                          <div className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold mb-1">
+                            Было
+                          </div>
+                          <div className="text-sm text-slate-700 line-through">
+                            {formatDateRU(p.previousStartDate!)} —{" "}
+                            {formatDateRU(p.previousEndDate!)}
+                          </div>
+                          {p.previousComment && (
+                            <div className="text-xs text-slate-500 mt-1 line-through">
+                              {p.previousComment}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div
+                        className={`bg-emerald-50 rounded-lg p-3 border-2 border-emerald-300 ${
+                          !isEdit ? "md:col-span-2" : ""
+                        }`}
+                      >
+                        <div className="text-[10px] uppercase tracking-wide text-emerald-700 font-semibold mb-1">
+                          {isEdit ? "Стало" : "Новый отпуск"}
+                        </div>
+                        <div className="text-sm font-medium text-slate-900">
+                          {formatDateRU(p.startDate)} —{" "}
+                          {formatDateRU(p.endDate)}
+                        </div>
+                        {p.comment && (
+                          <div className="text-xs text-slate-600 mt-1">
+                            {p.comment}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Навигация по месяцам */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-3 mb-4 flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <button
               onClick={prevMonth}
               className="p-2 rounded-lg hover:bg-slate-100 text-slate-600 transition-colors"
-              title="Предыдущий месяц"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
@@ -374,7 +525,6 @@ export default function VacationsPage() {
             <button
               onClick={nextMonth}
               className="p-2 rounded-lg hover:bg-slate-100 text-slate-600 transition-colors"
-              title="Следующий месяц"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
@@ -394,7 +544,7 @@ export default function VacationsPage() {
         {loading && <p className="text-slate-500 text-sm">Загрузка...</p>}
         {error && <p className="text-red-500 text-sm">{error}</p>}
 
-        {/* Пустое состояние */}
+        {/* Пусто */}
         {!loading && users.length === 0 && (
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center">
             <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
@@ -409,7 +559,7 @@ export default function VacationsPage() {
           </div>
         )}
 
-        {/* Таблица-гант */}
+        {/* Гант */}
         {users.length > 0 && (
           <div
             className={`bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden ${
@@ -421,7 +571,7 @@ export default function VacationsPage() {
                 className="min-w-fit"
                 style={{ width: USER_COL_WIDTH + days.length * CELL_WIDTH }}
               >
-                {/* Заголовок с днями */}
+                {/* Шапка */}
                 <div className="flex border-b border-slate-200 bg-slate-50 sticky top-0 z-10">
                   <div
                     className="shrink-0 px-4 py-3 font-medium text-xs uppercase tracking-wide text-slate-600 border-r border-slate-200 flex items-center"
@@ -471,14 +621,13 @@ export default function VacationsPage() {
                   })}
                 </div>
 
-                {/* Строки сотрудников */}
+                {/* Строки */}
                 {rows.map(({ user: u, blocks }) => (
                   <div
                     key={u.id}
                     className="flex border-b border-slate-100 last:border-0 hover:bg-slate-50/30 transition-colors"
                     style={{ height: ROW_HEIGHT }}
                   >
-                    {/* Колонка сотрудника */}
                     <div
                       className="shrink-0 px-4 flex items-center gap-2.5 border-r border-slate-200 bg-white"
                       style={{ width: USER_COL_WIDTH }}
@@ -497,12 +646,10 @@ export default function VacationsPage() {
                       </div>
                     </div>
 
-                    {/* Дни с полосами */}
                     <div
                       className="relative"
                       style={{ width: days.length * CELL_WIDTH }}
                     >
-                      {/* Фоновые ячейки */}
                       {days.map((d, i) => {
                         const dow = dayOfWeek(d);
                         const isWeekend = dow >= 5;
@@ -525,7 +672,6 @@ export default function VacationsPage() {
                         );
                       })}
 
-                      {/* Полосы отпусков */}
                       {blocks.map((b, idx) => {
                         const isDragging = dragPreview?.id === b.vacation.id;
                         const effStart = isDragging
@@ -572,20 +718,14 @@ export default function VacationsPage() {
                               b.vacation.comment
                                 ? "\n" + b.vacation.comment
                                 : ""
-                            }${
-                              editable
-                                ? "\n\nТяните, чтобы сдвинуть\nЗа края — чтобы изменить длительность"
-                                : ""
                             }`}
                           >
-                            {/* Текст */}
                             {effBlock.daysCount >= 4 && (
                               <span className="truncate px-3 pointer-events-none">
                                 {b.vacation.comment || "Отпуск"}
                               </span>
                             )}
 
-                            {/* Ручки resize (только для редактируемых) */}
                             {editable && (
                               <>
                                 <div
@@ -597,7 +737,6 @@ export default function VacationsPage() {
                                     )
                                   }
                                   className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/30 rounded-l-md"
-                                  title="Потяните, чтобы изменить дату начала"
                                 />
                                 <div
                                   onMouseDown={(e) =>
@@ -608,7 +747,6 @@ export default function VacationsPage() {
                                     )
                                   }
                                   className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/30 rounded-r-md"
-                                  title="Потяните, чтобы изменить дату окончания"
                                 />
                               </>
                             )}
@@ -621,7 +759,6 @@ export default function VacationsPage() {
               </div>
             </div>
 
-            {/* Легенда */}
             <div className="flex items-center gap-4 px-4 py-3 border-t border-slate-200 bg-slate-50 text-xs text-slate-500 flex-wrap">
               <div className="flex items-center gap-1.5">
                 <div className="w-3 h-3 rounded-sm bg-brand-100" />
@@ -636,14 +773,14 @@ export default function VacationsPage() {
                 Выходной
               </div>
               <span className="ml-auto hidden md:inline text-slate-400">
-                Клик — открыть · Тянуть — сдвинуть · За края — растянуть
+                Клик — редактировать · Тянуть — сдвинуть · За края — растянуть
               </span>
             </div>
           </div>
         )}
       </main>
 
-      {/* ═══ Модалка ═════════════════════════════════════ */}
+      {/* Модалка */}
       {modal.kind !== "closed" && (
         <VacationModal
           mode={modal}
@@ -653,6 +790,7 @@ export default function VacationsPage() {
           onClose={() => setModal({ kind: "closed" })}
           onCreate={async (payload) => {
             await create(payload);
+            useNotifications.getState().refresh();
             setModal({ kind: "closed" });
           }}
           onUpdate={async (id, payload) => {
@@ -666,9 +804,7 @@ export default function VacationsPage() {
   );
 }
 
-// ═══════════════════════════════════════════════════════
-// МОДАЛКА
-// ═══════════════════════════════════════════════════════
+// ─── Модалка создания/редактирования ────────────────
 function VacationModal({
   mode,
   users,
@@ -718,11 +854,11 @@ function VacationModal({
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!startDate || !endDate) {
-      alert("Заполните даты");
+      await alertDialog("Заполните даты", { variant: "error" });
       return;
     }
     if (startDate > endDate) {
-      alert("Дата начала позже окончания");
+      await alertDialog("Дата начала позже окончания", { variant: "error" });
       return;
     }
     setBusy(true);
@@ -742,7 +878,9 @@ function VacationModal({
         });
       }
     } catch (err: any) {
-      alert(err.response?.data?.error ?? "Ошибка");
+      await alertDialog(err.response?.data?.error ?? "Ошибка", {
+        variant: "error",
+      });
     } finally {
       setBusy(false);
     }

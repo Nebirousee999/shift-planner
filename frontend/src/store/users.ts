@@ -5,25 +5,40 @@ type State = {
   items: TeamUser[];
   loading: boolean;
   error: string | null;
+
   fetch: () => Promise<void>;
+
   create: (input: {
     name: string;
     email: string;
     password?: string;
     role?: "OWNER" | "MANAGER" | "EMPLOYEE";
+    position?: string;
     hourlyRate?: string;
     phone?: string;
   }) => Promise<{ tempPassword?: string }>;
+
   update: (
     id: string,
     input: Partial<{
       name: string;
       phone: string | null;
       role: "OWNER" | "MANAGER" | "EMPLOYEE";
+      position: string | null;
       hourlyRate: string | null;
     }>
   ) => Promise<void>;
+
   remove: (id: string) => Promise<void>;
+
+  downloadExcelTemplate: () => Promise<void>;
+
+  importFromExcel: (file: File) => Promise<{
+    created: number;
+    skipped: number;
+    errors: string[];
+    createdUsers: Array<{ name: string; email: string; tempPassword: string }>;
+  }>;
 };
 
 export const useUsers = create<State>((set) => ({
@@ -60,5 +75,17 @@ export const useUsers = create<State>((set) => ({
   remove: async (id) => {
     await usersApi.remove(id);
     set((s) => ({ items: s.items.filter((u) => u.id !== id) }));
+  },
+
+  downloadExcelTemplate: async () => {
+    await usersApi.downloadExcelTemplate();
+  },
+
+  importFromExcel: async (file) => {
+    const result = await usersApi.importFromExcel(file);
+    // Перезагружаем список сотрудников
+    const items = await usersApi.list();
+    set({ items });
+    return result;
   },
 }));

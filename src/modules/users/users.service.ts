@@ -1,7 +1,12 @@
 import { eq, and, ne } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { db } from "../../../db/client.js";
-import { users } from "../../../db/schema.js";
+import {
+  users,
+  scheduledShifts,
+  shiftSwapRequests,
+  vacations,
+} from "../../../db/schema.js";
 
 
 function generateTempPassword(length = 8): string {
@@ -111,6 +116,34 @@ export const usersService = {
     // Нельзя удалить самого себя
     if (id === requesterId) throw new Error("CANNOT_DELETE_SELF");
 
+    // Проверяем, что сотрудник принадлежит организации
+    const [user] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.id, id), eq(users.orgId, orgId)));
+    if (!user) return null;
+
+    // ─── Чистим связанные записи ─────────────────────
+    // 1. Смены: обнуляем userId (смены остаются, но без сотрудника)
+    await db
+      .update(scheduledShifts)
+      .set({ userId: null })
+      .where(eq(scheduledShifts.userId, id));
+
+    // 2. Запросы на обмен: удаляем, где сотрудник инициатор или цель
+    await db
+      .delete(shiftSwapRequests)
+      .where(eq(shiftSwapRequests.requestedBy, id));
+    await db
+      .delete(shiftSwapRequests)
+      .where(eq(shiftSwapRequests.swapWithUserId, id));
+
+    // 3. В отпусках: удаляем (иначе FK тоже помешает)
+    await db.delete(vacations).where(eq(vacations.userId, id));
+
+    // 4. availability и time_entries удалятся каскадно (в схеме onDelete: cascade)
+
+    // ─── Теперь удаляем самого сотрудника ────────────
     const [deleted] = await db
       .delete(users)
       .where(and(eq(users.id, id), eq(users.orgId, orgId)))
