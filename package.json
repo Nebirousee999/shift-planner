@@ -1,0 +1,38 @@
+{
+  "name": "shift-planner",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx db/migrate.ts",
+    "db:studio": "drizzle-kit studio",
+    "db:reset": "Remove-Item -Recurse -Force pgdata -ErrorAction SilentlyContinue; tsx db/migrate.ts",
+    "dev": "tsx watch src/server.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@fastify/cors": "^11.3.1",
+    "@fastify/jwt": "^10.2.4",
+    "bcryptjs": "^3.0.3",
+    "docx": "^9.10.0",
+    "drizzle-orm": "^0.45.4",
+    "exceljs": "^4.4.0",
+    "fastify": "^5.12.5",
+    "fastify-plugin": "^6.0.1",
+    "html-to-docx": "^1.8.0",
+    "mammoth": "^1.13.0",
+    "zod": "^4.6.6"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^26.6.5",
+    "drizzle-kit": "^0.31.11",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

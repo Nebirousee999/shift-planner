@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+.env.local
+.env.production
+.env.selectel
+.env.yandex
+.env.vk
+.env.production.local
+pgdata/
+*.xlsx
+*.docx
+test-order.docx
+frontend/dev-dist/
