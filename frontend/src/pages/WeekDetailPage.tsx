@@ -15,7 +15,8 @@ import {
   ClipboardPaste,
   Clipboard,
   GripVertical,
-  Download,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import { useWeeks } from "../store/weeks";
 import { useShiftTemplates } from "../store/shiftTemplates";
@@ -24,7 +25,6 @@ import { vacationsApi } from "../api/vacations";
 import { shiftsApi, type ScheduledShift } from "../api/weeks";
 import NavBar from "../components/NavBar";
 import { weekDates, dayLabel, shortDate, fullDate } from "../lib/dates";
-import { exportApi } from "../api/export";
 
 type ShiftSnapshot = {
   templateId: string | null;
@@ -58,7 +58,6 @@ export default function WeekDetailPage() {
     endTime: "18:00",
   });
   const [publishing, setPublishing] = useState(false);
-  const [exporting, setExporting] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
   const [checkingVacation, setCheckingVacation] = useState(false);
 
@@ -73,11 +72,19 @@ export default function WeekDetailPage() {
   // Модалка редактирования смены
   const [editingShift, setEditingShift] = useState<ScheduledShift | null>(null);
 
+  // Разворот дня (вне режима редактирования)
+  const [expandedDate, setExpandedDate] = useState<string | null>(null);
+
   useEffect(() => {
     if (id) fetchWeek(id);
     fetchTemplates();
     fetchUsers();
   }, [id, fetchWeek, fetchTemplates, fetchUsers]);
+
+  // Сбрасываем разворот при входе в режим редактирования
+  useEffect(() => {
+    if (editMode) setExpandedDate(null);
+  }, [editMode]);
 
   if (loading && !currentWeek) {
     return (
@@ -132,7 +139,6 @@ export default function WeekDetailPage() {
   };
 
   const onAddShift = async (date: string) => {
-    // ─── Проверка отпуска ─────────────────────────
     if (form.userId) {
       setCheckingVacation(true);
       try {
@@ -143,7 +149,7 @@ export default function WeekDetailPage() {
         if (onVacation) {
           const userName =
             users.find((u) => u.id === form.userId)?.name ?? "Сотрудник";
-          const ok = confirm(
+          const ok = window.confirm(
             `⚠️ ${userName} находится в отпуске с ${vacation!.startDate} по ${
               vacation!.endDate
             }.\n\nВсё равно назначить смену на ${date}?`
@@ -160,34 +166,6 @@ export default function WeekDetailPage() {
       }
     }
 
-    // ─── Проверка пересечения смен ────────────────
-    if (form.userId) {
-      try {
-        const overlap = await shiftsApi.checkOverlap({
-          userId: form.userId,
-          weekId: currentWeek.id,
-          shiftDate: date,
-          startTime: form.startTime,
-          endTime: form.endTime,
-        });
-        if (overlap.overlaps) {
-          const conflicts = overlap.conflicting
-            .map((c) => `${c.startTime}–${c.endTime}`)
-            .join(", ");
-          const ok = confirm(
-            `⚠️ Пересечение смен\n\n` +
-              `У сотрудника ${overlap.userName} уже есть смена(ы) на ${date}: ${conflicts}.\n` +
-              `Новая смена: ${form.startTime}–${form.endTime}.\n\n` +
-              `Всё равно добавить?`
-          );
-          if (!ok) return;
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    // ─── Проверка лимитов 40 ч/нед ────────────────
     if (form.userId) {
       try {
         const check = await shiftsApi.checkLimits({
@@ -197,7 +175,7 @@ export default function WeekDetailPage() {
           endTime: form.endTime,
         });
         if (check.exceeds) {
-          const ok = confirm(
+          const ok = window.confirm(
             `⚠️ Превышение рабочей недели\n\n` +
               `${check.userName} уже работает ${check.currentHours} ч за эту неделю.\n` +
               `После добавления смены (${check.newShiftHours} ч) станет ${check.totalHours} ч.\n` +
@@ -228,17 +206,17 @@ export default function WeekDetailPage() {
         endTime: "18:00",
       });
     } catch (e: any) {
-      alert(e.response?.data?.error ?? "Ошибка создания смены");
+      window.alert(e.response?.data?.error ?? "Ошибка создания смены");
     }
   };
 
   const onRemoveShift = async (shiftId: string) => {
-    if (!confirm("Удалить смену?")) return;
+    if (!window.confirm("Удалить смену?")) return;
     try {
       await removeShift(shiftId);
       if (editingShift?.id === shiftId) setEditingShift(null);
     } catch (e: any) {
-      alert(e.response?.data?.error ?? "Ошибка удаления");
+      window.alert(e.response?.data?.error ?? "Ошибка удаления");
     }
   };
 
@@ -247,13 +225,15 @@ export default function WeekDetailPage() {
     try {
       const result = await publishWeek(currentWeek.id);
       if (!result.ok) {
-        alert("Нарушения ТК РФ:\n\n" + (result.violations ?? []).join("\n"));
+        window.alert(
+          "Нарушения ТК РФ:\n\n" + (result.violations ?? []).join("\n")
+        );
       } else {
-        alert("Неделя опубликована!");
+        window.alert("Неделя опубликована!");
         setEditMode(false);
       }
     } catch (e: any) {
-      alert(e.response?.data?.error ?? "Ошибка публикации");
+      window.alert(e.response?.data?.error ?? "Ошибка публикации");
     } finally {
       setPublishing(false);
     }
@@ -265,30 +245,16 @@ export default function WeekDetailPage() {
       const newWeek = await duplicateWeek(currentWeek.id);
       navigate(`/weeks/${newWeek.id}`);
     } catch (e: any) {
-      alert(e.response?.data?.error ?? "Ошибка копирования");
+      window.alert(e.response?.data?.error ?? "Ошибка копирования");
     } finally {
       setDuplicating(false);
-    }
-  };
-
-  const onExport = async () => {
-    setExporting(true);
-    try {
-      await exportApi.downloadWeek(
-        currentWeek.id,
-        String(currentWeek.weekStartDate).slice(0, 10)
-      );
-    } catch (e: any) {
-      alert(e.message ?? "Ошибка экспорта");
-    } finally {
-      setExporting(false);
     }
   };
 
   const onCopyDay = (date: string) => {
     const shifts = shiftsByDate[date] ?? [];
     if (shifts.length === 0) {
-      alert("В этом дне нет смен для копирования");
+      window.alert("В этом дне нет смен для копирования");
       return;
     }
     const snapshots: ShiftSnapshot[] = shifts.map((s) => ({
@@ -314,7 +280,7 @@ export default function WeekDetailPage() {
         if (onVacation) {
           const userName =
             users.find((u) => u.id === snap.userId)?.name ?? "Сотрудник";
-          const ok = confirm(
+          const ok = window.confirm(
             `⚠️ ${userName} в отпуске (${vacation!.startDate}–${
               vacation!.endDate
             }).\n\nВсё равно вставить эту смену на ${date}?`
@@ -351,11 +317,11 @@ export default function WeekDetailPage() {
 
     setPasteBusy(null);
     if (failed > 0) {
-      alert(`Вставлено: ${success}, с ошибками: ${failed}`);
+      window.alert(`Вставлено: ${success}, с ошибками: ${failed}`);
     }
   };
 
-  // ─── Drag-and-drop ───────────────────────────────────
+  // Drag-and-drop
   const onDragStart = (e: React.DragEvent, shiftId: string) => {
     if (!canEdit) return;
     setDraggingShiftId(shiftId);
@@ -394,35 +360,6 @@ export default function WeekDetailPage() {
     const oldDate = String(shift.shiftDate).slice(0, 10);
     if (oldDate === newDate) return;
 
-    // ─── Проверка пересечения ──────────────────────
-    if (shift.userId) {
-      try {
-        const overlap = await shiftsApi.checkOverlap({
-          userId: shift.userId,
-          weekId: currentWeek.id,
-          shiftDate: newDate,
-          startTime: shift.startTime,
-          endTime: shift.endTime,
-          excludeShiftId: shift.id,
-        });
-        if (overlap.overlaps) {
-          const conflicts = overlap.conflicting
-            .map((c) => `${c.startTime}–${c.endTime}`)
-            .join(", ");
-          const ok = confirm(
-            `⚠️ Пересечение смен\n\n` +
-              `У сотрудника ${overlap.userName} уже есть смена(ы) на ${newDate}: ${conflicts}.\n` +
-              `Переносимая смена: ${shift.startTime}–${shift.endTime}.\n\n` +
-              `Всё равно перенести?`
-          );
-          if (!ok) return;
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    // ─── Проверка лимитов ──────────────────────────
     if (shift.userId) {
       try {
         const check = await shiftsApi.checkLimits({
@@ -432,7 +369,7 @@ export default function WeekDetailPage() {
           endTime: shift.endTime,
         });
         if (check.exceeds) {
-          const ok = confirm(
+          const ok = window.confirm(
             `⚠️ У сотрудника уже превышение рабочей недели: ${check.currentHours} ч при норме ${check.limit} ч.\n\nВсё равно перенести смену на ${newDate}?`
           );
           if (!ok) return;
@@ -442,7 +379,6 @@ export default function WeekDetailPage() {
       }
     }
 
-    // ─── Проверка отпуска ──────────────────────────
     if (shift.userId) {
       try {
         const { onVacation, vacation } = await vacationsApi.check(
@@ -452,7 +388,7 @@ export default function WeekDetailPage() {
         if (onVacation) {
           const userName =
             users.find((u) => u.id === shift.userId)?.name ?? "Сотрудник";
-          const ok = confirm(
+          const ok = window.confirm(
             `⚠️ ${userName} находится в отпуске с ${vacation!.startDate} по ${
               vacation!.endDate
             }.\n\nВсё равно перенести смену на ${newDate}?`
@@ -467,8 +403,14 @@ export default function WeekDetailPage() {
     try {
       await updateShift(shift.id, { shiftDate: newDate });
     } catch (err: any) {
-      alert(err.response?.data?.error ?? "Ошибка переноса");
+      window.alert(err.response?.data?.error ?? "Ошибка переноса");
     }
+  };
+
+  // Клик по дню — разворот (только вне режима редактирования)
+  const onDayClick = (date: string) => {
+    if (editMode) return;
+    setExpandedDate((prev) => (prev === date ? null : date));
   };
 
   const userById = (uid: string | null) =>
@@ -478,6 +420,7 @@ export default function WeekDetailPage() {
     tid ? templates.find((t) => t.id === tid) : undefined;
 
   const totalShifts = currentWeek.shifts?.length ?? 0;
+  const hasExpanded = !editMode && expandedDate !== null;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -523,16 +466,6 @@ export default function WeekDetailPage() {
                 )}
               </button>
             )}
-
-
-            <button
-              onClick={onExport}
-              disabled={exporting}
-              className="inline-flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-3.5 py-2 rounded-xl hover:bg-slate-50 disabled:opacity-50 text-sm font-medium transition-all"
-            >
-              <Download className="w-4 h-4" />
-              {exporting ? "..." : "В Excel"}
-            </button>
 
             <button
               onClick={onDuplicate}
@@ -596,8 +529,8 @@ export default function WeekDetailPage() {
                 Режим редактирования
               </div>
               <div className="text-emerald-700 mt-0.5">
-                Перетаскивайте смены между днями. <b>Клик по смене</b> — откроет
-                редактирование. Копируйте смены между днями.
+                Перетаскивайте смены между днями. <b>Клик по смене</b> —
+                откроет редактирование. Копируйте смены между днями.
                 {clipboard.length > 0 && (
                   <>
                     {" "}
@@ -615,6 +548,17 @@ export default function WeekDetailPage() {
                 Очистить буфер
               </button>
             )}
+          </div>
+        )}
+
+        {/* Подсказка разворота (вне режима редактирования) */}
+        {!editMode && (
+          <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3 mb-4 flex items-center gap-3 text-xs text-blue-800">
+            <Maximize2 className="w-4 h-4 shrink-0" />
+            <span>
+              Нажмите на любой день, чтобы развернуть его и увидеть все смены
+              в одну линию. Повторный клик — свернуть.
+            </span>
           </div>
         )}
 
@@ -640,30 +584,40 @@ export default function WeekDetailPage() {
           </div>
         )}
 
-        {/* Сетка 7 дней */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-3">
+        {/* Сетка дней: flex на lg, чтобы разворот работал */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:flex lg:flex-row lg:items-stretch">
           {dates.map((date) => {
             const dayShifts = shiftsByDate[date] ?? [];
             const isToday = date === new Date().toISOString().slice(0, 10);
             const hasClipboard = clipboard.length > 0;
             const isPasting = pasteBusy === date;
             const isDragOver = dragOverDate === date;
+            const isExpanded = !editMode && expandedDate === date;
 
             return (
               <div
                 key={date}
+                onClick={() => onDayClick(date)}
                 onDragOver={(e) => onDragOver(e, date)}
                 onDragLeave={(e) => onDragLeave(e, date)}
                 onDrop={(e) => onDrop(e, date)}
-                className={`bg-white rounded-2xl border shadow-sm p-3 min-h-[220px] flex flex-col transition-all ${
+                className={`bg-white rounded-2xl border shadow-sm p-3 min-h-[220px] flex flex-col transition-all duration-300 ${
+                  !editMode ? "cursor-pointer" : ""
+                } ${
                   isDragOver
                     ? "border-brand-400 ring-2 ring-brand-500/30 bg-brand-50/40"
                     : isToday
                     ? "border-brand-300 ring-2 ring-brand-500/10"
+                    : isExpanded
+                    ? "border-brand-400 ring-2 ring-brand-400/40"
                     : canEdit
                     ? "border-emerald-200"
                     : "border-slate-200"
-                }`}
+                } ${
+                  isExpanded ? "lg:flex-[3]" : "lg:flex-1"
+                } ${
+                  hasExpanded && !isExpanded ? "lg:min-w-0" : ""
+                } hover:border-slate-300`}
               >
                 {/* Заголовок дня */}
                 <div
@@ -679,11 +633,23 @@ export default function WeekDetailPage() {
                     >
                       {dayLabel(date)}
                     </div>
-                    {isToday && (
-                      <span className="text-[10px] uppercase tracking-wide text-brand-600 font-semibold">
-                        сегодня
-                      </span>
-                    )}
+
+                    <div className="flex items-center gap-1">
+                      {isToday && (
+                        <span className="text-[10px] uppercase tracking-wide text-brand-600 font-semibold">
+                          сегодня
+                        </span>
+                      )}
+                      {!editMode && (
+                        <span className="text-slate-300">
+                          {isExpanded ? (
+                            <Minimize2 className="w-3.5 h-3.5" />
+                          ) : (
+                            <Maximize2 className="w-3.5 h-3.5" />
+                          )}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="text-xs text-slate-500 mt-0.5 flex items-center justify-between">
                     <span>{shortDate(date)}</span>
@@ -691,7 +657,10 @@ export default function WeekDetailPage() {
                     {canEdit && (
                       <div className="flex items-center gap-1">
                         <button
-                          onClick={() => onCopyDay(date)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onCopyDay(date);
+                          }}
                           disabled={dayShifts.length === 0}
                           className="p-1 rounded-md text-slate-400 hover:text-brand-600 hover:bg-brand-50 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400 transition-colors"
                           title={
@@ -703,7 +672,10 @@ export default function WeekDetailPage() {
                           <Clipboard className="w-3.5 h-3.5" />
                         </button>
                         <button
-                          onClick={() => onPasteDay(date)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onPasteDay(date);
+                          }}
                           disabled={!hasClipboard || isPasting}
                           className="p-1 rounded-md text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400 transition-colors"
                           title={
@@ -724,7 +696,13 @@ export default function WeekDetailPage() {
                 </div>
 
                 {/* Смены */}
-                <div className="space-y-2 flex-1">
+                <div
+                  className={`${
+                    isExpanded
+                      ? "flex flex-wrap gap-2 content-start"
+                      : "space-y-2"
+                  } flex-1`}
+                >
                   {dayShifts.map((s) => {
                     const tpl = templateById(s.templateId);
                     const color = tpl?.color ?? "#3B82F6";
@@ -735,13 +713,17 @@ export default function WeekDetailPage() {
                         draggable={canEdit}
                         onDragStart={(e) => onDragStart(e, s.id)}
                         onDragEnd={onDragEnd}
-                        onClick={() => {
-                          // Клик открывает модалку, но только если не было drag
+                        onClick={(e) => {
+                          e.stopPropagation();
                           if (!canEdit) return;
                           if (draggingShiftId) return;
                           setEditingShift(s);
                         }}
-                        className={`group relative text-xs p-2 rounded-lg border-l-4 transition-all ${
+                        className={`group relative rounded-lg border-l-4 transition-all ${
+                          isExpanded
+                            ? "flex-1 min-w-[140px] text-[11px] p-1.5"
+                            : "text-xs p-2"
+                        } ${
                           canEdit
                             ? "cursor-pointer active:cursor-grabbing hover:ring-2 hover:ring-offset-1 hover:ring-brand-300"
                             : ""
@@ -761,10 +743,14 @@ export default function WeekDetailPage() {
                           />
                           {s.startTime}–{s.endTime}
                         </div>
-                        <div className="text-slate-600 truncate mt-0.5">
+                        <div
+                          className={`text-slate-600 truncate ${
+                            isExpanded ? "mt-0.5" : "mt-0.5"
+                          }`}
+                        >
                           {userById(s.userId)}
                         </div>
-                        {tpl && (
+                        {tpl && !isExpanded && (
                           <div className="text-slate-400 truncate mt-0.5">
                             {tpl.name}
                           </div>
@@ -787,7 +773,9 @@ export default function WeekDetailPage() {
 
                   {dayShifts.length === 0 && (
                     <div
-                      className={`text-xs text-center py-4 ${
+                      className={`text-xs text-center ${
+                        isExpanded ? "py-6" : "py-4"
+                      } ${
                         isDragOver
                           ? "text-brand-500 font-medium"
                           : "text-slate-300"
@@ -801,7 +789,10 @@ export default function WeekDetailPage() {
                 {/* Кнопка добавления */}
                 {canEdit && showAddFor !== date && (
                   <button
-                    onClick={() => setShowAddFor(date)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowAddFor(date);
+                    }}
                     className="mt-2 w-full inline-flex items-center justify-center gap-1 text-xs text-slate-500 hover:text-brand-600 hover:bg-brand-50 py-1.5 rounded-lg border border-dashed border-slate-200 hover:border-brand-300 transition-all"
                   >
                     <Plus className="w-3 h-3" />
@@ -811,7 +802,10 @@ export default function WeekDetailPage() {
 
                 {/* Форма добавления */}
                 {canEdit && showAddFor === date && (
-                  <div className="mt-2 space-y-1.5 text-xs animate-fade-in">
+                  <div
+                    className="mt-2 space-y-1.5 text-xs animate-fade-in"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <select
                       value={form.templateId}
                       onChange={(e) => onTemplateChange(e.target.value)}
@@ -886,14 +880,20 @@ export default function WeekDetailPage() {
 
                     <div className="flex gap-1">
                       <button
-                        onClick={() => onAddShift(date)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onAddShift(date);
+                        }}
                         disabled={checkingVacation}
                         className="flex-1 bg-brand-600 text-white py-1.5 rounded-lg hover:bg-brand-700 disabled:opacity-50 text-xs font-medium transition-colors"
                       >
                         {checkingVacation ? "..." : "Добавить"}
                       </button>
                       <button
-                        onClick={() => setShowAddFor(null)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowAddFor(null);
+                        }}
                         className="px-2 py-1.5 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors"
                         title="Отмена"
                       >
@@ -908,7 +908,7 @@ export default function WeekDetailPage() {
         </div>
       </main>
 
-      {/* ═══ Модалка редактирования смены ═══════════════ */}
+      {/* Модалка редактирования смены */}
       {editingShift && (
         <ShiftEditModal
           shift={editingShift}
@@ -917,12 +917,7 @@ export default function WeekDetailPage() {
           users={users}
           templates={templates}
           onClose={() => setEditingShift(null)}
-          onSaved={(updated) => {
-            setEditingShift(null);
-            // Обновление произойдёт через store (updateShift)
-            // но на всякий случай
-            void updated;
-          }}
+          onSaved={() => setEditingShift(null)}
           onUpdate={updateShift}
           onDelete={onRemoveShift}
         />
@@ -931,17 +926,13 @@ export default function WeekDetailPage() {
   );
 }
 
-// ═══════════════════════════════════════════════════════
-// Модалка редактирования смены
-// ═══════════════════════════════════════════════════════
+// ═══ Модалка редактирования смены ═══════════════════════
 function ShiftEditModal({
   shift,
   weekId,
-  allShifts,
   users,
   templates,
   onClose,
-  onSaved,
   onUpdate,
   onDelete,
 }: {
@@ -949,7 +940,13 @@ function ShiftEditModal({
   weekId: string;
   allShifts: ScheduledShift[];
   users: { id: string; name: string; email: string }[];
-  templates: { id: string; name: string; startTime: string; endTime: string; color: string }[];
+  templates: {
+    id: string;
+    name: string;
+    startTime: string;
+    endTime: string;
+    color: string;
+  }[];
   onClose: () => void;
   onSaved: (updated: ScheduledShift) => void;
   onUpdate: (
@@ -985,35 +982,6 @@ function ShiftEditModal({
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // ─── Проверка пересечения ──────────────────────
-    if (userId) {
-      try {
-        const overlap = await shiftsApi.checkOverlap({
-          userId,
-          weekId,
-          shiftDate,
-          startTime,
-          endTime,
-          excludeShiftId: shift.id,
-        });
-        if (overlap.overlaps) {
-          const conflicts = overlap.conflicting
-            .map((c) => `${c.startTime}–${c.endTime}`)
-            .join(", ");
-          const ok = confirm(
-            `⚠️ Пересечение смен\n\n` +
-              `У сотрудника ${overlap.userName} уже есть смена(ы) на ${shiftDate}: ${conflicts}.\n` +
-              `Редактируемая смена: ${startTime}–${endTime}.\n\n` +
-              `Всё равно сохранить?`
-          );
-          if (!ok) return;
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    // ─── Проверка лимитов ──────────────────────────
     if (userId) {
       try {
         const check = await shiftsApi.checkLimits({
@@ -1024,7 +992,7 @@ function ShiftEditModal({
           excludeShiftId: shift.id,
         });
         if (check.exceeds) {
-          const ok = confirm(
+          const ok = window.confirm(
             `⚠️ Превышение рабочей недели\n\n` +
               `${check.userName} уже работает ${check.currentHours} ч (без этой смены).\n` +
               `С этой сменой (${check.newShiftHours} ч) станет ${check.totalHours} ч.\n` +
@@ -1036,10 +1004,7 @@ function ShiftEditModal({
       } catch {
         // ignore
       }
-    }
 
-    // ─── Проверка отпуска ──────────────────────────
-    if (userId) {
       try {
         const { onVacation, vacation } = await vacationsApi.check(
           userId,
@@ -1048,7 +1013,7 @@ function ShiftEditModal({
         if (onVacation) {
           const userName =
             users.find((u) => u.id === userId)?.name ?? "Сотрудник";
-          const ok = confirm(
+          const ok = window.confirm(
             `⚠️ ${userName} в отпуске (${vacation!.startDate}–${
               vacation!.endDate
             }).\n\nВсё равно сохранить смену на ${shiftDate}?`
@@ -1071,7 +1036,7 @@ function ShiftEditModal({
       });
       onClose();
     } catch (e: any) {
-      alert(e.response?.data?.error ?? "Ошибка сохранения");
+      window.alert(e.response?.data?.error ?? "Ошибка сохранения");
     } finally {
       setBusy(false);
     }
@@ -1086,7 +1051,6 @@ function ShiftEditModal({
         className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-6 animate-fade-in"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Заголовок */}
         <div className="flex items-start justify-between mb-5">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center">
