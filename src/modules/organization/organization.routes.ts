@@ -8,6 +8,7 @@ const updateSchema = z.object({
   directorName: z.string().max(255).nullable().optional(),
   inn: z.string().max(20).nullable().optional(),
   legalAddress: z.string().max(500).nullable().optional(),
+  timeTrackingEnabled: z.boolean().optional(),
 });
 
 export async function organizationRoutes(app: FastifyInstance) {

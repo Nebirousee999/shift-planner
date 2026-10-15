@@ -10,9 +10,13 @@ import {
   UserPlus,
   FileText,
   Activity,
+  Bell,
+  Palmtree,
+  ArrowLeftRight,
 } from "lucide-react";
 import { dashboardApi, type DashboardSummary } from "../api/dashboard";
 import { useAuth } from "../store/auth";
+import { useNotifications } from "../store/notifications";
 import NavBar from "../components/NavBar";
 import { fullDate } from "../lib/dates";
 
@@ -49,13 +53,117 @@ export default function DashboardPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const firstName = user?.name?.split(" ")[0] ?? user?.email?.split("@")[0];
+  const {
+    vacationsPending,
+    swapsIncoming,
+    shiftChangesIncoming,
+    refresh: refreshNotifications,
+  } = useNotifications();
+
+  useEffect(() => {
+    refreshNotifications();
+    const interval = setInterval(refreshNotifications, 30_000);
+    return () => clearInterval(interval);
+  }, [refreshNotifications]);
+
+  const totalPending =
+    vacationsPending + swapsIncoming + shiftChangesIncoming;
+
+  const firstName =
+    user?.name?.split(" ")[0] ?? user?.email?.split("@")[0];
 
   return (
     <div className="min-h-screen bg-slate-50">
       <NavBar />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+        {/* ═══ Уведомления о запросах, требующих решения ═══ */}
+        {totalPending > 0 && (
+          <div className="bg-amber-50 border border-amber-300 rounded-2xl p-5 mb-6 animate-fade-in">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
+                <Bell className="w-5 h-5 text-amber-700" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 className="font-semibold text-amber-900">
+                  Требуют вашего решения
+                </h2>
+                <p className="text-xs text-amber-700 mt-0.5">
+                  Есть запросы, которые ждут вашего действия
+                </p>
+              </div>
+              <span className="px-2.5 py-1 rounded-full bg-amber-200 text-amber-900 text-xs font-bold shrink-0">
+                {totalPending}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {shiftChangesIncoming > 0 && (
+                <button
+                  onClick={() => navigate("/weeks")}
+                  className="flex items-center gap-3 p-3 bg-white rounded-xl border border-amber-200 hover:border-amber-400 hover:shadow-sm transition-all text-left group"
+                >
+                  <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
+                    <CalendarDays className="w-4 h-4 text-amber-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-slate-900 text-sm">
+                      Изменения смен
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {shiftChangesIncoming}{" "}
+                      {shiftChangesIncoming === 1 ? "запрос" : "запросов"}
+                    </div>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-amber-600 transition-colors shrink-0" />
+                </button>
+              )}
+
+              {vacationsPending > 0 && (
+                <button
+                  onClick={() => navigate("/vacations")}
+                  className="flex items-center gap-3 p-3 bg-white rounded-xl border border-amber-200 hover:border-amber-400 hover:shadow-sm transition-all text-left group"
+                >
+                  <div className="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+                    <Palmtree className="w-4 h-4 text-emerald-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-slate-900 text-sm">
+                      Изменения отпусков
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {vacationsPending}{" "}
+                      {vacationsPending === 1 ? "запрос" : "запросов"}
+                    </div>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-amber-600 transition-colors shrink-0" />
+                </button>
+              )}
+
+              {swapsIncoming > 0 && (
+                <button
+                  onClick={() => navigate("/swaps")}
+                  className="flex items-center gap-3 p-3 bg-white rounded-xl border border-amber-200 hover:border-amber-400 hover:shadow-sm transition-all text-left group"
+                >
+                  <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                    <ArrowLeftRight className="w-4 h-4 text-blue-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-slate-900 text-sm">
+                      Обмены сменами
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {swapsIncoming}{" "}
+                      {swapsIncoming === 1 ? "предложение" : "предложений"}
+                    </div>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-amber-600 transition-colors shrink-0" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Приветствие */}
         <div className="mb-8 animate-fade-in">
           <h1 className="text-3xl font-bold text-slate-900">
@@ -80,6 +188,7 @@ export default function DashboardPage() {
                 label="Сотрудников"
                 value={data.userCount}
                 onClick={() => navigate("/team")}
+                showDot={vacationsPending > 0}
               />
               <MetricCard
                 icon={Calendar}
@@ -95,6 +204,7 @@ export default function DashboardPage() {
                 value={data.weekStats.total}
                 hint={`${data.weekStats.draft} черновик · ${data.weekStats.published} опубликовано`}
                 onClick={() => navigate("/weeks")}
+                showDot={shiftChangesIncoming > 0}
               />
               <MetricCard
                 icon={Clock}
@@ -246,6 +356,7 @@ function MetricCard({
   value,
   hint,
   onClick,
+  showDot,
 }: {
   icon: React.ElementType;
   iconBg: string;
@@ -253,12 +364,19 @@ function MetricCard({
   value: number;
   hint?: string;
   onClick?: () => void;
+  showDot?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
-      className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 text-left hover:shadow-md hover:border-slate-300 transition-all animate-fade-in"
+      className="relative bg-white rounded-2xl border border-slate-200 shadow-sm p-5 text-left hover:shadow-md hover:border-slate-300 transition-all animate-fade-in"
     >
+      {showDot && (
+        <span
+          className="absolute top-3 right-3 w-2.5 h-2.5 rounded-full bg-amber-500 ring-2 ring-white"
+          title="Требуется ваше решение"
+        />
+      )}
       <div
         className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 ${iconBg}`}
       >

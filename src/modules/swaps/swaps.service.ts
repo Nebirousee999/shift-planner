@@ -6,6 +6,7 @@ import {
   scheduleWeeks,
   users,
 } from "../../../db/schema.js";
+import { shiftsOverlap } from "../../lib/time.js"; // ← добавь в импорты вверху файла
 
 export const swapsService = {
   // Все запросы организации (для владельца)
@@ -51,19 +52,36 @@ export const swapsService = {
 
   // Входящие предложения мне
   async incoming(userId: string) {
-    return db
+    const rows = await db
       .select()
       .from(shiftSwapRequests)
       .where(
         and(
           eq(shiftSwapRequests.status, "PENDING"),
-          or(
-            eq(shiftSwapRequests.swapWithUserId, userId),
-            // открытые смены — сюда добавим через фильтр null ниже
-          ),
-        ),
+          eq(shiftSwapRequests.swapWithUserId, userId)
+        )
       )
       .orderBy(desc(shiftSwapRequests.createdAt));
+
+    const shifts = await db.select().from(scheduledShifts);
+    const shiftMap = new Map(shifts.map((s) => [s.id, s]));
+
+    const allUsers = await db
+      .select({ id: users.id, name: users.name })
+      .from(users);
+    const userMap = new Map(allUsers.map((u) => [u.id, u.name]));
+
+    return rows.map((r) => {
+      const shift = shiftMap.get(r.shiftId);
+      return {
+        ...r,
+        requestedByName: userMap.get(r.requestedBy) ?? "—",
+        shiftDate: shift?.shiftDate ?? null,
+        startTime: shift?.startTime ?? null,
+        endTime: shift?.endTime ?? null,
+        templateId: shift?.templateId ?? null,
+      };
+    });
   },
 
   // Открытые смены (swapWithUserId = null) — видны всем сотрудникам
@@ -102,14 +120,13 @@ export const swapsService = {
       throw new Error("NOT_YOUR_SHIFT");
     }
 
-    // Неделя — не PUBLISHED (правило: обмен только для черновиков? нет, наоборот — для опубликованных)
     const [week] = await db
       .select()
       .from(scheduleWeeks)
       .where(eq(scheduleWeeks.id, shift.weekId));
     if (!week || week.orgId !== input.orgId) throw new Error("SHIFT_NOT_FOUND");
 
-    // Проверяем, что swapWithUserId из той же организации
+    // Проверяем target
     if (input.swapWithUserId) {
       const [target] = await db
         .select()
@@ -122,6 +139,37 @@ export const swapsService = {
         );
       if (!target) throw new Error("USER_NOT_FOUND");
       if (target.id === input.requestedBy) throw new Error("SELF_SWAP");
+
+      // ⚡ НОВОЕ: проверяем, что у target нет пересекающейся смены в этот день
+      const shiftDateStr = String(shift.shiftDate).slice(0, 10);
+
+      const sameDayShifts = await db
+        .select()
+        .from(scheduledShifts)
+        .where(
+          and(
+            eq(scheduledShifts.userId, input.swapWithUserId),
+            eq(scheduledShifts.shiftDate, shiftDateStr),
+          ),
+        );
+
+      const newShift = {
+        date: shiftDateStr,
+        start: shift.startTime,
+        end: shift.endTime,
+      };
+
+      const conflict = sameDayShifts.find((s) =>
+        shiftsOverlap(newShift, {
+          date: String(s.shiftDate).slice(0, 10),
+          start: s.startTime,
+          end: s.endTime,
+        })
+      );
+
+      if (conflict) {
+        throw new Error("TARGET_BUSY");
+      }
     }
 
     const [request] = await db

@@ -20,6 +20,17 @@ type AuthState = {
   changePassword: (oldPassword: string, newPassword: string) => Promise<void>;
 };
 
+// ─── Сброс organization-стора без циклического импорта ──
+function resetOrganizationStore() {
+  import("./organization")
+    .then(({ useOrganization }) => {
+      useOrganization.setState({ org: null });
+    })
+    .catch(() => {
+      // если модуль не загрузился — не критично
+    });
+}
+
 export const useAuth = create<AuthState>((set) => ({
   user: null,
   token: null,
@@ -52,6 +63,8 @@ export const useAuth = create<AuthState>((set) => ({
       });
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
+      // Сбрасываем старую организацию (если пользователь до этого был другой)
+      resetOrganizationStore();
       set({ user: data.user, token: data.token, loading: false });
       return true;
     } catch (e: any) {
@@ -67,6 +80,7 @@ export const useAuth = create<AuthState>((set) => ({
       const { data } = await api.post<AuthResponse>("/auth/register", payload);
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
+      resetOrganizationStore();
       set({ user: data.user, token: data.token, loading: false });
       return true;
     } catch (e: any) {
@@ -79,6 +93,9 @@ export const useAuth = create<AuthState>((set) => ({
   logout: () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
+    // Сбрасываем кэш организации, чтобы при следующем входе под другим
+    // пользователем NavBar не мигал чужой организацией
+    resetOrganizationStore();
     set({ user: null, token: null });
   },
 

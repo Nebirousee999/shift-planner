@@ -22,4 +22,16 @@ export const notificationsApi = {
       return 0;
     }
   },
+
+  // ← НОВОЕ
+  shiftChangesIncomingCount: async (): Promise<number> => {
+    try {
+      const { data } = await api.get<{ count: number }>(
+        "/shift-change-requests/incoming/count"
+      );
+      return data.count;
+    } catch {
+      return 0;
+    }
+  },
 };

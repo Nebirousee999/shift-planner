@@ -7,6 +7,7 @@ export type Organization = {
   directorName: string | null;
   inn: string | null;
   legalAddress: string | null;
+  timeTrackingEnabled: boolean;
   createdAt: string;
 };
 
@@ -22,6 +23,7 @@ export const organizationApi = {
     directorName?: string | null;
     inn?: string | null;
     legalAddress?: string | null;
+    timeTrackingEnabled?: boolean;
   }): Promise<Organization> => {
     const { data } = await api.patch<Organization>("/organization", input);
     return data;

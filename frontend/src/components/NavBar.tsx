@@ -1,7 +1,6 @@
 import { useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
-  LayoutDashboard,
   Calendar,
   Users,
   CalendarDays,
@@ -17,9 +16,14 @@ import {
 } from "lucide-react";
 import { useAuth } from "../store/auth";
 import { useNotifications } from "../store/notifications";
+import { useOrganization } from "../store/organization";
 
-// ─── Структура вкладок ──────────────────────────────
-type TabLink = { path: string; label: string; icon: React.ElementType };
+type TabLink = {
+  path: string;
+  label: string;
+  icon: React.ElementType;
+  hideIfTimeTrackingOff?: boolean;
+};
 type TabCategory = { id: string; label: string; links: TabLink[] };
 
 const CATEGORIES: TabCategory[] = [
@@ -29,7 +33,12 @@ const CATEGORIES: TabCategory[] = [
     links: [
       { path: "/weeks", label: "Недели", icon: CalendarDays },
       { path: "/templates", label: "Шаблоны", icon: Calendar },
-      { path: "/time", label: "Учёт времени", icon: Clock },
+      {
+        path: "/time",
+        label: "Учёт времени",
+        icon: Clock,
+        hideIfTimeTrackingOff: true,
+      },
       { path: "/swaps", label: "Обмены", icon: ArrowLeftRight },
     ],
   },
@@ -56,31 +65,59 @@ const CATEGORIES: TabCategory[] = [
   },
 ];
 
-function getCategoryByPath(pathname: string): TabCategory | null {
-  for (const cat of CATEGORIES) {
-    for (const link of cat.links) {
-      if (pathname === link.path || pathname.startsWith(link.path + "/")) {
-        return cat;
-      }
-    }
-  }
-  return null;
-}
-
 function isActive(pathname: string, path: string): boolean {
   return pathname === path || pathname.startsWith(path + "/");
+}
+
+// Универсальный inline-бейдж
+function Badge({ value, tone = "red" }: { value: number; tone?: "red" | "amber" }) {
+  if (value <= 0) return null;
+  const cls =
+    tone === "red"
+      ? "bg-red-500 text-white"
+      : "bg-amber-500 text-white";
+  return (
+    <span
+      className={`ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold leading-none ${cls}`}
+    >
+      {value > 99 ? "99+" : value}
+    </span>
+  );
 }
 
 export default function NavBar() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { user, logout } = useAuth();
-  const { vacationsPending, swapsIncoming, refresh } = useNotifications();
+  const {
+    vacationsPending,
+    swapsIncoming,
+    shiftChangesIncoming,
+    refresh,
+  } = useNotifications();
+  const org = useOrganization((s) => s.org);
 
   const isAdmin = user?.role === "OWNER" || user?.role === "MANAGER";
-  const currentCategory = getCategoryByPath(pathname);
+  const timeTrackingOn = org?.timeTrackingEnabled !== false;
 
-  // ─── Обновление счётчиков каждые 30 секунд ────────
+  const visibleCategories = CATEGORIES.map((cat) => ({
+    ...cat,
+    links: cat.links.filter(
+      (link) => !(link.hideIfTimeTrackingOff && !timeTrackingOn)
+    ),
+  }));
+
+  const currentCategory = (() => {
+    for (const cat of visibleCategories) {
+      for (const link of cat.links) {
+        if (pathname === link.path || pathname.startsWith(link.path + "/")) {
+          return cat;
+        }
+      }
+    }
+    return null;
+  })();
+
   useEffect(() => {
     if (!isAdmin) return;
     refresh();
@@ -93,7 +130,7 @@ export default function NavBar() {
     navigate("/login");
   };
 
-  // Для сотрудника — упрощённое меню
+  // ─── Сотрудник ──────────────────────────────────────
   if (!isAdmin) {
     return (
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30 backdrop-blur-sm bg-white/90">
@@ -150,10 +187,9 @@ export default function NavBar() {
     );
   }
 
-  // Для владельца/менеджера — полное меню с категориями
+  // ─── Админ ──────────────────────────────────────────
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-30 backdrop-blur-sm bg-white/95">
-      {/* Верхняя строка: логотип + категории + профиль/справка/выход */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
         <div className="flex items-center gap-6 min-w-0">
           <button
@@ -170,31 +206,28 @@ export default function NavBar() {
           </button>
 
           <nav className="flex items-center gap-1 overflow-x-auto">
-            {CATEGORIES.map((cat) => {
+            {visibleCategories.map((cat) => {
               const active = currentCategory?.id === cat.id;
               const firstLink = cat.links[0];
+              if (!firstLink) return null;
 
-              // Бейдж на категорию
               let badge = 0;
               if (cat.id === "users") badge = vacationsPending;
-              if (cat.id === "schedule") badge = swapsIncoming;
+              if (cat.id === "schedule")
+                badge = swapsIncoming + shiftChangesIncoming;
 
               return (
                 <button
                   key={cat.id}
                   onClick={() => navigate(firstLink.path)}
-                  className={`relative px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors ${
+                  className={`inline-flex items-center px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors ${
                     active
                       ? "bg-brand-50 text-brand-700 font-medium"
                       : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
                   }`}
                 >
-                  {cat.label}
-                  {badge > 0 && (
-                    <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold">
-                      {badge > 99 ? "99+" : badge}
-                    </span>
-                  )}
+                  <span>{cat.label}</span>
+                  <Badge value={badge} />
                 </button>
               );
             })}
@@ -238,57 +271,33 @@ export default function NavBar() {
         </div>
       </div>
 
-      {/* Нижняя строка: подменю активной категории */}
-      {currentCategory && currentCategory.links.length > 1 && (
+      {/* Подменю активной категории */}
+      {currentCategory && currentCategory.links.length > 0 && (
         <div className="border-t border-slate-100 bg-slate-50/50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center gap-1 overflow-x-auto">
             {currentCategory.links.map((link) => {
               const Icon = link.icon;
               const active = isActive(pathname, link.path);
 
-              // Бейдж на конкретный пункт
               let badge = 0;
               if (link.path === "/vacations") badge = vacationsPending;
               if (link.path === "/swaps") badge = swapsIncoming;
+              if (link.path === "/weeks") badge = shiftChangesIncoming;
 
               return (
                 <button
                   key={link.path}
                   onClick={() => navigate(link.path)}
-                  className={`relative flex items-center gap-2 px-3 py-2 text-sm whitespace-nowrap border-b-2 transition-colors ${
+                  className={`inline-flex items-center gap-2 px-3 py-2 text-sm whitespace-nowrap border-b-2 transition-colors ${
                     active
                       ? "border-brand-600 text-brand-700 font-medium"
                       : "border-transparent text-slate-600 hover:text-slate-900"
                   }`}
                 >
                   <Icon className="w-4 h-4" />
-                  {link.label}
-                  {badge > 0 && (
-                    <span className="ml-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold">
-                      {badge > 99 ? "99+" : badge}
-                    </span>
-                  )}
+                  <span>{link.label}</span>
+                  <Badge value={badge} />
                 </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Если категория одна — подменю всё равно показываем */}
-      {currentCategory && currentCategory.links.length === 1 && (
-        <div className="border-t border-slate-100 bg-slate-50/50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center gap-1">
-            {currentCategory.links.map((link) => {
-              const Icon = link.icon;
-              return (
-                <div
-                  key={link.path}
-                  className="flex items-center gap-2 px-3 py-2 text-sm border-b-2 border-brand-600 text-brand-700 font-medium"
-                >
-                  <Icon className="w-4 h-4" />
-                  {link.label}
-                </div>
               );
             })}
           </div>

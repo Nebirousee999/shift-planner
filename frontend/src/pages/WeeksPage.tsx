@@ -12,6 +12,10 @@ import {
 } from "lucide-react";
 import { useWeeks } from "../store/weeks";
 import { useShiftTemplates } from "../store/shiftTemplates";
+import {
+  shiftChangeRequestsApi,
+  type ShiftChangeRequest,
+} from "../api/shiftChangeRequests";
 import NavBar from "../components/NavBar";
 
 // ─── Утилиты ─────────────────────────────────────────
@@ -64,7 +68,6 @@ function buildMonthWeeks(year: number, month: number): Date[][] {
   return weeks;
 }
 
-// Переводит "HH:MM" в минуты с начала суток
 function timeToMinutes(t: string): number {
   const [h, m] = t.split(":").map(Number);
   return h * 60 + m;
@@ -99,8 +102,6 @@ const STATUS_META: Record<string, StatusMeta> = {
 };
 
 // ─── Мини-таймлайн смен ──────────────────────────────
-// Смена отображается как горизонтальная полоса.
-// Позиция и ширина — в % от ширины ячейки, относительно 24 часов.
 function ShiftLines({
   shifts,
   templateColorById,
@@ -115,7 +116,6 @@ function ShiftLines({
       {shifts.map((s, i) => {
         const start = timeToMinutes(s.startTime);
         const end = timeToMinutes(s.endTime);
-        // Ночные смены (end <= start) — растягиваем до конца суток
         const endFixed = end <= start ? 24 * 60 : end;
         const leftPct = (start / (24 * 60)) * 100;
         const widthPct = ((endFixed - start) / (24 * 60)) * 100;
@@ -152,11 +152,25 @@ export default function WeeksPage() {
   const [newDate, setNewDate] = useState(today.toISOString().slice(0, 10));
   const [creating, setCreating] = useState(false);
 
+  const [pendingDates, setPendingDates] = useState<Set<string>>(new Set());
+
   const todayStr = today.toISOString().slice(0, 10);
 
   useEffect(() => {
     fetchWeeks();
     fetchTemplates();
+    Promise.all([
+      shiftChangeRequestsApi.incoming().catch(() => []),
+      shiftChangeRequestsApi.outgoing().catch(() => []),
+    ]).then(([inc, out]) => {
+      const set = new Set<string>();
+      for (const r of [...inc, ...out]) {
+        if (r.status !== "PENDING") continue;
+        set.add(String(r.oldShiftDate).slice(0, 10));
+        set.add(String(r.newShiftDate).slice(0, 10));
+      }
+      setPendingDates(set);
+    });
   }, [fetchWeeks, fetchTemplates]);
 
   const calendarWeeks = useMemo(
@@ -172,9 +186,8 @@ export default function WeeksPage() {
     return map;
   }, [weeks]);
 
-  // Цвет по templateId — берём из шаблонов
   const templateColorById = (id: string | null): string => {
-    if (!id) return "#94A3B8"; // серый по умолчанию
+    if (!id) return "#94A3B8";
     return templates.find((t) => t.id === id)?.color ?? "#94A3B8";
   };
 
@@ -230,7 +243,7 @@ export default function WeeksPage() {
             <h1 className="text-3xl font-bold text-slate-900">Недели</h1>
             <p className="text-sm text-slate-500 mt-1">
               Нажмите на неделю — откроется график. Полоски под числами
-              показывают смены
+              показывают смены. Янтарная точка — есть запрос на изменение.
             </p>
           </div>
           <button
@@ -351,7 +364,6 @@ export default function WeeksPage() {
 
             const hasToday = week.some((d) => toDateStr(d) === todayStr);
 
-            // Смены этой недели по датам
             const shiftsByDate = new Map<string, any[]>();
             for (const s of existing?.shifts ?? []) {
               const dateKey = String(s.shiftDate).slice(0, 10);
@@ -374,21 +386,30 @@ export default function WeeksPage() {
                   />
                 )}
 
-                {/* 7 ячеек с числами и полосками смен */}
+                {/* 7 ячеек с числами */}
                 {week.map((d, i) => {
                   const dateStr = toDateStr(d);
                   const isToday = dateStr === todayStr;
                   const isWeekend = i >= 5;
                   const isOtherMonth = d.getUTCMonth() !== month;
                   const dayShifts = shiftsByDate.get(dateStr) ?? [];
+                  const hasPendingRequest = pendingDates.has(dateStr);
 
                   return (
                     <div
                       key={dateStr}
-                      className={`pt-2 px-1.5 pb-2 flex flex-col border-r border-slate-100 last:border-0 min-h-[78px] ${
+                      className={`relative pt-2 px-1.5 pb-2 flex flex-col border-r border-slate-100 last:border-0 min-h-[78px] ${
                         isWeekend ? "bg-slate-50/40" : ""
                       }`}
                     >
+                      {/* Точка в правом верхнем углу ячейки дня */}
+                      {hasPendingRequest && (
+                        <span
+                          className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-amber-500 ring-2 ring-white z-10"
+                          title="Есть запрос на изменение смены"
+                        />
+                      )}
+
                       <div className="flex items-center justify-center">
                         <div
                           className={`text-base font-semibold ${
@@ -426,7 +447,7 @@ export default function WeeksPage() {
                   );
                 })}
 
-                {/* Статус-бейдж */}
+                {/* Статус-бейдж недели */}
                 {meta && StatusIcon && (
                   <div className="absolute top-2 right-2 pointer-events-none">
                     <span
@@ -438,7 +459,7 @@ export default function WeeksPage() {
                   </div>
                 )}
 
-                {/* Хинт "Создать" для пустых недель */}
+                {/* Хинт "Создать" */}
                 {!existing && !hasToday && (
                   <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                     <span className="text-xs text-slate-500 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full border border-slate-200 shadow-sm">
@@ -465,9 +486,13 @@ export default function WeeksPage() {
             <div className="w-3 h-3 rounded-sm bg-red-500" />
             Заблокирован
           </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" />
+            Запрос на изменение смены
+          </div>
           <div className="flex items-center gap-1.5 ml-4">
             <div className="w-8 h-1 rounded-full bg-brand-500" />
-            Полоска = смена (ширина = длительность, позиция = время)
+            Полоска = смена
           </div>
         </div>
 

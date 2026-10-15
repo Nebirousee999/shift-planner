@@ -3,9 +3,7 @@ import {
   X,
   Palmtree,
   Check,
-  AlertCircle,
   Bell,
-  Trash2,
 } from "lucide-react";
 import { useVacations } from "../store/vacations";
 import { useUsers } from "../store/users";
@@ -53,6 +51,7 @@ export default function VacationsPage() {
   const { items: users, fetch: fetchUsers } = useUsers();
 
   const [pending, setPending] = useState<Vacation[]>([]);
+  const [moderating, setModerating] = useState<string | null>(null);
 
   const isAdmin = user?.role === "OWNER" || user?.role === "MANAGER";
 
@@ -66,6 +65,7 @@ export default function VacationsPage() {
 
   // ─── Модерация ──────────────────────────────────────
   const onApprove = async (id: string) => {
+    setModerating(id);
     try {
       await vacationsApi.approve(id);
       useNotifications.getState().refresh();
@@ -75,6 +75,8 @@ export default function VacationsPage() {
       await alertDialog(e.response?.data?.error ?? "Ошибка", {
         variant: "error",
       });
+    } finally {
+      setModerating(null);
     }
   };
 
@@ -86,6 +88,7 @@ export default function VacationsPage() {
     });
     if (!ok) return;
 
+    setModerating(id);
     try {
       await vacationsApi.reject(id);
       useNotifications.getState().refresh();
@@ -95,6 +98,8 @@ export default function VacationsPage() {
       await alertDialog(e.response?.data?.error ?? "Ошибка", {
         variant: "error",
       });
+    } finally {
+      setModerating(null);
     }
   };
 
@@ -112,7 +117,8 @@ export default function VacationsPage() {
           <div>
             <h1 className="text-3xl font-bold text-slate-900">Отпуска</h1>
             <p className="text-sm text-slate-500 mt-1">
-              Календарь отпусков. Правки сотрудников приходят сюда на согласование.
+              Календарь отпусков. Правки сотрудников приходят сюда на
+              согласование.
             </p>
           </div>
         </div>
@@ -140,6 +146,7 @@ export default function VacationsPage() {
             <div className="space-y-2">
               {pending.map((p) => {
                 const isEdit = !!p.previousStartDate;
+                const busy = moderating === p.id;
 
                 return (
                   <div
@@ -170,14 +177,16 @@ export default function VacationsPage() {
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => onApprove(p.id)}
-                          className="inline-flex items-center gap-1.5 bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 text-xs font-medium transition-colors"
+                          disabled={busy}
+                          className="inline-flex items-center gap-1.5 bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 disabled:opacity-50 text-xs font-medium transition-colors"
                         >
                           <Check className="w-3.5 h-3.5" />
-                          Одобрить
+                          {busy ? "..." : "Одобрить"}
                         </button>
                         <button
                           onClick={() => onReject(p.id)}
-                          className="inline-flex items-center gap-1.5 text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                          disabled={busy}
+                          className="inline-flex items-center gap-1.5 text-red-600 hover:bg-red-50 disabled:opacity-50 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
                         >
                           <X className="w-3.5 h-3.5" />
                           Отклонить

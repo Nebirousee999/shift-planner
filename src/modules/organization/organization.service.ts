@@ -18,6 +18,7 @@ export const organizationService = {
     directorName?: string | null;
     inn?: string | null;
     legalAddress?: string | null;
+    timeTrackingEnabled?: boolean;
   }) {
     const [updated] = await db
       .update(organizations)
@@ -30,6 +31,9 @@ export const organizationService = {
         ...(input.inn !== undefined && { inn: input.inn }),
         ...(input.legalAddress !== undefined && {
           legalAddress: input.legalAddress,
+        }),
+        ...(input.timeTrackingEnabled !== undefined && {
+          timeTrackingEnabled: input.timeTrackingEnabled,
         }),
       })
       .where(eq(organizations.id, input.orgId))

@@ -12,6 +12,7 @@ export type SwapRequest = {
   shiftDate?: string | null;
   startTime?: string | null;
   endTime?: string | null;
+  templateId?: string | null;  // ← НОВОЕ
 };
 
 export const swapsApi = {

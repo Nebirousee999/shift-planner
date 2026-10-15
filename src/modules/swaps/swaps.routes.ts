@@ -61,6 +61,7 @@ export async function swapsRoutes(app: FastifyInstance) {
         NOT_YOUR_SHIFT: "Это не ваша смена",
         USER_NOT_FOUND: "Сотрудник не найден",
         SELF_SWAP: "Нельзя предложить смену самому себе",
+        TARGET_BUSY: "У выбранного сотрудника уже есть смена в это время — обмен невозможен",
       };
       if (map[e.message]) return reply.code(400).send({ error: map[e.message] });
       app.log.error(e);

@@ -6,12 +6,12 @@ const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 const timeRegex = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 const createSchema = z.object({
-    weekId: z.string().uuid(),
-    templateId: z.string().uuid().optional(),
-    userId: z.string().uuid().optional(),
-    shiftDate: z.string().regex(dateRegex),
-    startTime: z.string().regex(timeRegex),
-    endTime: z.string().regex(timeRegex),
+  weekId: z.string().uuid(),
+  templateId: z.string().uuid().optional(),
+  userId: z.string().uuid().optional(),
+  shiftDate: z.string().regex(dateRegex),
+  startTime: z.string().regex(timeRegex),
+  endTime: z.string().regex(timeRegex),
 });
 
 const checkLimitsSchema = z.object({
@@ -32,124 +32,170 @@ const checkOverlapSchema = z.object({
 });
 
 const updateSchema = z.object({
-    templateId: z.string().uuid().nullable().optional(),
-    userId: z.string().uuid().nullable().optional(),
-    shiftDate: z.string().regex(dateRegex).optional(),
-    startTime: z.string().regex(timeRegex).optional(),
-    endTime: z.string().regex(timeRegex).optional(),
+  templateId: z.string().uuid().nullable().optional(),
+  userId: z.string().uuid().nullable().optional(),
+  shiftDate: z.string().regex(dateRegex).optional(),
+  startTime: z.string().regex(timeRegex).optional(),
+  endTime: z.string().regex(timeRegex).optional(),
 });
 
 export async function scheduledShiftsRoutes(app: FastifyInstance) {
-    app.addHook("preHandler", app.authenticate);
-    app.addHook("preHandler", app.requireRole(["OWNER", "MANAGER"]));
+  // Все роуты требуют авторизации
+  app.addHook("preHandler", app.authenticate);
 
-    // Проверка лимитов ТК РФ перед созданием/изменением смены
-    app.get("/check-limits", async (req, reply) => {
-        const parsed = checkLimitsSchema.safeParse(req.query);
-        if (!parsed.success) {
+  // ─── Проверка лимитов ТК РФ — только админ ─────────────
+  app.get(
+    "/check-limits",
+    { preHandler: app.requireRole(["OWNER", "MANAGER"]) },
+    async (req, reply) => {
+      const parsed = checkLimitsSchema.safeParse(req.query);
+      if (!parsed.success) {
         return reply.code(400).send({ error: parsed.error.flatten() });
-        }
-        try {
+      }
+      try {
         const { orgId } = req.user!;
         return await scheduledShiftsService.checkLimits({
-            ...parsed.data,
-            orgId,
+          ...parsed.data,
+          orgId,
         });
-        } catch (e: any) {
+      } catch (e: any) {
         const map: Record<string, string> = {
-            WEEK_NOT_FOUND: "Неделя не найдена",
-            USER_NOT_FOUND: "Сотрудник не найден",
+          WEEK_NOT_FOUND: "Неделя не найдена",
+          USER_NOT_FOUND: "Сотрудник не найден",
         };
         if (map[e.message]) {
-            return reply.code(400).send({ error: map[e.message] });
+          return reply.code(400).send({ error: map[e.message] });
         }
         app.log.error(e);
         return reply.code(500).send({ error: "Ошибка проверки" });
-        }
-    });
+      }
+    }
+  );
 
-    // Проверка пересечения смен у одного сотрудника в один день
-    app.get("/check-overlap", async (req, reply) => {
-        const parsed = checkOverlapSchema.safeParse(req.query);
-        if (!parsed.success) {
+  // ─── Проверка пересечения — только админ ───────────────
+  app.get(
+    "/check-overlap",
+    { preHandler: app.requireRole(["OWNER", "MANAGER"]) },
+    async (req, reply) => {
+      const parsed = checkOverlapSchema.safeParse(req.query);
+      if (!parsed.success) {
         return reply.code(400).send({ error: parsed.error.flatten() });
-        }
-        try {
+      }
+      try {
         const { orgId } = req.user!;
         return await scheduledShiftsService.checkOverlap({
-            ...parsed.data,
-            orgId,
+          ...parsed.data,
+          orgId,
         });
-        } catch (e: any) {
+      } catch (e: any) {
         const map: Record<string, string> = {
-            WEEK_NOT_FOUND: "Неделя не найдена",
-            USER_NOT_FOUND: "Сотрудник не найден",
+          WEEK_NOT_FOUND: "Неделя не найдена",
+          USER_NOT_FOUND: "Сотрудник не найден",
         };
         if (map[e.message]) {
-            return reply.code(400).send({ error: map[e.message] });
+          return reply.code(400).send({ error: map[e.message] });
         }
         app.log.error(e);
         return reply.code(500).send({ error: "Ошибка проверки" });
+      }
+    }
+  );
+
+  // ─── Создать смену — только админ ──────────────────────
+  app.post(
+    "/",
+    { preHandler: app.requireRole(["OWNER", "MANAGER"]) },
+    async (req, reply) => {
+      const parsed = createSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: parsed.error.flatten() });
+      }
+
+      try {
+        const { orgId, sub: requesterId, role: requesterRole } = req.user!;
+        const result = await scheduledShiftsService.create({
+          ...parsed.data,
+          orgId,
+          requesterId,
+          requesterRole,
+        });
+        return reply.code(201).send(result);
+      } catch (e: any) {
+        const map: Record<string, string> = {
+          WEEK_NOT_FOUND: "Неделя не найдена",
+          WEEK_LOCKED: "Неделя заблокирована, редактирование невозможно",
+          DATE_OUT_OF_WEEK: "Дата вне диапазона недели",
+          TEMPLATE_NOT_FOUND: "Шаблон не найден",
+          USER_NOT_FOUND: "Сотрудник не найден",
+        };
+        if (map[e.message]) {
+          return reply.code(400).send({ error: map[e.message] });
         }
-    });
+        app.log.error(e);
+        return reply.code(500).send({ error: "Ошибка создания смены" });
+      }
+    }
+  );
 
+  // ─── Обновить смену — ЛЮБОЙ авторизованный ─────────────
+  // Если неделя DRAFT: применяется сразу.
+  // Если PUBLISHED: создаётся запрос на согласование.
+  //   - сотрудник меняет → согласовывает менеджер
+  //   - менеджер меняет  → согласовывает сотрудник (чью смену меняют)
+  app.patch<{ Params: { id: string } }>("/:id", async (req, reply) => {
+    const parsed = updateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.flatten() });
+    }
 
-    app.post("/", async (req, reply) => {
-        const parsed = createSchema.safeParse(req.body);
-        if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    try {
+      const { orgId, sub: requesterId, role: requesterRole } = req.user!;
+      const result = await scheduledShiftsService.update({
+        id: req.params.id,
+        orgId,
+        requesterId,
+        requesterRole,
+        ...parsed.data,
+      });
+      // result = { kind: "applied" | "requested", ... }
+      return result;
+    } catch (e: any) {
+      const map: Record<string, string> = {
+        SHIFT_NOT_FOUND: "Смена не найдена",
+        WEEK_LOCKED: "Неделя заблокирована",
+      };
+      if (map[e.message]) {
+        return reply.code(e.message === "SHIFT_NOT_FOUND" ? 404 : 400).send({
+          error: map[e.message],
+        });
+      }
+      app.log.error(e);
+      return reply.code(500).send({ error: "Ошибка обновления" });
+    }
+  });
 
-        try {
-            const { orgId } = req.user!;
-            const shift = await scheduledShiftsService.create({ ...parsed.data, orgId });
-            return reply.code(201).send(shift);
-        } catch (e: any) {
-            const map: Record<string, string> = {
-                WEEK_NOT_FOUND: "������ �� �������",
-                WEEK_LOCKED: "������ ��� ������������, �������������� ���������",
-                DATE_OUT_OF_WEEK: "���� ����� ��� ��������� ������",
-                TEMPLATE_NOT_FOUND: "������ �� ������",
-                USER_NOT_FOUND: "��������� �� ������",
-            };
-            if (map[e.message]) return reply.code(400).send({ error: map[e.message] });
-            app.log.error(e);
-            return reply.code(500).send({ error: "������ �������� �����" });
+  // ─── Удалить смену — только админ ──────────────────────
+  app.delete<{ Params: { id: string } }>(
+    "/:id",
+    { preHandler: app.requireRole(["OWNER", "MANAGER"]) },
+    async (req, reply) => {
+      try {
+        const { orgId } = req.user!;
+        const deleted = await scheduledShiftsService.remove(
+          req.params.id,
+          orgId
+        );
+        if (!deleted) {
+          return reply.code(404).send({ error: "Смена не найдена" });
         }
-    });
-
-    app.patch<{ Params: { id: string } }>("/:id", async (req, reply) => {
-        const parsed = updateSchema.safeParse(req.body);
-        if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
-
-        try {
-            const { orgId } = req.user!;
-            const updated = await scheduledShiftsService.update({
-                id: req.params.id,
-                orgId,
-                ...parsed.data,
-            });
-            if (!updated) return reply.code(404).send({ error: "����� �� �������" });
-            return updated;
-        } catch (e: any) {
-            if (e.message === "WEEK_LOCKED") {
-                return reply.code(400).send({ error: "������ ��� ������������" });
-            }
-            app.log.error(e);
-            return reply.code(500).send({ error: "������ ����������" });
+        return { success: true };
+      } catch (e: any) {
+        if (e.message === "WEEK_LOCKED") {
+          return reply.code(400).send({ error: "Неделя заблокирована" });
         }
-    });
-
-    app.delete<{ Params: { id: string } }>("/:id", async (req, reply) => {
-        try {
-            const { orgId } = req.user!;
-            const deleted = await scheduledShiftsService.remove(req.params.id, orgId);
-            if (!deleted) return reply.code(404).send({ error: "����� �� �������" });
-            return { success: true };
-        } catch (e: any) {
-            if (e.message === "WEEK_LOCKED") {
-                return reply.code(400).send({ error: "������ ��� ������������" });
-            }
-            app.log.error(e);
-            return reply.code(500).send({ error: "������ ��������" });
-        }
-    });
+        app.log.error(e);
+        return reply.code(500).send({ error: "Ошибка удаления" });
+      }
+    }
+  );
 }

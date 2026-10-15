@@ -4,6 +4,7 @@ import {
   shiftsApi,
   type ScheduleWeek,
   type ScheduledShift,
+  type ShiftUpdateResult,
 } from "../api/weeks";
 
 type State = {
@@ -12,14 +13,14 @@ type State = {
   loading: boolean;
   error: string | null;
 
-  // Недели
+  // ─── Недели ────────────────────────────────────────
   fetchWeeks: () => Promise<void>;
   fetchWeek: (id: string) => Promise<void>;
   createWeek: (weekStartDate: string) => Promise<ScheduleWeek>;
   publishWeek: (id: string) => Promise<{ ok: boolean; violations?: string[] }>;
   duplicateWeek: (id: string) => Promise<ScheduleWeek>;
 
-  // Смены
+  // ─── Смены ─────────────────────────────────────────
   addShift: (input: {
     weekId: string;
     templateId?: string;
@@ -27,7 +28,8 @@ type State = {
     shiftDate: string;
     startTime: string;
     endTime: string;
-  }) => Promise<void>;
+  }) => Promise<ShiftUpdateResult>;
+
   updateShift: (
     id: string,
     input: Partial<{
@@ -37,7 +39,8 @@ type State = {
       startTime: string;
       endTime: string;
     }>
-  ) => Promise<void>;
+  ) => Promise<ShiftUpdateResult>;
+
   removeShift: (id: string) => Promise<void>;
 };
 
@@ -47,7 +50,10 @@ export const useWeeks = create<State>((set, get) => ({
   loading: false,
   error: null,
 
-  // ─── Недели ─────────────────────────────────────────
+  // ══════════════════════════════════════════════════
+  // НЕДЕЛИ
+  // ══════════════════════════════════════════════════
+
   fetchWeeks: async () => {
     set({ loading: true, error: null });
     try {
@@ -105,33 +111,67 @@ export const useWeeks = create<State>((set, get) => ({
     return week;
   },
 
-  // ─── Смены ──────────────────────────────────────────
+  // ══════════════════════════════════════════════════
+  // СМЕНЫ
+  // ══════════════════════════════════════════════════
+
+  /**
+   * Создание смены.
+   *
+   * Два сценария на бэке:
+   *   - DRAFT или некому согласовывать → kind: "applied", shift создана
+   *   - PUBLISHED и есть кому согласовывать → kind: "requested", shift НЕ создана
+   *
+   * Возвращаем результат наружу, чтобы вызывающий код мог показать
+   * правильное уведомление. currentWeek обновляем только при "applied".
+   */
   addShift: async (input) => {
-    const shift = await shiftsApi.create(input);
-    const { currentWeek } = get();
-    if (currentWeek && currentWeek.id === input.weekId) {
-      set({
-        currentWeek: {
-          ...currentWeek,
-          shifts: [...(currentWeek.shifts ?? []), shift],
-        },
-      });
+    const result = await shiftsApi.create(input);
+
+    if (result.kind === "applied") {
+      const { currentWeek } = get();
+      if (currentWeek && currentWeek.id === input.weekId) {
+        set({
+          currentWeek: {
+            ...currentWeek,
+            shifts: [...(currentWeek.shifts ?? []), result.shift],
+          },
+        });
+      }
     }
+    // при "requested" — currentWeek не трогаем: смена физически не создана,
+    // она появится после approve
+
+    return result;
   },
 
+  /**
+   * Обновление смены.
+   *
+   * Два сценария на бэке:
+   *   - DRAFT или согласовывать некому → kind: "applied", смена обновлена
+   *   - PUBLISHED и есть кому согласовывать → kind: "requested", смена НЕ обновлена
+   *
+   * currentWeek обновляем только при "applied".
+   */
   updateShift: async (id, input) => {
-    const updated = await shiftsApi.update(id, input);
-    const { currentWeek } = get();
-    if (currentWeek) {
-      set({
-        currentWeek: {
-          ...currentWeek,
-          shifts: (currentWeek.shifts ?? []).map((s) =>
-            s.id === id ? updated : s
-          ),
-        },
-      });
+    const result = await shiftsApi.update(id, input);
+
+    if (result.kind === "applied") {
+      const { currentWeek } = get();
+      if (currentWeek) {
+        set({
+          currentWeek: {
+            ...currentWeek,
+            shifts: (currentWeek.shifts ?? []).map((s) =>
+              s.id === id ? result.shift : s
+            ),
+          },
+        });
+      }
     }
+
+    return result;
   },
 
   removeShift: async (id) => {

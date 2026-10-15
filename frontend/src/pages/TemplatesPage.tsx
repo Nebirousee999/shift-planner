@@ -5,6 +5,8 @@ import { z } from "zod";
 import { Plus, X, Trash2, Calendar, Clock, Palette } from "lucide-react";
 import { useShiftTemplates } from "../store/shiftTemplates";
 import NavBar from "../components/NavBar";
+import { validateShiftTimes } from "../lib/time";
+import { alertDialog } from "../store/dialogs";
 
 const timeRegex = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -54,6 +56,15 @@ export default function TemplatesPage() {
   }, [fetch]);
 
   const onSubmit = async (data: Form) => {
+    const timeCheck = validateShiftTimes(data.startTime, data.endTime);
+    if (!timeCheck.ok) {
+      await alertDialog(timeCheck.message ?? "Неверное время смены", {
+        title: "Ошибка в времени",
+        variant: "error",
+      });
+      return;
+    }
+
     try {
       await create(data);
       reset();

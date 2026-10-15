@@ -13,10 +13,13 @@ import {
   Building2,
   Lock,
   Pencil,
+  Settings as SettingsIcon,
+  Clock,
 } from "lucide-react";
 import { useAuth } from "../store/auth";
 import { meApi, type MyProfile } from "../api/me";
 import { organizationApi, type Organization } from "../api/organization";
+import { useOrganization } from "../store/organization";
 import NavBar from "../components/NavBar";
 
 const passwordSchema = z
@@ -53,11 +56,14 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
+type Tab = "profile" | "settings";
+
 export default function ProfilePage() {
   const { changePassword } = useAuth();
   const [profile, setProfile] = useState<MyProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [tab, setTab] = useState<Tab>("profile");
 
   // ─── Организация ────────────────────────────────────
   const [org, setOrg] = useState<Organization | null>(null);
@@ -70,6 +76,7 @@ export default function ProfilePage() {
   });
   const [orgEditing, setOrgEditing] = useState(false);
   const [orgSaving, setOrgSaving] = useState(false);
+  const [togglingTime, setTogglingTime] = useState(false);
 
   const {
     register,
@@ -77,6 +84,8 @@ export default function ProfilePage() {
     reset,
     formState: { errors },
   } = useForm<PasswordForm>({ resolver: zodResolver(passwordSchema) });
+
+  const isOwner = profile?.role === "OWNER";
 
   useEffect(() => {
     Promise.all([
@@ -94,10 +103,20 @@ export default function ProfilePage() {
             inn: o.inn ?? "",
             legalAddress: o.legalAddress ?? "",
           });
+          // синхронизируем глобальный стор
+          useOrganization.getState().set(o);
         }
       })
       .finally(() => setLoading(false));
   }, []);
+
+  // Сброс вкладки, если пользователь не OWNER (а вдруг стал MANAGER
+  // после редактирования с другой вкладки — маловероятно, но безопасно)
+  useEffect(() => {
+    if (!isOwner && tab === "settings") {
+      setTab("profile");
+    }
+  }, [isOwner, tab]);
 
   const onSubmit = async (data: PasswordForm) => {
     setSaving(true);
@@ -124,11 +143,41 @@ export default function ProfilePage() {
         legalAddress: orgForm.legalAddress || null,
       });
       setOrg(updated);
+      useOrganization.getState().set(updated);
       setOrgEditing(false);
     } catch (err: any) {
       alert(err.response?.data?.error ?? "Ошибка сохранения");
     } finally {
       setOrgSaving(false);
+    }
+  };
+
+  const onToggleTimeTracking = async (enabled: boolean) => {
+    if (!org || !isOwner) return;
+
+    // оптимистично обновляем локально, чтобы UI сразу отреагировал
+    const previous = org;
+    const optimistic: Organization = {
+      ...org,
+      timeTrackingEnabled: enabled,
+    };
+    setOrg(optimistic);
+    useOrganization.getState().set(optimistic);
+    setTogglingTime(true);
+
+    try {
+      const updated = await organizationApi.update({
+        timeTrackingEnabled: enabled,
+      });
+      setOrg(updated);
+      useOrganization.getState().set(updated);
+    } catch (err: any) {
+      // откат при ошибке
+      setOrg(previous);
+      useOrganization.getState().set(previous);
+      alert(err.response?.data?.error ?? "Ошибка сохранения");
+    } finally {
+      setTogglingTime(false);
     }
   };
 
@@ -146,240 +195,338 @@ export default function ProfilePage() {
 
         {profile && (
           <>
-            {/* ═══ Карточка профиля ═══ */}
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-6 animate-fade-in">
-              <div className="h-20 bg-gradient-to-br from-brand-500 to-brand-700" />
-              <div className="px-6 pb-6">
-                <div className="flex items-start gap-4 mb-4">
-                  <div className="-mt-10 w-20 h-20 rounded-2xl bg-white shadow-md flex items-center justify-center text-2xl font-bold text-brand-600 border-4 border-white shrink-0">
-                    {initials(profile.name)}
-                  </div>
-                  <div className="pt-1 min-w-0">
-                    <div className="text-xl font-semibold text-slate-900 truncate">
-                      {profile.name}
-                    </div>
-                    <span
-                      className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-0.5 rounded-full font-medium mt-1 ${
-                        ROLE_BADGES[profile.role]
-                      }`}
-                    >
-                      <Shield className="w-3 h-3" />
-                      {ROLE_LABELS[profile.role]}
-                    </span>
-                  </div>
-                </div>
+            {/* ═══ Вкладки ═══ */}
+            <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
+              <button
+                onClick={() => setTab("profile")}
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
+                  tab === "profile"
+                    ? "bg-brand-600 text-white shadow-sm"
+                    : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+                }`}
+              >
+                <Shield className="w-4 h-4" />
+                Профиль
+              </button>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-                  <ProfileField
-                    icon={Mail}
-                    label="Email"
-                    value={profile.email}
-                  />
-                  {profile.phone && (
-                    <ProfileField
-                      icon={Phone}
-                      label="Телефон"
-                      value={profile.phone}
-                    />
-                  )}
-                  {profile.hourlyRate && (
-                    <ProfileField
-                      icon={Coins}
-                      label="Ставка"
-                      value={`${profile.hourlyRate} ₽/ч`}
-                    />
-                  )}
-                  <ProfileField
-                    icon={CalendarDays}
-                    label="В системе с"
-                    value={new Date(profile.createdAt).toLocaleDateString(
-                      "ru-RU",
-                      { day: "numeric", month: "long", year: "numeric" }
-                    )}
-                  />
-                </div>
-              </div>
+              {/* Вкладка «Настройки» — только для владельца */}
+              {isOwner && (
+                <button
+                  onClick={() => setTab("settings")}
+                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
+                    tab === "settings"
+                      ? "bg-brand-600 text-white shadow-sm"
+                      : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+                  }`}
+                >
+                  <SettingsIcon className="w-4 h-4" />
+                  Настройки
+                </button>
+              )}
             </div>
 
-            {/* ═══ Данные организации ═══ */}
-            {org && (profile.role === "OWNER" || profile.role === "MANAGER") && (
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6 animate-fade-in">
-                <div className="flex items-start justify-between gap-3 mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
-                      <Building2 className="w-5 h-5 text-blue-600" />
+            {/* ═══ ВКЛАДКА: ПРОФИЛЬ ═══ */}
+            {tab === "profile" && (
+              <>
+                {/* Карточка профиля */}
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-6 animate-fade-in">
+                  <div className="h-20 bg-gradient-to-br from-brand-500 to-brand-700" />
+                  <div className="px-6 pb-6">
+                    <div className="flex items-start gap-4 mb-4">
+                      <div className="-mt-10 w-20 h-20 rounded-2xl bg-white shadow-md flex items-center justify-center text-2xl font-bold text-brand-600 border-4 border-white shrink-0">
+                        {initials(profile.name)}
+                      </div>
+                      <div className="pt-1 min-w-0">
+                        <div className="text-xl font-semibold text-slate-900 truncate">
+                          {profile.name}
+                        </div>
+                        <span
+                          className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-0.5 rounded-full font-medium mt-1 ${
+                            ROLE_BADGES[profile.role]
+                          }`}
+                        >
+                          <Shield className="w-3 h-3" />
+                          {ROLE_LABELS[profile.role]}
+                        </span>
+                      </div>
                     </div>
-                    <div>
-                      <h2 className="font-semibold text-slate-900">
-                        Данные организации
-                      </h2>
-                      <p className="text-xs text-slate-500">
-                        Используются по умолчанию при генерации документов
-                      </p>
-                    </div>
-                  </div>
-                  {profile.role === "OWNER" && (
-                    <button
-                      type="button"
-                      onClick={() => setOrgEditing((v) => !v)}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                        orgEditing
-                          ? "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                          : "bg-brand-50 text-brand-700 hover:bg-brand-100"
-                      }`}
-                    >
-                      {orgEditing ? (
-                        <>Отмена</>
-                      ) : (
-                        <>
-                          <Pencil className="w-3 h-3" />
-                          Редактировать
-                        </>
-                      )}
-                    </button>
-                  )}
-                </div>
 
-                <form onSubmit={onSaveOrg} className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <OrgField
-                      label="Название организации"
-                      value={orgForm.name}
-                      editing={orgEditing}
-                      onChange={(v) => setOrgForm((f) => ({ ...f, name: v }))}
-                      placeholder="ООО Ромашка"
-                    />
-                    <OrgField
-                      label="Город"
-                      value={orgForm.city}
-                      editing={orgEditing}
-                      onChange={(v) => setOrgForm((f) => ({ ...f, city: v }))}
-                      placeholder="Москва"
-                    />
-                    <OrgField
-                      label="ФИО директора"
-                      value={orgForm.directorName}
-                      editing={orgEditing}
-                      onChange={(v) =>
-                        setOrgForm((f) => ({ ...f, directorName: v }))
-                      }
-                      placeholder="Иванов Иван Иванович"
-                    />
-                    <OrgField
-                      label="ИНН"
-                      value={orgForm.inn}
-                      editing={orgEditing}
-                      onChange={(v) => setOrgForm((f) => ({ ...f, inn: v }))}
-                      placeholder="7701234567"
-                    />
-                    <div className="md:col-span-2">
-                      <OrgField
-                        label="Юридический адрес"
-                        value={orgForm.legalAddress}
-                        editing={orgEditing}
-                        onChange={(v) =>
-                          setOrgForm((f) => ({ ...f, legalAddress: v }))
-                        }
-                        placeholder="г. Москва, ул. Ленина, д. 1"
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+                      <ProfileField
+                        icon={Mail}
+                        label="Email"
+                        value={profile.email}
+                      />
+                      {profile.phone && (
+                        <ProfileField
+                          icon={Phone}
+                          label="Телефон"
+                          value={profile.phone}
+                        />
+                      )}
+                      {profile.hourlyRate && (
+                        <ProfileField
+                          icon={Coins}
+                          label="Ставка"
+                          value={`${profile.hourlyRate} ₽/ч`}
+                        />
+                      )}
+                      <ProfileField
+                        icon={CalendarDays}
+                        label="В системе с"
+                        value={new Date(profile.createdAt).toLocaleDateString(
+                          "ru-RU",
+                          { day: "numeric", month: "long", year: "numeric" }
+                        )}
                       />
                     </div>
                   </div>
+                </div>
 
-                  {orgEditing && (
+                {/* Данные организации — видны всем, редактирует только OWNER */}
+                {org && (
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6 animate-fade-in">
+                    <div className="flex items-start justify-between gap-3 mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+                          <Building2 className="w-5 h-5 text-blue-600" />
+                        </div>
+                        <div>
+                          <h2 className="font-semibold text-slate-900">
+                            Данные организации
+                          </h2>
+                          <p className="text-xs text-slate-500">
+                            Используются по умолчанию при генерации документов
+                          </p>
+                        </div>
+                      </div>
+                      {isOwner && (
+                        <button
+                          type="button"
+                          onClick={() => setOrgEditing((v) => !v)}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                            orgEditing
+                              ? "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                              : "bg-brand-50 text-brand-700 hover:bg-brand-100"
+                          }`}
+                        >
+                          {orgEditing ? (
+                            <>Отмена</>
+                          ) : (
+                            <>
+                              <Pencil className="w-3 h-3" />
+                              Редактировать
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
+
+                    <form onSubmit={onSaveOrg} className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <OrgField
+                          label="Название организации"
+                          value={orgForm.name}
+                          editing={orgEditing}
+                          onChange={(v) =>
+                            setOrgForm((f) => ({ ...f, name: v }))
+                          }
+                          placeholder="ООО Ромашка"
+                        />
+                        <OrgField
+                          label="Город"
+                          value={orgForm.city}
+                          editing={orgEditing}
+                          onChange={(v) =>
+                            setOrgForm((f) => ({ ...f, city: v }))
+                          }
+                          placeholder="Москва"
+                        />
+                        <OrgField
+                          label="ФИО директора"
+                          value={orgForm.directorName}
+                          editing={orgEditing}
+                          onChange={(v) =>
+                            setOrgForm((f) => ({ ...f, directorName: v }))
+                          }
+                          placeholder="Иванов Иван Иванович"
+                        />
+                        <OrgField
+                          label="ИНН"
+                          value={orgForm.inn}
+                          editing={orgEditing}
+                          onChange={(v) =>
+                            setOrgForm((f) => ({ ...f, inn: v }))
+                          }
+                          placeholder="7701234567"
+                        />
+                        <div className="md:col-span-2">
+                          <OrgField
+                            label="Юридический адрес"
+                            value={orgForm.legalAddress}
+                            editing={orgEditing}
+                            onChange={(v) =>
+                              setOrgForm((f) => ({ ...f, legalAddress: v }))
+                            }
+                            placeholder="г. Москва, ул. Ленина, д. 1"
+                          />
+                        </div>
+                      </div>
+
+                      {orgEditing && (
+                        <button
+                          type="submit"
+                          disabled={orgSaving}
+                          className="inline-flex items-center gap-2 bg-brand-600 text-white px-5 py-2.5 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium shadow-sm hover:shadow transition-all"
+                        >
+                          <Save className="w-4 h-4" />
+                          {orgSaving ? "Сохранение..." : "Сохранить данные"}
+                        </button>
+                      )}
+                    </form>
+                  </div>
+                )}
+
+                {/* Смена пароля */}
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 animate-fade-in">
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
+                      <KeyRound className="w-5 h-5 text-amber-600" />
+                    </div>
+                    <div>
+                      <h2 className="font-semibold text-slate-900">
+                        Сменить пароль
+                      </h2>
+                      <p className="text-xs text-slate-500">
+                        Минимум 8 символов. Используйте буквы, цифры и символы.
+                      </p>
+                    </div>
+                  </div>
+
+                  <form
+                    onSubmit={handleSubmit(onSubmit)}
+                    className="space-y-4 max-w-md"
+                  >
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                        Текущий пароль
+                      </label>
+                      <input
+                        type="password"
+                        {...register("oldPassword")}
+                        className="w-full"
+                        placeholder="••••••••"
+                      />
+                      {errors.oldPassword && (
+                        <p className="text-red-500 text-xs mt-1">
+                          {errors.oldPassword.message}
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                        Новый пароль
+                      </label>
+                      <input
+                        type="password"
+                        {...register("newPassword")}
+                        className="w-full"
+                        placeholder="Минимум 8 символов"
+                      />
+                      {errors.newPassword && (
+                        <p className="text-red-500 text-xs mt-1">
+                          {errors.newPassword.message}
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                        Повторите новый пароль
+                      </label>
+                      <input
+                        type="password"
+                        {...register("confirmPassword")}
+                        className="w-full"
+                        placeholder="••••••••"
+                      />
+                      {errors.confirmPassword && (
+                        <p className="text-red-500 text-xs mt-1">
+                          {errors.confirmPassword.message}
+                        </p>
+                      )}
+                    </div>
+
                     <button
                       type="submit"
-                      disabled={orgSaving}
+                      disabled={saving}
                       className="inline-flex items-center gap-2 bg-brand-600 text-white px-5 py-2.5 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium shadow-sm hover:shadow transition-all"
                     >
                       <Save className="w-4 h-4" />
-                      {orgSaving ? "Сохранение..." : "Сохранить данные"}
+                      {saving ? "Сохранение..." : "Сохранить пароль"}
                     </button>
-                  )}
-                </form>
-              </div>
+                  </form>
+                </div>
+              </>
             )}
 
-            {/* ═══ Смена пароля ═══ */}
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 animate-fade-in">
-              <div className="flex items-center gap-3 mb-5">
-                <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
-                  <KeyRound className="w-5 h-5 text-amber-600" />
-                </div>
-                <div>
-                  <h2 className="font-semibold text-slate-900">
-                    Сменить пароль
-                  </h2>
-                  <p className="text-xs text-slate-500">
-                    Минимум 8 символов. Используйте буквы, цифры и символы.
-                  </p>
-                </div>
-              </div>
-
-              <form
-                onSubmit={handleSubmit(onSubmit)}
-                className="space-y-4 max-w-md"
-              >
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                    Текущий пароль
-                  </label>
-                  <input
-                    type="password"
-                    {...register("oldPassword")}
-                    className="w-full"
-                    placeholder="••••••••"
-                  />
-                  {errors.oldPassword && (
-                    <p className="text-red-500 text-xs mt-1">
-                      {errors.oldPassword.message}
+            {/* ═══ ВКЛАДКА: НАСТРОЙКИ (только OWNER) ═══ */}
+            {tab === "settings" && isOwner && (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 animate-fade-in">
+                <div className="flex items-start gap-3 mb-5">
+                  <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center">
+                    <SettingsIcon className="w-5 h-5 text-brand-600" />
+                  </div>
+                  <div>
+                    <h2 className="font-semibold text-slate-900">
+                      Настройки
+                    </h2>
+                    <p className="text-xs text-slate-500">
+                      Модули и функции системы
                     </p>
-                  )}
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                    Новый пароль
-                  </label>
-                  <input
-                    type="password"
-                    {...register("newPassword")}
-                    className="w-full"
-                    placeholder="Минимум 8 символов"
-                  />
-                  {errors.newPassword && (
-                    <p className="text-red-500 text-xs mt-1">
-                      {errors.newPassword.message}
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                    Повторите новый пароль
-                  </label>
-                  <input
-                    type="password"
-                    {...register("confirmPassword")}
-                    className="w-full"
-                    placeholder="••••••••"
-                  />
-                  {errors.confirmPassword && (
-                    <p className="text-red-500 text-xs mt-1">
-                      {errors.confirmPassword.message}
-                    </p>
-                  )}
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="inline-flex items-center gap-2 bg-brand-600 text-white px-5 py-2.5 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium shadow-sm hover:shadow transition-all"
+                {/* Учёт рабочего времени */}
+                <label
+                  className={`flex items-start gap-3 p-4 rounded-xl border-2 transition-all cursor-pointer ${
+                    togglingTime
+                      ? "border-slate-100 opacity-70"
+                      : "border-slate-200 hover:border-brand-300"
+                  }`}
                 >
-                  <Save className="w-4 h-4" />
-                  {saving ? "Сохранение..." : "Сохранить пароль"}
-                </button>
-              </form>
-            </div>
+                  <input
+                    type="checkbox"
+                    checked={org?.timeTrackingEnabled !== false}
+                    onChange={(e) =>
+                      onToggleTimeTracking(e.target.checked)
+                    }
+                    disabled={togglingTime || !org}
+                    className="!w-4 !h-4 mt-1 !p-0"
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-slate-500" />
+                      <span className="font-medium text-slate-900 text-sm">
+                        Учёт рабочего времени
+                      </span>
+                      {togglingTime && (
+                        <span className="text-xs text-slate-400">
+                          сохранение...
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      Сотрудники смогут отмечать начало и конец смены.
+                      Если выключить — часы для зарплаты считаются
+                      по графику, кнопка «Начать смену» скрывается у всех
+                      сотрудников.
+                    </div>
+                  </div>
+                </label>
+              </div>
+            )}
           </>
         )}
       </main>

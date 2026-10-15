@@ -25,7 +25,15 @@ export const shiftStatusEnum = pgEnum("shift_status", [
 ]);
 export const swapStatusEnum = pgEnum("swap_status", ["PENDING", "APPROVED", "DENIED"]);
 export const vacationStatusEnum = pgEnum("vacation_status", ["PENDING", "APPROVED", "REJECTED"]);
-
+export const shiftChangeStatusEnum = pgEnum("shift_change_status", [
+  "PENDING",
+  "APPROVED",
+  "REJECTED",
+]);
+export const shiftChangeKindEnum = pgEnum("shift_change_kind", [
+  "UPDATE",
+  "CREATE",
+]);
 // ─── ORGANIZATIONS ─────────────────────────────────────
 export const organizations = pgTable("organizations", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -35,6 +43,7 @@ export const organizations = pgTable("organizations", {
   inn: varchar("inn", { length: 20 }),
   legalAddress: varchar("legal_address", { length: 500 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  timeTrackingEnabled: boolean("time_tracking_enabled").default(true).notNull(),
 });
 
 // ─── USERS ─────────────────────────────────────────────
@@ -176,5 +185,50 @@ export const documentCustomTemplates = pgTable("document_custom_templates", {
   type: varchar("type", { length: 100 }).notNull(),
   content: text("content").notNull(),
   fileName: varchar("file_name", { length: 255 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ─── SHIFT CHANGE REQUESTS ─────────────────────────────
+export const shiftChangeRequests = pgTable("shift_change_requests", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: uuid("org_id")
+    .references(() => organizations.id, { onDelete: "cascade" })
+    .notNull(),
+
+  // Для UPDATE — заполнено; для CREATE — NULL (смены ещё нет)
+  shiftId: uuid("shift_id").references(() => scheduledShifts.id, {
+    onDelete: "cascade",
+  }),
+
+  kind: shiftChangeKindEnum("kind").default("UPDATE").notNull(),
+
+  // Только для CREATE — куда создавать смену
+  weekId: uuid("week_id").references(() => scheduleWeeks.id, {
+    onDelete: "cascade",
+  }),
+  templateId: uuid("template_id").references(() => shiftTemplates.id, {
+    onDelete: "set null",
+  }),
+
+  requestedBy: uuid("requested_by")
+    .references(() => users.id)
+    .notNull(),
+  targetUserId: uuid("target_user_id")
+    .references(() => users.id)
+    .notNull(),
+
+  oldShiftDate: date("old_shift_date").notNull(),
+  oldStartTime: varchar("old_start_time", { length: 5 }).notNull(),
+  oldEndTime: varchar("old_end_time", { length: 5 }).notNull(),
+  oldUserId: uuid("old_user_id").references(() => users.id),
+
+  newShiftDate: date("new_shift_date").notNull(),
+  newStartTime: varchar("new_start_time", { length: 5 }).notNull(),
+  newEndTime: varchar("new_end_time", { length: 5 }).notNull(),
+  newUserId: uuid("new_user_id").references(() => users.id),
+
+  comment: varchar("comment", { length: 500 }),
+  status: shiftChangeStatusEnum("status").default("PENDING").notNull(),
+  reviewedAt: timestamp("reviewed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

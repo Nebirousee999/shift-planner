@@ -17,14 +17,22 @@ import {
   GripVertical,
   Maximize2,
   Minimize2,
+  Bell,
 } from "lucide-react";
 import { useWeeks } from "../store/weeks";
 import { useShiftTemplates } from "../store/shiftTemplates";
 import { useUsers } from "../store/users";
+import { useNotifications } from "../store/notifications";
 import { vacationsApi } from "../api/vacations";
 import { shiftsApi, type ScheduledShift } from "../api/weeks";
+import {
+  shiftChangeRequestsApi,
+  type ShiftChangeRequest,
+} from "../api/shiftChangeRequests";
+import { alertDialog, confirmDialog } from "../store/dialogs";
 import NavBar from "../components/NavBar";
 import { weekDates, dayLabel, shortDate, fullDate } from "../lib/dates";
+import { validateShiftTimes } from "../lib/time";
 
 type ShiftSnapshot = {
   templateId: string | null;
@@ -65,23 +73,35 @@ export default function WeekDetailPage() {
   const [clipboard, setClipboard] = useState<ShiftSnapshot[]>([]);
   const [pasteBusy, setPasteBusy] = useState<string | null>(null);
 
-  // Drag
   const [draggingShiftId, setDraggingShiftId] = useState<string | null>(null);
   const [dragOverDate, setDragOverDate] = useState<string | null>(null);
 
-  // Модалка редактирования смены
   const [editingShift, setEditingShift] = useState<ScheduledShift | null>(null);
 
-  // Разворот дня (вне режима редактирования)
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
+
+  const [incomingShiftRequests, setIncomingShiftRequests] = useState<
+    ShiftChangeRequest[]
+  >([]);
+  const [outgoingShiftRequests, setOutgoingShiftRequests] = useState<
+    ShiftChangeRequest[]
+  >([]);
+  const [moderating, setModerating] = useState<string | null>(null);
 
   useEffect(() => {
     if (id) fetchWeek(id);
     fetchTemplates();
     fetchUsers();
+    shiftChangeRequestsApi
+      .incoming()
+      .then(setIncomingShiftRequests)
+      .catch(() => setIncomingShiftRequests([]));
+    shiftChangeRequestsApi
+      .outgoing()
+      .then(setOutgoingShiftRequests)
+      .catch(() => setOutgoingShiftRequests([]));
   }, [id, fetchWeek, fetchTemplates, fetchUsers]);
 
-  // Сбрасываем разворот при входе в режим редактирования
   useEffect(() => {
     if (editMode) setExpandedDate(null);
   }, [editMode]);
@@ -123,10 +143,47 @@ export default function WeekDetailPage() {
   const weekEnd = shortDate(dates[6]);
 
   const shiftsByDate: Record<string, typeof currentWeek.shifts> = {};
+
+  const pendingIncomingByShift = new Map<string, ShiftChangeRequest>();
+  for (const r of incomingShiftRequests) {
+    if (r.status === "PENDING" && r.shiftId) pendingIncomingByShift.set(r.shiftId, r);
+  }
+
+
+  const pendingOutgoingByShift = new Map<string, ShiftChangeRequest>();
+  for (const r of outgoingShiftRequests) {
+    if (r.status === "PENDING" && r.shiftId) pendingOutgoingByShift.set(r.shiftId, r);
+  }
+
   for (const d of dates) shiftsByDate[d] = [];
   for (const s of currentWeek.shifts ?? []) {
     const d = String(s.shiftDate).slice(0, 10);
     if (shiftsByDate[d]) shiftsByDate[d].push(s);
+  }
+
+    // Виртуальные CREATE-смены (менеджер предложил, ждём согласования сотрудника)
+  const virtualCreateByDate: Record<string, ShiftChangeRequest[]> = {};
+  for (const r of incomingShiftRequests) {
+    if (r.status === "PENDING" && r.kind === "CREATE") {
+      const d = String(r.newShiftDate).slice(0, 10);
+      if (!virtualCreateByDate[d]) virtualCreateByDate[d] = [];
+      virtualCreateByDate[d].push(r);
+    }
+  }
+
+  // Виртуальные CREATE-смены, КОТОРЫЕ СОЗДАЛ МЕНЕДЖЕР (для его календаря)
+  // Эти запросы ждут согласования сотрудника
+  const virtualCreateOutgoingByDate: Record<string, ShiftChangeRequest[]> = {};
+  for (const r of outgoingShiftRequests) {
+    if (
+      r.status === "PENDING" &&
+      r.kind === "CREATE" &&
+      r.weekId === currentWeek.id
+    ) {
+      const d = String(r.newShiftDate).slice(0, 10);
+      if (!virtualCreateOutgoingByDate[d]) virtualCreateOutgoingByDate[d] = [];
+      virtualCreateOutgoingByDate[d].push(r);
+    }
   }
 
   const onTemplateChange = (templateId: string) => {
@@ -139,6 +196,16 @@ export default function WeekDetailPage() {
   };
 
   const onAddShift = async (date: string) => {
+    // ─── Проверка времени ───
+    const timeCheck = validateShiftTimes(form.startTime, form.endTime);
+    if (!timeCheck.ok) {
+      await alertDialog(timeCheck.message ?? "Неверное время смены", {
+        title: "Ошибка в времени",
+        variant: "error",
+      });
+      return;
+    }
+
     if (form.userId) {
       setCheckingVacation(true);
       try {
@@ -149,10 +216,15 @@ export default function WeekDetailPage() {
         if (onVacation) {
           const userName =
             users.find((u) => u.id === form.userId)?.name ?? "Сотрудник";
-          const ok = window.confirm(
-            `⚠️ ${userName} находится в отпуске с ${vacation!.startDate} по ${
+          const ok = await confirmDialog(
+            `${userName} находится в отпуске с ${vacation!.startDate} по ${
               vacation!.endDate
-            }.\n\nВсё равно назначить смену на ${date}?`
+            }.\n\nВсё равно назначить смену на ${date}?`,
+            {
+              title: "Сотрудник в отпуске",
+              confirmLabel: "Назначить",
+              variant: "danger",
+            }
           );
           if (!ok) {
             setCheckingVacation(false);
@@ -175,12 +247,17 @@ export default function WeekDetailPage() {
           endTime: form.endTime,
         });
         if (check.exceeds) {
-          const ok = window.confirm(
-            `⚠️ Превышение рабочей недели\n\n` +
+          const ok = await confirmDialog(
+            `Превышение рабочей недели\n\n` +
               `${check.userName} уже работает ${check.currentHours} ч за эту неделю.\n` +
               `После добавления смены (${check.newShiftHours} ч) станет ${check.totalHours} ч.\n` +
               `Это на ${check.excess} ч больше нормы (${check.limit} ч).\n\n` +
-              `Всё равно добавить?`
+              `Всё равно добавить?`,
+            {
+              title: "Превышение нормы",
+              confirmLabel: "Добавить",
+              variant: "danger",
+            }
           );
           if (!ok) return;
         }
@@ -190,7 +267,7 @@ export default function WeekDetailPage() {
     }
 
     try {
-      await addShift({
+      const result = await addShift({
         weekId: currentWeek.id,
         templateId: form.templateId || undefined,
         userId: form.userId || undefined,
@@ -198,6 +275,15 @@ export default function WeekDetailPage() {
         startTime: form.startTime,
         endTime: form.endTime,
       });
+
+      if (result.kind === "requested") {
+        await refreshShiftRequests();
+        await alertDialog(
+          "Смена добавлена на согласование сотруднику — он должен подтвердить",
+          { title: "На согласовании", variant: "success" }
+        );
+      }
+
       setShowAddFor(null);
       setForm({
         templateId: "",
@@ -206,17 +292,28 @@ export default function WeekDetailPage() {
         endTime: "18:00",
       });
     } catch (e: any) {
-      window.alert(e.response?.data?.error ?? "Ошибка создания смены");
+      await alertDialog(e.response?.data?.error ?? "Ошибка создания смены", {
+        title: "Ошибка",
+        variant: "error",
+      });
     }
   };
 
   const onRemoveShift = async (shiftId: string) => {
-    if (!window.confirm("Удалить смену?")) return;
+    const ok = await confirmDialog("Удалить смену?", {
+      title: "Удаление смены",
+      confirmLabel: "Удалить",
+      variant: "danger",
+    });
+    if (!ok) return;
     try {
       await removeShift(shiftId);
       if (editingShift?.id === shiftId) setEditingShift(null);
     } catch (e: any) {
-      window.alert(e.response?.data?.error ?? "Ошибка удаления");
+      await alertDialog(e.response?.data?.error ?? "Ошибка удаления", {
+        title: "Ошибка",
+        variant: "error",
+      });
     }
   };
 
@@ -225,15 +322,25 @@ export default function WeekDetailPage() {
     try {
       const result = await publishWeek(currentWeek.id);
       if (!result.ok) {
-        window.alert(
-          "Нарушения ТК РФ:\n\n" + (result.violations ?? []).join("\n")
+        await alertDialog(
+          "Нарушения ТК РФ:\n\n" + (result.violations ?? []).join("\n"),
+          {
+            title: "Нельзя опубликовать",
+            variant: "error",
+          }
         );
       } else {
-        window.alert("Неделя опубликована!");
+        await alertDialog("Неделя опубликована!", {
+          title: "Готово",
+          variant: "success",
+        });
         setEditMode(false);
       }
     } catch (e: any) {
-      window.alert(e.response?.data?.error ?? "Ошибка публикации");
+      await alertDialog(e.response?.data?.error ?? "Ошибка публикации", {
+        title: "Ошибка",
+        variant: "error",
+      });
     } finally {
       setPublishing(false);
     }
@@ -245,16 +352,21 @@ export default function WeekDetailPage() {
       const newWeek = await duplicateWeek(currentWeek.id);
       navigate(`/weeks/${newWeek.id}`);
     } catch (e: any) {
-      window.alert(e.response?.data?.error ?? "Ошибка копирования");
+      await alertDialog(e.response?.data?.error ?? "Ошибка копирования", {
+        title: "Ошибка",
+        variant: "error",
+      });
     } finally {
       setDuplicating(false);
     }
   };
 
-  const onCopyDay = (date: string) => {
+  const onCopyDay = async (date: string) => {
     const shifts = shiftsByDate[date] ?? [];
     if (shifts.length === 0) {
-      window.alert("В этом дне нет смен для копирования");
+      await alertDialog("В этом дне нет смен для копирования", {
+        variant: "error",
+      });
       return;
     }
     const snapshots: ShiftSnapshot[] = shifts.map((s) => ({
@@ -280,10 +392,15 @@ export default function WeekDetailPage() {
         if (onVacation) {
           const userName =
             users.find((u) => u.id === snap.userId)?.name ?? "Сотрудник";
-          const ok = window.confirm(
-            `⚠️ ${userName} в отпуске (${vacation!.startDate}–${
+          const ok = await confirmDialog(
+            `${userName} в отпуске (${vacation!.startDate}–${
               vacation!.endDate
-            }).\n\nВсё равно вставить эту смену на ${date}?`
+            }).\n\nВсё равно вставить эту смену на ${date}?`,
+            {
+              title: "Сотрудник в отпуске",
+              confirmLabel: "Вставить",
+              variant: "danger",
+            }
           );
           if (!ok) skipUserIds.add(snap.userId);
         }
@@ -317,11 +434,13 @@ export default function WeekDetailPage() {
 
     setPasteBusy(null);
     if (failed > 0) {
-      window.alert(`Вставлено: ${success}, с ошибками: ${failed}`);
+      await alertDialog(`Вставлено: ${success}, с ошибками: ${failed}`, {
+        title: "Частичный успех",
+        variant: "error",
+      });
     }
   };
 
-  // Drag-and-drop
   const onDragStart = (e: React.DragEvent, shiftId: string) => {
     if (!canEdit) return;
     setDraggingShiftId(shiftId);
@@ -369,8 +488,13 @@ export default function WeekDetailPage() {
           endTime: shift.endTime,
         });
         if (check.exceeds) {
-          const ok = window.confirm(
-            `⚠️ У сотрудника уже превышение рабочей недели: ${check.currentHours} ч при норме ${check.limit} ч.\n\nВсё равно перенести смену на ${newDate}?`
+          const ok = await confirmDialog(
+            `У сотрудника уже превышение рабочей недели: ${check.currentHours} ч при норме ${check.limit} ч.\n\nВсё равно перенести смену на ${newDate}?`,
+            {
+              title: "Превышение нормы",
+              confirmLabel: "Перенести",
+              variant: "danger",
+            }
           );
           if (!ok) return;
         }
@@ -388,10 +512,15 @@ export default function WeekDetailPage() {
         if (onVacation) {
           const userName =
             users.find((u) => u.id === shift.userId)?.name ?? "Сотрудник";
-          const ok = window.confirm(
-            `⚠️ ${userName} находится в отпуске с ${vacation!.startDate} по ${
+          const ok = await confirmDialog(
+            `${userName} находится в отпуске с ${vacation!.startDate} по ${
               vacation!.endDate
-            }.\n\nВсё равно перенести смену на ${newDate}?`
+            }.\n\nВсё равно перенести смену на ${newDate}?`,
+            {
+              title: "Сотрудник в отпуске",
+              confirmLabel: "Перенести",
+              variant: "danger",
+            }
           );
           if (!ok) return;
         }
@@ -401,16 +530,86 @@ export default function WeekDetailPage() {
     }
 
     try {
-      await updateShift(shift.id, { shiftDate: newDate });
+      const result = await updateShift(shift.id, { shiftDate: newDate });
+      if (result.kind === "requested") {
+        await refreshShiftRequests();
+        await alertDialog(
+          "Изменение отправлено на согласование сотруднику — он должен подтвердить",
+          { title: "На согласовании", variant: "success" }
+        );
+      }
     } catch (err: any) {
-      window.alert(err.response?.data?.error ?? "Ошибка переноса");
+      await alertDialog(err.response?.data?.error ?? "Ошибка переноса", {
+        title: "Ошибка",
+        variant: "error",
+      });
     }
   };
 
-  // Клик по дню — разворот (только вне режима редактирования)
   const onDayClick = (date: string) => {
     if (editMode) return;
     setExpandedDate((prev) => (prev === date ? null : date));
+  };
+
+  const onApproveShiftChange = async (requestId: string) => {
+    setModerating(requestId);
+    try {
+      await shiftChangeRequestsApi.approve(requestId);
+      const [inc, out] = await Promise.all([
+        shiftChangeRequestsApi.incoming(),
+        shiftChangeRequestsApi.outgoing(),
+      ]);
+      setIncomingShiftRequests(inc);
+      setOutgoingShiftRequests(out);
+      // ⚡ мгновенно сбрасываем бейджи в NavBar
+      useNotifications.getState().refresh();
+      if (id) await fetchWeek(id);
+    } catch (e: any) {
+      await alertDialog(e.message ?? "Ошибка", {
+        title: "Ошибка",
+        variant: "error",
+      });
+    } finally {
+      setModerating(null);
+    }
+  };
+
+  const onRejectShiftChange = async (requestId: string) => {
+    const ok = await confirmDialog("Отклонить изменение смены?", {
+      title: "Отклонение",
+      confirmLabel: "Отклонить",
+      variant: "danger",
+    });
+    if (!ok) return;
+
+    setModerating(requestId);
+    try {
+      await shiftChangeRequestsApi.reject(requestId);
+      const [inc, out] = await Promise.all([
+        shiftChangeRequestsApi.incoming(),
+        shiftChangeRequestsApi.outgoing(),
+      ]);
+      setIncomingShiftRequests(inc);
+      setOutgoingShiftRequests(out);
+      useNotifications.getState().refresh();
+    } catch (e: any) {
+      await alertDialog(e.message ?? "Ошибка", {
+        title: "Ошибка",
+        variant: "error",
+      });
+    } finally {
+      setModerating(null);
+    }
+  };
+
+  const refreshShiftRequests = async () => {
+    const [inc, out] = await Promise.all([
+      shiftChangeRequestsApi.incoming().catch(() => []),
+      shiftChangeRequestsApi.outgoing().catch(() => []),
+    ]);
+    setIncomingShiftRequests(inc);
+    setOutgoingShiftRequests(out);
+    useNotifications.getState().refresh();
   };
 
   const userById = (uid: string | null) =>
@@ -420,14 +619,12 @@ export default function WeekDetailPage() {
     tid ? templates.find((t) => t.id === tid) : undefined;
 
   const totalShifts = currentWeek.shifts?.length ?? 0;
-  const hasExpanded = !editMode && expandedDate !== null;
 
   return (
     <div className="min-h-screen bg-slate-50">
       <NavBar />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-        {/* Хлебные крошки + кнопки */}
         <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
           <button
             onClick={() => navigate("/weeks")}
@@ -510,7 +707,6 @@ export default function WeekDetailPage() {
           </div>
         </div>
 
-        {/* Заголовок */}
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-slate-900">
             {weekStart} — {weekEnd}
@@ -520,7 +716,106 @@ export default function WeekDetailPage() {
           </p>
         </div>
 
-        {/* Баннер режима редактирования */}
+        {incomingShiftRequests.length > 0 && (
+          <div className="bg-amber-50 border border-amber-300 rounded-2xl p-5 mb-6 animate-fade-in">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center">
+                <Bell className="w-4 h-4 text-amber-700" />
+              </div>
+              <div className="flex-1">
+                <h2 className="font-semibold text-amber-900">
+                  Сотрудники предлагают изменения
+                </h2>
+                <p className="text-xs text-amber-700">
+                  Проверьте и одобрите — после этого смена изменится
+                </p>
+              </div>
+              <span className="px-2.5 py-1 rounded-full bg-amber-200 text-amber-900 text-xs font-bold">
+                {incomingShiftRequests.length}
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              {incomingShiftRequests.map((r) => {
+                const busy = moderating === r.id;
+                return (
+                  <div
+                    key={r.id}
+                    className="bg-white rounded-xl border border-amber-200 p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
+                      <div className="min-w-0">
+                        <div className="font-medium text-slate-900 text-sm">
+                          {r.requestedByName ?? "Сотрудник"}
+                        </div>
+                        <div className="text-xs text-slate-500 mt-0.5">
+                          {r.kind === "CREATE"
+                            ? "предлагает добавить смену"
+                            : "предлагает изменить смену"}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => onApproveShiftChange(r.id)}
+                          disabled={busy}
+                          className="inline-flex items-center gap-1.5 bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 disabled:opacity-50 text-xs font-medium transition-colors"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          {busy ? "..." : "Принять"}
+                        </button>
+                        <button
+                          onClick={() => onRejectShiftChange(r.id)}
+                          disabled={busy}
+                          className="inline-flex items-center gap-1.5 text-red-600 hover:bg-red-50 disabled:opacity-50 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          Отклонить
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {r.kind !== "CREATE" && (
+                        <div className="bg-slate-50 rounded-lg p-3 opacity-60 border border-slate-200">
+                          <div className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold mb-1">
+                            Было
+                          </div>
+                          <div className="text-sm text-slate-700 line-through">
+                            {r.oldShiftDate.slice(0, 10)} · {r.oldStartTime}–{r.oldEndTime}
+                          </div>
+                          {r.oldUserName && (
+                            <div className="text-xs text-slate-500 mt-0.5 line-through">
+                              {r.oldUserName}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      <div
+                        className={`bg-emerald-50 rounded-lg p-3 border-2 border-emerald-300 ${
+                          r.kind === "CREATE" ? "md:col-span-2" : ""
+                        }`}
+                      >
+                        <div className="text-[10px] uppercase tracking-wide text-emerald-700 font-semibold mb-1">
+                          {r.kind === "CREATE" ? "Новая смена" : "Стало"}
+                        </div>
+                        <div className="text-sm font-medium text-slate-900">
+                          {r.newShiftDate.slice(0, 10)} · {r.newStartTime}–{r.newEndTime}
+                        </div>
+                        {r.newUserName && (
+                          <div className="text-xs text-slate-600 mt-0.5">
+                            {r.newUserName}
+                          </div>
+                        )}
+                      </div>
+                    </div>      
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {editMode && (
           <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 mb-4 flex items-start gap-3 animate-fade-in">
             <Pencil className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
@@ -531,6 +826,19 @@ export default function WeekDetailPage() {
               <div className="text-emerald-700 mt-0.5">
                 Перетаскивайте смены между днями. <b>Клик по смене</b> —
                 откроет редактирование. Копируйте смены между днями.
+                {isDraft && (
+                  <>
+                    {" "}
+                    · В черновике изменения применяются сразу.
+                  </>
+                )}
+                {!isDraft && (
+                  <>
+                    {" "}
+                    · Неделя опубликована — изменения уйдут на согласование
+                    сотрудникам.
+                  </>
+                )}
                 {clipboard.length > 0 && (
                   <>
                     {" "}
@@ -551,7 +859,6 @@ export default function WeekDetailPage() {
           </div>
         )}
 
-        {/* Подсказка разворота (вне режима редактирования) */}
         {!editMode && (
           <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3 mb-4 flex items-center gap-3 text-xs text-blue-800">
             <Maximize2 className="w-4 h-4 shrink-0" />
@@ -562,7 +869,6 @@ export default function WeekDetailPage() {
           </div>
         )}
 
-        {/* Предупреждение о шаблонах */}
         {templates.length === 0 && (
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-4 flex items-start gap-3">
             <CalendarDays className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
@@ -584,7 +890,6 @@ export default function WeekDetailPage() {
           </div>
         )}
 
-        {/* Сетка дней: flex на lg, чтобы разворот работал */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:flex lg:flex-row lg:items-stretch">
           {dates.map((date) => {
             const dayShifts = shiftsByDate[date] ?? [];
@@ -613,13 +918,14 @@ export default function WeekDetailPage() {
                     : canEdit
                     ? "border-emerald-200"
                     : "border-slate-200"
-                } ${
-                  isExpanded ? "lg:flex-[3]" : "lg:flex-1"
-                } ${
-                  hasExpanded && !isExpanded ? "lg:min-w-0" : ""
                 } hover:border-slate-300`}
+                style={{
+                  flexGrow: isExpanded ? 3 : 1,
+                  flexShrink: 1,
+                  flexBasis: "0%",
+                  minWidth: 0,
+                }}
               >
-                {/* Заголовок дня */}
                 <div
                   className={`mb-3 pb-2 border-b ${
                     isToday ? "border-brand-200" : "border-slate-100"
@@ -695,7 +1001,6 @@ export default function WeekDetailPage() {
                   </div>
                 </div>
 
-                {/* Смены */}
                 <div
                   className={`${
                     isExpanded
@@ -707,55 +1012,144 @@ export default function WeekDetailPage() {
                     const tpl = templateById(s.templateId);
                     const color = tpl?.color ?? "#3B82F6";
                     const isDragging = draggingShiftId === s.id;
+                    const pendingInc = pendingIncomingByShift.get(s.id);
+                    const pendingOut = pendingOutgoingByShift.get(s.id);
+                    const pending = pendingInc ?? pendingOut;
+                    const hasPending = !!pending;
+
+                    const oldDate = String(s.shiftDate).slice(0, 10);
+                    const newDate = pending ? pending.newShiftDate.slice(0, 10) : oldDate;
+                    const dateChanged = hasPending && oldDate !== newDate;
+
+                    const timeChanged =
+                      hasPending &&
+                      (s.startTime !== pending!.newStartTime ||
+                        s.endTime !== pending!.newEndTime);
+
+                    const userChanged = hasPending && s.userId !== pending!.newUserId;
+                    const oldUserName = userById(s.userId);
+                    const newUserName = hasPending
+                      ? userById(pending!.newUserId)
+                      : oldUserName;
+
                     return (
                       <div
                         key={s.id}
-                        draggable={canEdit}
+                        draggable={canEdit && !hasPending}
                         onDragStart={(e) => onDragStart(e, s.id)}
                         onDragEnd={onDragEnd}
                         onClick={(e) => {
                           e.stopPropagation();
                           if (!canEdit) return;
                           if (draggingShiftId) return;
+                          if (hasPending) {
+                            alertDialog("Смена на согласовании — сначала дождитесь ответа", {
+                              variant: "error",
+                            });
+                            return;
+                          }
                           setEditingShift(s);
                         }}
                         className={`group relative rounded-lg border-l-4 transition-all ${
                           isExpanded
                             ? "flex-1 min-w-[140px] text-[11px] p-1.5"
                             : "text-xs p-2"
-                        } ${
-                          canEdit
+                        } ${hasPending ? "ring-2 ring-amber-300/60" : ""} ${
+                          canEdit && !hasPending
                             ? "cursor-pointer active:cursor-grabbing hover:ring-2 hover:ring-offset-1 hover:ring-brand-300"
                             : ""
                         } ${isDragging ? "opacity-30" : ""}`}
                         style={{
-                          borderLeftColor: color,
-                          backgroundColor: color + "10",
+                          borderLeftColor: hasPending
+                            ? pendingInc
+                              ? "#F59E0B"
+                              : "#94A3B8"
+                            : color,
+                          backgroundColor: hasPending
+                            ? pendingInc
+                              ? "#FEF3C7"
+                              : "#F1F5F9"
+                            : color + "10",
                         }}
                       >
-                        <div className="flex items-center gap-1.5 font-medium text-slate-900">
-                          {canEdit && (
+                        {/* Время: старое → новое */}
+                        <div className="flex items-center gap-1 font-medium text-slate-900 flex-wrap">
+                          {canEdit && !hasPending && (
                             <GripVertical className="w-3 h-3 text-slate-400 shrink-0" />
                           )}
                           <Clock
                             className="w-3 h-3 shrink-0"
-                            style={{ color }}
+                            style={{ color: hasPending ? "#B45309" : color }}
                           />
-                          {s.startTime}–{s.endTime}
+                          {timeChanged ? (
+                            <>
+                              <span className="line-through text-slate-400">
+                                {s.startTime}–{s.endTime}
+                              </span>
+                              <span className="text-slate-400 text-[10px]">→</span>
+                              <span className="text-amber-800 font-semibold">
+                                {pending!.newStartTime}–{pending!.newEndTime}
+                              </span>
+                            </>
+                          ) : (
+                            <span>
+                              {s.startTime}–{s.endTime}
+                            </span>
+                          )}
                         </div>
-                        <div
-                          className={`text-slate-600 truncate ${
-                            isExpanded ? "mt-0.5" : "mt-0.5"
-                          }`}
-                        >
-                          {userById(s.userId)}
+
+                        {/* Сотрудник: старый → новый */}
+                        <div className="truncate mt-0.5">
+                          {userChanged ? (
+                            <span className="flex items-center gap-1 flex-wrap">
+                              <span className="line-through text-slate-400">
+                                {oldUserName}
+                              </span>
+                              <span className="text-slate-400 text-[10px]">→</span>
+                              <span className="text-amber-800 font-medium">
+                                {newUserName}
+                              </span>
+                            </span>
+                          ) : (
+                            <span className="text-slate-600">{userById(s.userId)}</span>
+                          )}
                         </div>
+
+                        {/* Шаблон — только если не развёрнуто */}
                         {tpl && !isExpanded && (
-                          <div className="text-slate-400 truncate mt-0.5">
-                            {tpl.name}
+                          <div className="text-slate-400 truncate mt-0.5">{tpl.name}</div>
+                        )}
+
+                        {/* Дата: старая → новая (если перенос в другой день) */}
+                        {dateChanged && (
+                          <div className="flex items-center gap-1 mt-1 text-[10px] flex-wrap">
+                            <CalendarDays className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                            <span className="line-through text-slate-400">
+                              {shortDate(oldDate)}
+                            </span>
+                            <span className="text-slate-400">→</span>
+                            <span className="text-amber-800 font-semibold">
+                              {shortDate(newDate)}
+                            </span>
                           </div>
                         )}
-                        {canEdit && (
+
+                        {/* Плашка статуса */}
+                        {pendingInc && (
+                          <div className="mt-1.5 flex items-center gap-1 text-[10px] font-semibold text-amber-800 bg-amber-100 rounded px-1.5 py-0.5 leading-tight">
+                            <Bell className="w-3 h-3 shrink-0" />
+                            <span>Требует вашего решения</span>
+                          </div>
+                        )}
+                        {pendingOut && !pendingInc && (
+                          <div className="mt-1.5 flex items-center gap-1 text-[10px] font-medium text-slate-600 bg-slate-100 rounded px-1.5 py-0.5 leading-tight">
+                            <Clock className="w-3 h-3 shrink-0" />
+                            <span>Ждёт согласования сотрудника</span>
+                          </div>
+                        )}
+
+                        {/* Кнопка удаления */}
+                        {canEdit && !hasPending && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -771,22 +1165,89 @@ export default function WeekDetailPage() {
                     );
                   })}
 
-                  {dayShifts.length === 0 && (
-                    <div
-                      className={`text-xs text-center ${
-                        isExpanded ? "py-6" : "py-4"
-                      } ${
-                        isDragOver
-                          ? "text-brand-500 font-medium"
-                          : "text-slate-300"
-                      }`}
-                    >
-                      {isDragOver ? "отпустите здесь" : "нет смен"}
-                    </div>
-                  )}
+                  {/* Виртуальные CREATE-смены — ждут согласования */}
+                  {(virtualCreateByDate[date] ?? []).map((r) => {
+                    const tpl = templateById(r.templateId ?? null);
+                    const color = tpl?.color ?? "#3B82F6";
+                    return (
+                      <div
+                        key={`virtual-create-${r.id}`}
+                        className="group relative rounded-lg border-l-4 border-amber-500 bg-amber-50 ring-2 ring-amber-300/60 text-xs p-2"
+                      >
+                        <div className="flex items-center gap-1.5 font-medium text-slate-900 flex-wrap">
+                          <Clock
+                            className="w-3 h-3 shrink-0"
+                            style={{ color: "#B45309" }}
+                          />
+                          <span>
+                            {r.newStartTime}–{r.newEndTime}
+                          </span>
+                        </div>
+                        <div className="text-slate-600 truncate mt-0.5">
+                          {userById(r.newUserId)}
+                        </div>
+                        {tpl && (
+                          <div className="text-slate-400 truncate mt-0.5">{tpl.name}</div>
+                        )}
+                        <div className="mt-1.5 flex items-center gap-1 text-[10px] font-semibold text-amber-800 bg-amber-100 rounded px-1.5 py-0.5 leading-tight">
+                          <Bell className="w-3 h-3 shrink-0" />
+                          <span>На согласовании</span>
+                        </div>
+                        {r.requestedByName && (
+                          <div className="mt-1 text-[10px] text-slate-500">
+                            от {r.requestedByName}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Виртуальные CREATE от менеджера — ждут согласования сотрудника */}
+                  {(virtualCreateOutgoingByDate[date] ?? []).map((r) => {
+                    const tpl = templateById(r.templateId ?? null);
+                    return (
+                      <div
+                        key={`virtual-create-out-${r.id}`}
+                        className="rounded-lg border-l-4 border-amber-500 bg-amber-50 ring-2 ring-amber-300/60 text-xs p-2"
+                      >
+                        <div className="flex items-center gap-1.5 font-medium text-slate-900 flex-wrap">
+                          <Clock
+                            className="w-3 h-3 shrink-0"
+                            style={{ color: "#B45309" }}
+                          />
+                          <span>
+                            {r.newStartTime}–{r.newEndTime}
+                          </span>
+                        </div>
+                        <div className="text-slate-600 truncate mt-0.5">
+                          {userById(r.newUserId)}
+                        </div>
+                        {tpl && (
+                          <div className="text-slate-400 truncate mt-0.5">{tpl.name}</div>
+                        )}
+                        <div className="mt-1.5 flex items-center gap-1 text-[10px] font-medium text-slate-600 bg-slate-100 rounded px-1.5 py-0.5 leading-tight">
+                          <Clock className="w-3 h-3 shrink-0" />
+                          <span>Ждёт согласования сотрудника</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                {dayShifts.length === 0 &&
+                  (virtualCreateByDate[date] ?? []).length === 0 &&
+                  (virtualCreateOutgoingByDate[date] ?? []).length === 0 && (
+                  <div
+                    className={`text-xs text-center ${
+                      isExpanded ? "py-6" : "py-4"
+                    } ${
+                      isDragOver ? "text-brand-500 font-medium" : "text-slate-300"
+                    }`}
+                  >
+                    {isDragOver ? "отпустите здесь" : "нет смен"}
+                  </div>
+                )}
                 </div>
 
-                {/* Кнопка добавления */}
                 {canEdit && showAddFor !== date && (
                   <button
                     onClick={(e) => {
@@ -800,7 +1261,6 @@ export default function WeekDetailPage() {
                   </button>
                 )}
 
-                {/* Форма добавления */}
                 {canEdit && showAddFor === date && (
                   <div
                     className="mt-2 space-y-1.5 text-xs animate-fade-in"
@@ -908,7 +1368,6 @@ export default function WeekDetailPage() {
         </div>
       </main>
 
-      {/* Модалка редактирования смены */}
       {editingShift && (
         <ShiftEditModal
           shift={editingShift}
@@ -920,6 +1379,7 @@ export default function WeekDetailPage() {
           onSaved={() => setEditingShift(null)}
           onUpdate={updateShift}
           onDelete={onRemoveShift}
+          onRequestCreated={refreshShiftRequests}
         />
       )}
     </div>
@@ -935,6 +1395,7 @@ function ShiftEditModal({
   onClose,
   onUpdate,
   onDelete,
+  onRequestCreated,
 }: {
   shift: ScheduledShift;
   weekId: string;
@@ -958,8 +1419,13 @@ function ShiftEditModal({
       startTime: string;
       endTime: string;
     }>
-  ) => Promise<void>;
+  ) => Promise<{
+    kind: "applied" | "requested";
+    shift?: ScheduledShift;
+    request?: any;
+  }>;
   onDelete: (id: string) => Promise<void>;
+  onRequestCreated?: () => Promise<void> | void;
 }) {
   const [templateId, setTemplateId] = useState(shift.templateId ?? "");
   const [userId, setUserId] = useState(shift.userId ?? "");
@@ -982,6 +1448,16 @@ function ShiftEditModal({
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // ─── Проверка времени ───
+    const timeCheck = validateShiftTimes(startTime, endTime);
+    if (!timeCheck.ok) {
+      await alertDialog(timeCheck.message ?? "Неверное время смены", {
+        title: "Ошибка в времени",
+        variant: "error",
+      });
+      return;
+    }
+
     if (userId) {
       try {
         const check = await shiftsApi.checkLimits({
@@ -992,12 +1468,17 @@ function ShiftEditModal({
           excludeShiftId: shift.id,
         });
         if (check.exceeds) {
-          const ok = window.confirm(
-            `⚠️ Превышение рабочей недели\n\n` +
+          const ok = await confirmDialog(
+            `Превышение рабочей недели\n\n` +
               `${check.userName} уже работает ${check.currentHours} ч (без этой смены).\n` +
               `С этой сменой (${check.newShiftHours} ч) станет ${check.totalHours} ч.\n` +
               `Это на ${check.excess} ч больше нормы (${check.limit} ч).\n\n` +
-              `Всё равно сохранить?`
+              `Всё равно сохранить?`,
+            {
+              title: "Превышение нормы",
+              confirmLabel: "Сохранить",
+              variant: "danger",
+            }
           );
           if (!ok) return;
         }
@@ -1013,10 +1494,15 @@ function ShiftEditModal({
         if (onVacation) {
           const userName =
             users.find((u) => u.id === userId)?.name ?? "Сотрудник";
-          const ok = window.confirm(
-            `⚠️ ${userName} в отпуске (${vacation!.startDate}–${
+          const ok = await confirmDialog(
+            `${userName} в отпуске (${vacation!.startDate}–${
               vacation!.endDate
-            }).\n\nВсё равно сохранить смену на ${shiftDate}?`
+            }).\n\nВсё равно сохранить смену на ${shiftDate}?`,
+            {
+              title: "Сотрудник в отпуске",
+              confirmLabel: "Сохранить",
+              variant: "danger",
+            }
           );
           if (!ok) return;
         }
@@ -1027,16 +1513,33 @@ function ShiftEditModal({
 
     setBusy(true);
     try {
-      await onUpdate(shift.id, {
+      const result = await onUpdate(shift.id, {
         templateId: templateId || null,
         userId: userId || null,
         shiftDate,
         startTime,
         endTime,
       });
+
+      if (result?.kind === "requested") {
+        if (onRequestCreated) await onRequestCreated();
+        await alertDialog(
+          "Изменение отправлено на согласование сотруднику — он должен подтвердить",
+          { title: "На согласовании", variant: "success" }
+        );
+      } else {
+        await alertDialog("Смена обновлена", {
+          title: "Готово",
+          variant: "success",
+        });
+      }
+
       onClose();
     } catch (e: any) {
-      window.alert(e.response?.data?.error ?? "Ошибка сохранения");
+      await alertDialog(e.response?.data?.error ?? "Ошибка сохранения", {
+        title: "Ошибка",
+        variant: "error",
+      });
     } finally {
       setBusy(false);
     }

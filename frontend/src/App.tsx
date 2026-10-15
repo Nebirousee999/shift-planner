@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./store/auth";
+import { useOrganization } from "./store/organization";
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import TemplatesPage from "./pages/TemplatesPage";
@@ -42,9 +43,17 @@ function ProtectedRoute({
 export default function App() {
   const { hydrate, token, user, hydrated } = useAuth();
 
+  // 1. Гидратация auth из localStorage
   useEffect(() => {
     hydrate();
   }, [hydrate]);
+
+  // 2. После гидратации и при наличии токена — подтянуть организацию
+  useEffect(() => {
+    if (hydrated && token) {
+      useOrganization.getState().fetch();
+    }
+  }, [hydrated, token]);
 
   if (!hydrated) return null;
 

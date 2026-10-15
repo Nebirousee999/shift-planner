@@ -12,6 +12,7 @@ import {
 import { useTimeEntries } from "../store/timeEntries";
 import { useUsers } from "../store/users";
 import { useAuth } from "../store/auth";
+import { useOrganization } from "../store/organization";
 import NavBar from "../components/NavBar";
 
 function formatDateTime(iso: string | null): string {
@@ -49,6 +50,9 @@ function elapsedSince(iso: string): string {
 
 export default function TimePage() {
   const { user } = useAuth();
+  const org = useOrganization((s) => s.org);
+  const timeTrackingOn = org?.timeTrackingEnabled !== false;
+
   const {
     items,
     active,
@@ -68,11 +72,37 @@ export default function TimePage() {
   const [showFilters, setShowFilters] = useState(false);
 
   useEffect(() => {
+    // Не грузим данные, если учёт выключен
+    if (!timeTrackingOn) return;
     fetchUsers();
     fetchActive();
     fetch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [timeTrackingOn]);
+
+  // ─── Заглушка, если учёт времени выключен ────────────
+  if (!timeTrackingOn) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <NavBar />
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center max-w-lg mx-auto">
+            <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
+              <Clock className="w-8 h-8 text-slate-400" />
+            </div>
+            <h2 className="font-semibold text-slate-900 mb-1 text-lg">
+              Учёт времени выключен
+            </h2>
+            <p className="text-sm text-slate-500">
+              Владелец аккаунта может включить его в{" "}
+              <b>Профиль → Настройки</b>. Пока он выключен — часы для
+              зарплаты считаются по графику смен.
+            </p>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   const onFilter = () => {
     fetch({
@@ -119,13 +149,6 @@ export default function TimePage() {
     const ms = new Date(e.clockOut!).getTime() - new Date(e.clockIn!).getTime();
     return sum + ms / 3600000;
   }, 0);
-
-  // Заменяем отображение:
-  <div className="text-2xl font-bold text-slate-900">
-    {totalHours < 1
-      ? `${Math.round(totalHours * 60)} мин`
-      : `${Math.round(totalHours * 10) / 10} ч`}
-  </div>
 
   const filtersActive = !!(filterUserId || from || to);
 

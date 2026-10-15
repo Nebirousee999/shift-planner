@@ -39,6 +39,13 @@ export type OverlapCheck = {
   conflicting: { id: string; startTime: string; endTime: string }[];
 };
 
+// Результат создания/обновления смены:
+//   applied   — применилось сразу (DRAFT или согласовывать некому)
+//   requested — создан запрос на согласование (PUBLISHED)
+export type ShiftUpdateResult =
+  | { kind: "applied"; shift: ScheduledShift }
+  | { kind: "requested"; request: any };
+
 // ─── API недель ───────────────────────────────────────
 export const weeksApi = {
   list: async (): Promise<ScheduleWeek[]> => {
@@ -73,6 +80,11 @@ export const weeksApi = {
 
 // ─── API смен ─────────────────────────────────────────
 export const shiftsApi = {
+  /**
+   * Создание смены.
+   * Возвращает либо применённую смену, либо запрос на согласование
+   * (если неделя PUBLISHED и есть кому согласовывать).
+   */
   create: async (input: {
     weekId: string;
     templateId?: string;
@@ -80,11 +92,20 @@ export const shiftsApi = {
     shiftDate: string;
     startTime: string;
     endTime: string;
-  }): Promise<ScheduledShift> => {
-    const { data } = await api.post<ScheduledShift>("/scheduled-shifts", input);
+  }): Promise<ShiftUpdateResult> => {
+    const { data } = await api.post<ShiftUpdateResult>(
+      "/scheduled-shifts",
+      input
+    );
     return data;
   },
 
+  /**
+   * Обновление смены.
+   * Возвращает:
+   *   - { kind: "applied", shift } — смена изменена сразу
+   *   - { kind: "requested", request } — создан запрос на согласование
+   */
   update: async (
     id: string,
     input: Partial<{
@@ -94,8 +115,8 @@ export const shiftsApi = {
       startTime: string;
       endTime: string;
     }>
-  ): Promise<ScheduledShift> => {
-    const { data } = await api.patch<ScheduledShift>(
+  ): Promise<ShiftUpdateResult> => {
+    const { data } = await api.patch<ShiftUpdateResult>(
       `/scheduled-shifts/${id}`,
       input
     );
