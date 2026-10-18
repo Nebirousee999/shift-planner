@@ -57,7 +57,7 @@ export default function App() {
 
   if (!hydrated) return null;
 
-  const homePath = user?.role === "EMPLOYEE" ? "/my" : "/";
+  const homePath = "/";
 
   return (
     <BrowserRouter>
@@ -72,7 +72,7 @@ export default function App() {
         <Route
           path="/"
           element={
-            <ProtectedRoute adminOnly>
+            <ProtectedRoute>
               <DashboardPage />
             </ProtectedRoute>
           }

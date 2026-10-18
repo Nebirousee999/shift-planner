@@ -1,25 +1,34 @@
 import { api } from "./client";
+import type { ScheduledShift } from "./weeks";
+
+export type TimeEntry = {
+  id: string;
+  userId: string;
+  clockIn: string;
+  clockOut: string | null;
+};
+
+export type TodayShift = {
+  id: string;
+  startTime: string;
+  endTime: string;
+  userId: string | null;
+  userName: string | null;
+  userPosition: string | null;
+  templateId: string | null;
+  templateColor: string | null;
+};
 
 export type DashboardSummary = {
-  userCount: number;
-  templateCount: number;
-  weekStats: {
-    total: number;
-    draft: number;
-    published: number;
-  };
-  nextWeek: {
+  currentWeek: {
     id: string;
     weekStartDate: string;
     status: "DRAFT" | "PUBLISHED" | "LOCKED";
-    shiftsCount: number;
+    shifts: ScheduledShift[];
   } | null;
-  workingNow: Array<{
-    entryId: string;
-    userId: string;
-    userName: string;
-    clockIn: string;
-  }>;
+  todayShifts: TodayShift[];
+  weekTimeEntries: TimeEntry[]; // <--- Новое поле
+  userCount: number;
   monthlyHours: number;
 };
 

@@ -10,111 +10,92 @@ import {
 
 export const dashboardService = {
   async summary(orgId: string) {
-    // Количество сотрудников
-    const [{ value: userCount }] = await db
-      .select({ value: count() })
-      .from(users)
-      .where(eq(users.orgId, orgId));
+    const todayDate = new Date().toISOString().slice(0, 10);
 
-    // Количество шаблонов
-    const [{ value: templateCount }] = await db
-      .select({ value: count() })
-      .from(shiftTemplates)
-      .where(eq(shiftTemplates.orgId, orgId));
-
-    // Недели: всего и по статусам
-    const weeks = await db
-      .select({ status: scheduleWeeks.status })
-      .from(scheduleWeeks)
-      .where(eq(scheduleWeeks.orgId, orgId));
-
-    const weekStats = {
-      total: weeks.length,
-      draft: weeks.filter((w) => w.status === "DRAFT").length,
-      published: weeks.filter((w) => w.status === "PUBLISHED").length,
-    };
-
-    // Ближайшая неделя (минимальная из DRAFT или PUBLISHED)
-    const today = new Date().toISOString().slice(0, 10);
-    const [nextWeek] = await db
+    // 1. Текущая неделя
+    const [currentWeek] = await db
       .select()
       .from(scheduleWeeks)
       .where(
         and(
           eq(scheduleWeeks.orgId, orgId),
-          gte(scheduleWeeks.weekStartDate, today),
-        ),
+          lte(scheduleWeeks.weekStartDate, todayDate),
+          gte(sql`${scheduleWeeks.weekStartDate} + interval '6 days'`, todayDate)
+        )
       )
-      .orderBy(scheduleWeeks.weekStartDate)
       .limit(1);
 
-    let nextWeekShifts = 0;
-    if (nextWeek) {
-      const [{ value }] = await db
-        .select({ value: count() })
+    let weekShifts: any[] = [];
+    let weekTimeEntries: any[] = [];
+    
+    if (currentWeek) {
+      weekShifts = await db
+        .select()
         .from(scheduledShifts)
-        .where(eq(scheduledShifts.weekId, nextWeek.id));
-      nextWeekShifts = value;
+        .where(eq(scheduledShifts.weekId, currentWeek.id));
+
+      const start = currentWeek.weekStartDate;
+      const d = new Date(start + "T00:00:00Z");
+      d.setUTCDate(d.getUTCDate() + 6);
+      const end = d.toISOString().slice(0, 10);
+
+      weekTimeEntries = await db
+        .select()
+        .from(timeEntries)
+        .where(
+          and(
+            isNotNull(timeEntries.clockIn),
+            gte(timeEntries.clockIn, new Date(start + "T00:00:00Z")),
+            lte(timeEntries.clockIn, new Date(end + "T23:59:59Z"))
+          )
+        );
     }
 
-    // Сейчас работают (открытые смены у сотрудников этой организации)
-    const orgUsers = await db
-      .select({ id: users.id, name: users.name })
-      .from(users)
-      .where(eq(users.orgId, orgId));
-    const orgUserIds = new Set(orgUsers.map((u) => u.id));
-
-    const allOpen = await db
-      .select()
-      .from(timeEntries)
-      .where(and(isNotNull(timeEntries.clockIn), isNull(timeEntries.clockOut)));
-
-    const workingNow = allOpen
-      .filter((e) => orgUserIds.has(e.userId))
-      .map((e) => ({
-        entryId: e.id,
-        userId: e.userId,
-        userName: orgUsers.find((u) => u.id === e.userId)?.name ?? "—",
-        clockIn: e.clockIn,
-      }));
-
-    // Часов за текущий месяц (по закрытым сменам)
-    const monthStart = new Date();
-    monthStart.setDate(1);
-    monthStart.setHours(0, 0, 0, 0);
-
-    const closedThisMonth = await db
-      .select()
-      .from(timeEntries)
+    // 2. Смены на сегодня
+    const todayShiftsRaw = await db
+      .select({
+        id: scheduledShifts.id,
+        startTime: scheduledShifts.startTime,
+        endTime: scheduledShifts.endTime,
+        userId: users.id,
+        userName: users.name,
+        userPosition: users.position,
+        templateId: shiftTemplates.id,
+        templateColor: shiftTemplates.color,
+      })
+      .from(scheduledShifts)
+      .leftJoin(users, eq(scheduledShifts.userId, users.id))
+      .leftJoin(shiftTemplates, eq(scheduledShifts.templateId, shiftTemplates.id))
       .where(
         and(
-          isNotNull(timeEntries.clockIn),
-          isNotNull(timeEntries.clockOut),
-          gte(timeEntries.clockIn, monthStart),
-        ),
+          eq(scheduledShifts.shiftDate, todayDate),
+          isNotNull(scheduledShifts.userId)
+        )
       );
 
-    const monthlyHours = closedThisMonth
-      .filter((e) => orgUserIds.has(e.userId))
-      .reduce((sum, e) => {
-        const ms = new Date(e.clockOut!).getTime() - new Date(e.clockIn!).getTime();
-        return sum + ms / 3600000;
-      }, 0);
+    // Фильтруем по орг.
+    const orgUsers = await db.select({ id: users.id }).from(users).where(eq(users.orgId, orgId));
+    const orgUserIds = new Set(orgUsers.map(u => u.id));
+    
+    const todayShifts = todayShiftsRaw.filter(s => s.userId && orgUserIds.has(s.userId));
+    const validWeekTimeEntries = weekTimeEntries.filter(te => orgUserIds.has(te.userId));
+
+    const [{ value: userCount }] = await db
+      .select({ value: count() })
+      .from(users)
+      .where(eq(users.orgId, orgId));
 
     return {
+      currentWeek: currentWeek ? { 
+        id: currentWeek.id, 
+        weekStartDate: currentWeek.weekStartDate,
+        status: currentWeek.status,
+        shifts: weekShifts 
+      } : null,
+      todayShifts,
+      weekTimeEntries: validWeekTimeEntries,
       userCount,
-      templateCount,
-      weekStats,
-      nextWeek: nextWeek
-        ? {
-            id: nextWeek.id,
-            weekStartDate: nextWeek.weekStartDate,
-            status: nextWeek.status,
-            shiftsCount: nextWeekShifts,
-          }
-        : null,
-      workingNow,
-      monthlyHours: Math.round(monthlyHours * 10) / 10,
+      monthlyHours: 0,
     };
   },
 };

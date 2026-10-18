@@ -41,8 +41,7 @@ export default function LoginPage() {
   const onLogin = async (data: LoginForm) => {
     const ok = await login(data.email, data.password);
     if (ok) {
-      const u = useAuth.getState().user;
-      navigate(u?.role === "EMPLOYEE" ? "/my" : "/");
+      navigate("/");
     }
   };
 
