@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  # ─── БЭКЕНД (Fastify) ───
+  api:
+    build: 
+      context: .  # Корень проекта
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    env_file:
+      - .env      # Берет DATABASE_URL, JWT_SECRET и т.д. из корневого .env
+    volumes:
+      - ./pgdata:/app/pgdata # Сохраняем локальную базу при перезапуске
+    restart: unless-stopped
+
+  # ─── ФРОНТЕНД (React + Nginx) ───
+  frontend:
+    build:
+      context: ./frontend # Указываем, что собирать нужно из папки frontend
+      dockerfile: Dockerfile
+      args:
+        # Передаем адрес API для сборки React
+        - VITE_API_URL=http://localhost:3001/api
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+    restart: unless-stopped

@@ -28,7 +28,10 @@ export const dashboardService = {
     let weekShifts: any[] = [];
     let weekTimeEntries: any[] = [];
     
-    if (currentWeek) {
+    // ⚡ Показываем смены и отработанное время только если неделя ОПУБЛИКОВАНА
+    const isPublished = currentWeek?.status === "PUBLISHED";
+
+    if (currentWeek && isPublished) {
       weekShifts = await db
         .select()
         .from(scheduledShifts)
@@ -52,32 +55,39 @@ export const dashboardService = {
     }
 
     // 2. Смены на сегодня
-    const todayShiftsRaw = await db
-      .select({
-        id: scheduledShifts.id,
-        startTime: scheduledShifts.startTime,
-        endTime: scheduledShifts.endTime,
-        userId: users.id,
-        userName: users.name,
-        userPosition: users.position,
-        templateId: shiftTemplates.id,
-        templateColor: shiftTemplates.color,
-      })
-      .from(scheduledShifts)
-      .leftJoin(users, eq(scheduledShifts.userId, users.id))
-      .leftJoin(shiftTemplates, eq(scheduledShifts.templateId, shiftTemplates.id))
-      .where(
-        and(
-          eq(scheduledShifts.shiftDate, todayDate),
-          isNotNull(scheduledShifts.userId)
-        )
-      );
+    let todayShifts: any[] = [];
+    
+    // ⚡ Смены на сегодня тоже показываем только для опубликованной недели
+    if (isPublished) {
+      const todayShiftsRaw = await db
+        .select({
+          id: scheduledShifts.id,
+          startTime: scheduledShifts.startTime,
+          endTime: scheduledShifts.endTime,
+          userId: users.id,
+          userName: users.name,
+          userPosition: users.position,
+          templateId: shiftTemplates.id,
+          templateColor: shiftTemplates.color,
+        })
+        .from(scheduledShifts)
+        .leftJoin(users, eq(scheduledShifts.userId, users.id))
+        .leftJoin(shiftTemplates, eq(scheduledShifts.templateId, shiftTemplates.id))
+        .where(
+          and(
+            eq(scheduledShifts.shiftDate, todayDate),
+            isNotNull(scheduledShifts.userId)
+          )
+        );
 
-    // Фильтруем по орг.
+      const orgUsers = await db.select({ id: users.id }).from(users).where(eq(users.orgId, orgId));
+      const orgUserIds = new Set(orgUsers.map(u => u.id));
+      
+      todayShifts = todayShiftsRaw.filter(s => s.userId && orgUserIds.has(s.userId));
+    }
+
     const orgUsers = await db.select({ id: users.id }).from(users).where(eq(users.orgId, orgId));
     const orgUserIds = new Set(orgUsers.map(u => u.id));
-    
-    const todayShifts = todayShiftsRaw.filter(s => s.userId && orgUserIds.has(s.userId));
     const validWeekTimeEntries = weekTimeEntries.filter(te => orgUserIds.has(te.userId));
 
     const [{ value: userCount }] = await db

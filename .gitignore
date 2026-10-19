@@ -1,14 +1,39 @@
+# ─── Зависимости ───
 node_modules/
+frontend/node_modules/
+
+# ─── Сборка (Build) ───
 dist/
+frontend/dist/
+frontend/dev-dist/
+
+# ─── Переменные окружения (СЕКРЕТЫ) ───
 .env
 .env.local
 .env.production
+.env.production.local
 .env.selectel
 .env.yandex
 .env.vk
-.env.production.local
+
+# ─── Локальная база данных (PGlite) ───
 pgdata/
+
+# ─── Сгенерированные документы ───
 *.xlsx
 *.docx
 test-order.docx
-frontend/dev-dist/
+
+# ─── Docker ───
+# Если создашь локальные настройки для докера (не для сервера)
+docker-compose.override.yml
+
+# ─── Логи ───
+*.log
+npm-debug.log*
+
+# ─── Системные файлы и IDE ───
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

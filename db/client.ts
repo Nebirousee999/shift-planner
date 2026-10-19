@@ -1,15 +1,45 @@
-﻿import { PGlite } from "@electric-sql/pglite";
-import { drizzle } from "drizzle-orm/pglite";
+﻿import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
+import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
+import { Pool } from "pg";
 import * as schema from "./schema.js";
 
-// Локальная база в папке ./pgdata (создастся автоматически)
-export const pg = new PGlite("./pgdata");
+const DATABASE_URL = process.env.DATABASE_URL ?? "./pgdata";
 
-// Обёртка Drizzle
-export const db = drizzle(pg, { schema });
+// Проверяем: если ссылка начинается с postgres:// или postgresql:// — значит это облако
+const isPostgres =
+  DATABASE_URL.startsWith("postgres://") ||
+  DATABASE_URL.startsWith("postgresql://");
 
-// Быстрая проверка при старте
-if (process.env.NODE_ENV !== "test") {
+// Используем `any`, чтобы TypeScript не ругался на два разных типа драйверов
+export let db: any;
+export let pg: any;
+
+if (isPostgres) {
+  // ─── ОБЛАКО: Managed PostgreSQL ───
+  const pool = new Pool({
+    connectionString: DATABASE_URL,
+    max: 10,
+    idleTimeoutMillis: 30_000,
+  });
+
+  db = drizzlePg(pool, { schema });
+  pg = pool;
+
+  if (process.env.NODE_ENV !== "test") {
+    const result = await pg.query<{ version: string }>("SELECT version();");
+    console.log("✅ PostgreSQL готов:", result.rows[0]?.version);
+  }
+} else {
+  // ─── ЛОКАЛЬНО: PGlite ───
+  // Динамический импорт, чтобы в облаке не грузить PGlite зря
+  const { PGlite } = await import("@electric-sql/pglite");
+  const pglite = new PGlite(DATABASE_URL);
+
+  db = drizzlePglite(pglite, { schema });
+  pg = pglite;
+
+  if (process.env.NODE_ENV !== "test") {
     const result = await pg.query<{ version: string }>("SELECT version();");
     console.log("✅ PGlite готов:", result.rows[0]?.version);
+  }
 }
