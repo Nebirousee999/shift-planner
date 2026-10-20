@@ -8,7 +8,7 @@ import {
 import { useDialogs } from "../store/dialogs";
 
 export default function DialogHost() {
-  const { current, close } = useDialogs();
+  const { current } = useDialogs();
 
   if (!current) return null;
 

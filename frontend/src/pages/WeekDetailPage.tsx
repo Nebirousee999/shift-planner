@@ -1168,7 +1168,7 @@ export default function WeekDetailPage() {
                   {/* Виртуальные CREATE-смены — ждут согласования */}
                   {(virtualCreateByDate[date] ?? []).map((r) => {
                     const tpl = templateById(r.templateId ?? null);
-                    const color = tpl?.color ?? "#3B82F6";
+                    
                     return (
                       <div
                         key={`virtual-create-${r.id}`}

@@ -31,7 +31,7 @@ function ProtectedRoute({
 
   if (!token) return <Navigate to="/login" replace />;
 
-  const isAdmin = user?.role === "OWNER" || user?.role === "MANAGER";
+
   const isEmployee = user?.role === "EMPLOYEE";
 
   if (adminOnly && isEmployee) return <Navigate to="/my" replace />;
@@ -41,7 +41,7 @@ function ProtectedRoute({
 }
 
 export default function App() {
-  const { hydrate, token, user, hydrated } = useAuth();
+  const { hydrate, token, hydrated } = useAuth();
 
   // 1. Гидратация auth из localStorage
   useEffect(() => {

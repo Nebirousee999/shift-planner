@@ -4,14 +4,13 @@ import {
   Square,
   Activity,
   Clock,
-  Users as UsersIcon,
   Filter,
   X,
   Timer,
 } from "lucide-react";
 import { useTimeEntries } from "../store/timeEntries";
 import { useUsers } from "../store/users";
-import { useAuth } from "../store/auth";
+
 import { useOrganization } from "../store/organization";
 import NavBar from "../components/NavBar";
 
@@ -49,7 +48,7 @@ function elapsedSince(iso: string): string {
 }
 
 export default function TimePage() {
-  const { user } = useAuth();
+
   const org = useOrganization((s) => s.org);
   const timeTrackingOn = org?.timeTrackingEnabled !== false;
 

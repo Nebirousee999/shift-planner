@@ -3,7 +3,7 @@ import {
   weeksApi,
   shiftsApi,
   type ScheduleWeek,
-  type ScheduledShift,
+
   type ShiftUpdateResult,
 } from "../api/weeks";
 

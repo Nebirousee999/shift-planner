@@ -14,7 +14,6 @@ import { useWeeks } from "../store/weeks";
 import { useShiftTemplates } from "../store/shiftTemplates";
 import {
   shiftChangeRequestsApi,
-  type ShiftChangeRequest,
 } from "../api/shiftChangeRequests";
 import NavBar from "../components/NavBar";
 

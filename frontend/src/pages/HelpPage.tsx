@@ -7,10 +7,8 @@ import {
   Users,
   FileText,
   Upload,
-  Download,
   Sparkles,
   Code,
-  CalendarDays,
 } from "lucide-react";
 import NavBar from "../components/NavBar";
 

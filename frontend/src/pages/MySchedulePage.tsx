@@ -8,7 +8,6 @@ import {
   ArrowRightLeft,
   Check,
   X,
-  User as UserIcon,
   Inbox,
   Send,
   XCircle,
