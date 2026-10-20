@@ -1,0 +1,2 @@
+ALTER TABLE "organizations" ADD COLUMN "overtime_multiplier_1" numeric DEFAULT '1.5' NOT NULL;--> statement-breakpoint
+ALTER TABLE "organizations" ADD COLUMN "overtime_multiplier_2" numeric DEFAULT '2.0' NOT NULL;

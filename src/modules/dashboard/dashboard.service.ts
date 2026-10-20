@@ -1,4 +1,4 @@
-import { eq, and, gte, lte, isNull, isNotNull, count, sql } from "drizzle-orm";
+import { eq, and, gte, lte, isNull, isNotNull, count, sql, inArray } from "drizzle-orm";
 import { db } from "../../../db/client.js";
 import {
   users,
@@ -6,13 +6,13 @@ import {
   scheduleWeeks,
   scheduledShifts,
   timeEntries,
+  shiftChangeRequests, // 👈 Добавляем импорт
 } from "../../../db/schema.js";
 
 export const dashboardService = {
-  async summary(orgId: string) {
-    const todayDate = new Date().toISOString().slice(0, 10);
+  async summary(orgId: string, customDate?: string) {
+    const todayDate = customDate || new Date().toISOString().slice(0, 10);
 
-    // 1. Текущая неделя
     const [currentWeek] = await db
       .select()
       .from(scheduleWeeks)
@@ -27,8 +27,8 @@ export const dashboardService = {
 
     let weekShifts: any[] = [];
     let weekTimeEntries: any[] = [];
+    let weekShiftChanges: any[] = []; // 👈 Добавляем переменную
     
-    // ⚡ Показываем смены и отработанное время только если неделя ОПУБЛИКОВАНА
     const isPublished = currentWeek?.status === "PUBLISHED";
 
     if (currentWeek && isPublished) {
@@ -36,6 +36,20 @@ export const dashboardService = {
         .select()
         .from(scheduledShifts)
         .where(eq(scheduledShifts.weekId, currentWeek.id));
+
+      // Если есть смены, ищем одобренные запросы на их изменение
+      if (weekShifts.length > 0) {
+        const shiftIds = weekShifts.map((s) => s.id);
+        weekShiftChanges = await db
+          .select()
+          .from(shiftChangeRequests)
+          .where(
+            and(
+              eq(shiftChangeRequests.status, "APPROVED"),
+              inArray(shiftChangeRequests.shiftId, shiftIds)
+            )
+          );
+      }
 
       const start = currentWeek.weekStartDate;
       const d = new Date(start + "T00:00:00Z");
@@ -54,16 +68,15 @@ export const dashboardService = {
         );
     }
 
-    // 2. Смены на сегодня
     let todayShifts: any[] = [];
     
-    // ⚡ Смены на сегодня тоже показываем только для опубликованной недели
     if (isPublished) {
       const todayShiftsRaw = await db
         .select({
           id: scheduledShifts.id,
           startTime: scheduledShifts.startTime,
           endTime: scheduledShifts.endTime,
+          shiftDate: scheduledShifts.shiftDate, // 👈 Добавили дату, она понадобится
           userId: users.id,
           userName: users.name,
           userPosition: users.position,
@@ -104,6 +117,7 @@ export const dashboardService = {
       } : null,
       todayShifts,
       weekTimeEntries: validWeekTimeEntries,
+      weekShiftChanges, // 👈 Возвращаем на фронтенд
       userCount,
       monthlyHours: 0,
     };

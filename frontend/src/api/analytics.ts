@@ -22,6 +22,23 @@ export type AnalyticsSummary = {
   };
 };
 
+export type OvertimeUser = {
+  userId: string;
+  name: string;
+  hourlyRate: number;
+  plannedHours: number;
+  actualHours: number;
+  overtimeHours: number;
+  overtimePay: number;
+};
+
+export type OvertimeSummary = {
+  period: { from: string; to: string };
+  settings: { mult1: number; mult2: number };
+  users: OvertimeUser[];
+};
+
+
 export const analyticsApi = {
   summary: async (from: string, to: string): Promise<AnalyticsSummary> => {
     const { data } = await api.get<AnalyticsSummary>("/analytics", {
@@ -29,4 +46,12 @@ export const analyticsApi = {
     });
     return data;
   },
+
+  getOvertime: async (from: string, to: string): Promise<OvertimeSummary> => {
+    const { data } = await api.get<OvertimeSummary>("/analytics/overtime", {
+      params: { from, to },
+    });
+    return data;
+  },
+
 };

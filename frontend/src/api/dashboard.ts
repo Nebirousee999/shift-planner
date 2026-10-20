@@ -19,6 +19,15 @@ export type TodayShift = {
   templateColor: string | null;
 };
 
+export type ShiftChangeRequest = {
+  id: string;
+  shiftId: string;
+  oldEndTime: string;
+  newEndTime: string;
+  // ... другие поля, если нужны
+};
+
+
 export type DashboardSummary = {
   currentWeek: {
     id: string;
@@ -30,11 +39,19 @@ export type DashboardSummary = {
   weekTimeEntries: TimeEntry[]; // <--- Новое поле
   userCount: number;
   monthlyHours: number;
+  weekShiftChanges: ShiftChangeRequest[]; // 👈
 };
 
+
+
+
+
+
 export const dashboardApi = {
-  summary: async (): Promise<DashboardSummary> => {
-    const { data } = await api.get<DashboardSummary>("/dashboard");
+  summary: async (date?: string): Promise<DashboardSummary> => {
+    const { data } = await api.get<DashboardSummary>("/dashboard", {
+      params: date ? { date } : undefined,
+    });
     return data;
   },
 };

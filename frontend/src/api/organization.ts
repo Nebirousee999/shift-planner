@@ -9,6 +9,8 @@ export type Organization = {
   legalAddress: string | null;
   timeTrackingEnabled: boolean;
   createdAt: string;
+  overtimeMultiplier1?: string; // 👈
+  overtimeMultiplier2?: string; // 👈
 };
 
 export const organizationApi = {

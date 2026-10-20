@@ -57,6 +57,13 @@
       "when": 1792058780713,
       "tag": "0007_crazy_the_phantom",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792523820713,
+      "tag": "0008_chief_molten_man",
+      "breakpoints": true
     }
   ]
 }

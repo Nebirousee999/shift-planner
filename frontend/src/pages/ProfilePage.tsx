@@ -15,6 +15,7 @@ import {
   Pencil,
   Settings as SettingsIcon,
   Clock,
+  Percent,
 } from "lucide-react";
 import { useAuth } from "../store/auth";
 import { meApi, type MyProfile } from "../api/me";
@@ -73,6 +74,8 @@ export default function ProfilePage() {
     directorName: "",
     inn: "",
     legalAddress: "",
+    overtimeMultiplier1: "1.5",
+    overtimeMultiplier2: "2.0",
   });
   const [orgEditing, setOrgEditing] = useState(false);
   const [orgSaving, setOrgSaving] = useState(false);
@@ -102,16 +105,15 @@ export default function ProfilePage() {
             directorName: o.directorName ?? "",
             inn: o.inn ?? "",
             legalAddress: o.legalAddress ?? "",
+            overtimeMultiplier1: o.overtimeMultiplier1 ?? "1.5",
+            overtimeMultiplier2: o.overtimeMultiplier2 ?? "2.0",
           });
-          // синхронизируем глобальный стор
           useOrganization.getState().set(o);
         }
       })
       .finally(() => setLoading(false));
   }, []);
 
-  // Сброс вкладки, если пользователь не OWNER (а вдруг стал MANAGER
-  // после редактирования с другой вкладки — маловероятно, но безопасно)
   useEffect(() => {
     if (!isOwner && tab === "settings") {
       setTab("profile");
@@ -141,10 +143,13 @@ export default function ProfilePage() {
         directorName: orgForm.directorName || null,
         inn: orgForm.inn || null,
         legalAddress: orgForm.legalAddress || null,
+        overtimeMultiplier1: orgForm.overtimeMultiplier1,
+        overtimeMultiplier2: orgForm.overtimeMultiplier2,
       });
       setOrg(updated);
       useOrganization.getState().set(updated);
       setOrgEditing(false);
+      alert("Настройки сохранены");
     } catch (err: any) {
       alert(err.response?.data?.error ?? "Ошибка сохранения");
     } finally {
@@ -155,7 +160,6 @@ export default function ProfilePage() {
   const onToggleTimeTracking = async (enabled: boolean) => {
     if (!org || !isOwner) return;
 
-    // оптимистично обновляем локально, чтобы UI сразу отреагировал
     const previous = org;
     const optimistic: Organization = {
       ...org,
@@ -172,7 +176,6 @@ export default function ProfilePage() {
       setOrg(updated);
       useOrganization.getState().set(updated);
     } catch (err: any) {
-      // откат при ошибке
       setOrg(previous);
       useOrganization.getState().set(previous);
       alert(err.response?.data?.error ?? "Ошибка сохранения");
@@ -209,7 +212,6 @@ export default function ProfilePage() {
                 Профиль
               </button>
 
-              {/* Вкладка «Настройки» — только для владельца */}
               {isOwner && (
                 <button
                   onClick={() => setTab("settings")}
@@ -228,7 +230,6 @@ export default function ProfilePage() {
             {/* ═══ ВКЛАДКА: ПРОФИЛЬ ═══ */}
             {tab === "profile" && (
               <>
-                {/* Карточка профиля */}
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-6 animate-fade-in">
                   <div className="h-20 bg-gradient-to-br from-brand-500 to-brand-700" />
                   <div className="px-6 pb-6">
@@ -283,7 +284,7 @@ export default function ProfilePage() {
                   </div>
                 </div>
 
-                {/* Данные организации — видны всем, редактирует только OWNER */}
+                {/* Данные организации */}
                 {org && (
                   <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6 animate-fade-in">
                     <div className="flex items-start justify-between gap-3 mb-4">
@@ -473,58 +474,125 @@ export default function ProfilePage() {
 
             {/* ═══ ВКЛАДКА: НАСТРОЙКИ (только OWNER) ═══ */}
             {tab === "settings" && isOwner && (
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 animate-fade-in">
-                <div className="flex items-start gap-3 mb-5">
-                  <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center">
-                    <SettingsIcon className="w-5 h-5 text-brand-600" />
+              <div className="space-y-6 animate-fade-in">
+                
+                {/* Модули */}
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+                  <div className="flex items-start gap-3 mb-5">
+                    <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center">
+                      <SettingsIcon className="w-5 h-5 text-brand-600" />
+                    </div>
+                    <div>
+                      <h2 className="font-semibold text-slate-900">
+                        Настройки
+                      </h2>
+                      <p className="text-xs text-slate-500">
+                        Модули и функции системы
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h2 className="font-semibold text-slate-900">
-                      Настройки
-                    </h2>
-                    <p className="text-xs text-slate-500">
-                      Модули и функции системы
-                    </p>
-                  </div>
+
+                  <label
+                    className={`flex items-start gap-3 p-4 rounded-xl border-2 transition-all cursor-pointer ${
+                      togglingTime
+                        ? "border-slate-100 opacity-70"
+                        : "border-slate-200 hover:border-brand-300"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={org?.timeTrackingEnabled !== false}
+                      onChange={(e) =>
+                        onToggleTimeTracking(e.target.checked)
+                      }
+                      disabled={togglingTime || !org}
+                      className="!w-4 !h-4 mt-1 !p-0"
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-slate-500" />
+                        <span className="font-medium text-slate-900 text-sm">
+                          Учёт рабочего времени
+                        </span>
+                        {togglingTime && (
+                          <span className="text-xs text-slate-400">
+                            сохранение...
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-slate-500 mt-1">
+                        Сотрудники смогут отмечать начало и конец смены.
+                        Если выключить — часы для зарплаты считаются
+                        по графику, кнопка «Начать смену» скрывается у всех
+                        сотрудников.
+                      </div>
+                    </div>
+                  </label>
                 </div>
 
-                {/* Учёт рабочего времени */}
-                <label
-                  className={`flex items-start gap-3 p-4 rounded-xl border-2 transition-all cursor-pointer ${
-                    togglingTime
-                      ? "border-slate-100 opacity-70"
-                      : "border-slate-200 hover:border-brand-300"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={org?.timeTrackingEnabled !== false}
-                    onChange={(e) =>
-                      onToggleTimeTracking(e.target.checked)
-                    }
-                    disabled={togglingTime || !org}
-                    className="!w-4 !h-4 mt-1 !p-0"
-                  />
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-slate-500" />
-                      <span className="font-medium text-slate-900 text-sm">
-                        Учёт рабочего времени
-                      </span>
-                      {togglingTime && (
-                        <span className="text-xs text-slate-400">
-                          сохранение...
-                        </span>
-                      )}
+                {/* Переработки */}
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+                  <div className="flex items-start gap-3 mb-5">
+                    <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
+                      <Percent className="w-5 h-5 text-amber-600" />
                     </div>
-                    <div className="text-xs text-slate-500 mt-1">
-                      Сотрудники смогут отмечать начало и конец смены.
-                      Если выключить — часы для зарплаты считаются
-                      по графику, кнопка «Начать смену» скрывается у всех
-                      сотрудников.
+                    <div>
+                      <h2 className="font-semibold text-slate-900">
+                        Коэффициенты переработки
+                      </h2>
+                      <p className="text-xs text-slate-500">
+                        Настройка оплаты сверхурочных часов
+                      </p>
                     </div>
                   </div>
-                </label>
+
+                  <form onSubmit={onSaveOrg} className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                          Первые 2 часа
+                        </label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="1"
+                          value={orgForm.overtimeMultiplier1}
+                          onChange={(e) => setOrgForm((f) => ({ ...f, overtimeMultiplier1: e.target.value }))}
+                          className="w-full"
+                        />
+                        <p className="text-xs text-slate-500 mt-1">
+                          По умолчанию 1.5
+                        </p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                          Последующие часы
+                        </label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="1"
+                          value={orgForm.overtimeMultiplier2}
+                          onChange={(e) => setOrgForm((f) => ({ ...f, overtimeMultiplier2: e.target.value }))}
+                          className="w-full"
+                        />
+                        <p className="text-xs text-slate-500 mt-1">
+                          По умолчанию 2.0
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={orgSaving}
+                      className="inline-flex items-center gap-2 bg-brand-600 text-white px-5 py-2.5 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium shadow-sm hover:shadow transition-all mt-2"
+                    >
+                      <Save className="w-4 h-4" />
+                      {orgSaving ? "Сохранение..." : "Сохранить коэффициенты"}
+                    </button>
+                  </form>
+                </div>
+
               </div>
             )}
           </>
