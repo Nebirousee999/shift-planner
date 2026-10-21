@@ -23,6 +23,7 @@ import { shiftsApi } from "../api/weeks";
 import { useAuth } from "../store/auth";
 import { useWeeks } from "../store/weeks";
 import { useNotifications } from "../store/notifications";
+import { useLocations } from "../store/locations";
 import NavBar from "../components/NavBar";
 import { shortDate, dayLabel, weekDates } from "../lib/dates";
 
@@ -78,12 +79,13 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const { weeks, fetchWeeks } = useWeeks();
   const { vacationsPending, swapsIncoming, shiftChangesIncoming, refresh: refreshNotifs } = useNotifications();
-  
+  const { activeLocationId, fetch: fetchLocations } = useLocations();
+
   const [data, setData] = useState<DashboardSummary | null>(null);
   const [profile, setProfile] = useState<MyProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(new Date());
-  
+
   const [disciplineShift, setDisciplineShift] = useState<any | null>(null);
   const [hoveredShift, setHoveredShift] = useState<any | null>(null);
 
@@ -92,10 +94,18 @@ export default function DashboardPage() {
     return () => clearInterval(timer);
   }, []);
 
+  // Загружаем локации
   useEffect(() => {
+    fetchLocations();
+  }, [fetchLocations]);
+
+  // Загружаем данные, когда есть активная локация
+  useEffect(() => {
+    if (!activeLocationId) return;
+
     Promise.all([
-      dashboardApi.summary(), 
-      meApi.profile().catch(() => null)
+      dashboardApi.summary(activeLocationId),
+      meApi.profile().catch(() => null),
     ])
       .then(([dash, prof]) => {
         setData(dash);
@@ -103,10 +113,10 @@ export default function DashboardPage() {
       })
       .catch(() => alert("Ошибка загрузки дашборда"))
       .finally(() => setLoading(false));
-    
-    fetchWeeks();
+
+    fetchWeeks(activeLocationId);
     refreshNotifs();
-  }, [fetchWeeks, refreshNotifs]);
+  }, [activeLocationId, fetchWeeks, refreshNotifs]);
 
   const todayDate = now.toISOString().slice(0, 10);
   const currentTimePercent = ((now.getHours() * 60 + now.getMinutes()) / (24 * 60)) * 100;
@@ -123,7 +133,7 @@ export default function DashboardPage() {
 
   const plannedToday = myShiftsToday.reduce((acc, s) => acc + calcHours(s.startTime, s.endTime), 0);
   const plannedWeek = myShiftsWeek.reduce((acc, s) => acc + calcHours(s.startTime, s.endTime), 0);
-  
+
   const calcActual = (entries: any[]) => {
     let h = 0;
     entries.forEach((te) => {
@@ -156,7 +166,7 @@ export default function DashboardPage() {
 
   // --- РАСЧЕТЫ ЗАТРАТ ---
   const allUsers = data?.users || [];
-  
+
   const calcCost = (shifts: any[]) => {
     return shifts.reduce((acc, s) => {
       const u = allUsers.find((x: any) => x.id === s.userId);
@@ -201,11 +211,10 @@ export default function DashboardPage() {
   const early = hoveredShift?.earlyLeaveMinutes || 0;
   const hasViolation = lateness > 0 || early > 0;
 
-  // Форматируем текст переработки (если больше часа, показываем часы и минуты)
   let overtimeText = "";
   if (hoveredOvertime > 0) {
-    overtimeText = hoveredOvertime >= 60 
-      ? formatHours(hoveredOvertime / 60) 
+    overtimeText = hoveredOvertime >= 60
+      ? formatHours(hoveredOvertime / 60)
       : `${hoveredOvertime} мин`;
   }
 
@@ -214,7 +223,6 @@ export default function DashboardPage() {
       <NavBar />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 flex flex-col gap-6">
-        
         {/* ВЕРХНЯЯ ПАНЕЛЬ */}
         {data?.currentWeek ? (
           <button onClick={() => navigate("/weeks")} className="w-full bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden text-left hover:shadow-md hover:border-brand-300 transition-all flex flex-col group">
@@ -258,7 +266,7 @@ export default function DashboardPage() {
                         <span className="text-slate-400 font-medium">{WEEKDAYS_RU[idx]}</span>
                       </div>
                     </div>
-                    
+
                     <div className="text-[10px] text-slate-500 mb-2 font-medium">
                       {dayShifts.length} см. • {new Intl.NumberFormat("ru-RU").format(dayCost)} ₽
                     </div>
@@ -283,11 +291,12 @@ export default function DashboardPage() {
             </div>
           </button>
         ) : (
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 text-center text-slate-500">Текущая неделя не найдена. <button onClick={() => navigate("/weeks")} className="text-brand-600 underline">Перейти в недели</button>.</div>
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 text-center text-slate-500">
+            Текущая неделя не найдена. <button onClick={() => navigate("/weeks")} className="text-brand-600 underline">Перейти в недели</button>.
+          </div>
         )}
 
         <div className={isEmployee ? "flex flex-col gap-4" : "flex flex-col lg:flex-row gap-6 flex-1"}>
-          
           {/* ТЕКУЩИЙ ДЕНЬ */}
           <div onClick={handleGoToToday} className={`bg-white rounded-2xl border border-slate-200 shadow-sm p-5 cursor-pointer hover:border-brand-300 transition-all flex flex-col min-w-0 ${isEmployee ? "shrink-0" : "flex-1"}`}>
             <div className="flex items-center justify-between mb-3">
@@ -314,19 +323,19 @@ export default function DashboardPage() {
             <div className="h-10 mb-2 flex items-center justify-center transition-all">
               {hoveredShift && (
                 <div className={`animate-fade-in flex items-center gap-2 px-5 py-2 rounded-full border shadow-sm ${
-                  hasViolation 
-                    ? "bg-rose-50 border-rose-200" 
+                  hasViolation
+                    ? "bg-rose-50 border-rose-200"
                     : "bg-emerald-50 border-emerald-200"
                 }`}>
                   <span className="text-sm font-bold tracking-wide flex items-center gap-2">
                     {lateness > 0 && <span className="text-rose-700">Опоздание: {lateness} мин</span>}
                     {lateness > 0 && (early > 0 || hoveredOvertime > 0) && <span className="text-rose-300">|</span>}
-                    
+
                     {early > 0 && <span className="text-rose-700">Ранний уход: {early} мин</span>}
                     {early > 0 && hoveredOvertime > 0 && <span className="text-rose-300">|</span>}
-                    
+
                     {hoveredOvertime > 0 && <span className="text-emerald-600">Переработка: {overtimeText}</span>}
-                    
+
                     {lateness === 0 && early === 0 && hoveredOvertime === 0 && (
                       <span className="text-emerald-700">Приход вовремя</span>
                     )}
@@ -371,17 +380,15 @@ export default function DashboardPage() {
                       const startParts = shift.startTime.split(":").map(Number);
                       const isStarted = !isEnded && (now.getHours() > startParts[0] || (now.getHours() === startParts[0] && now.getMinutes() >= startParts[1]));
 
-                      // Данные о дисциплине
                       const sLateness = shift.latenessMinutes || 0;
                       const sEarly = shift.earlyLeaveMinutes || 0;
                       const shiftDurationMinutes = calcHours(shift.startTime, shift.endTime) * 60;
                       const latenessPct = shiftDurationMinutes > 0 ? (sLateness / shiftDurationMinutes) * 100 : 0;
                       const earlyLeavePct = shiftDurationMinutes > 0 ? (sEarly / shiftDurationMinutes) * 100 : 0;
 
-                      // Вычисляем переработку (зеленую зону)
                       let overtimeStartPct = 0;
                       let overtimeEndPct = 0;
-                      
+
                       if (shift.templateStartTime && shift.templateEndTime) {
                         const sStart = timeToMins(shift.startTime);
                         const sEnd = timeToMins(shift.endTime);
@@ -393,8 +400,8 @@ export default function DashboardPage() {
                       }
 
                       return (
-                        <div 
-                          key={shift.id} 
+                        <div
+                          key={shift.id}
                           onMouseEnter={() => setHoveredShift(shift)}
                           onMouseLeave={() => setHoveredShift(null)}
                           onClick={(e) => {
@@ -404,15 +411,13 @@ export default function DashboardPage() {
                           className={`flex items-center relative transition-colors ${isEmployee ? "h-12" : "h-14 hover:bg-slate-50/80 cursor-pointer hover:ring-2 hover:ring-amber-400 hover:z-30"}`}
                         >
                           <div className="w-40 shrink-0 pr-2 flex items-center gap-2 relative z-30 pointer-events-none">
-                            
-                            {/* АВАТАР С ТОЧКОЙ */}
                             <div className="relative w-7 h-7 flex items-center justify-center shrink-0">
                               <div className="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center">
                                 <UserCircle className="w-4 h-4 text-slate-500" />
                               </div>
-                              <span 
-                                className={`absolute -top-0.5 -right-1.5 w-2.5 h-2.5 rounded-full border-2 border-white shadow-sm ${(sLateness > 0 || sEarly > 0) ? 'bg-rose-500' : 'bg-emerald-500'}`} 
-                                title={(sLateness > 0 || sEarly > 0) ? "Есть нарушения" : "Все вовремя"} 
+                              <span
+                                className={`absolute -top-0.5 -right-1.5 w-2.5 h-2.5 rounded-full border-2 border-white shadow-sm ${(sLateness > 0 || sEarly > 0) ? 'bg-rose-500' : 'bg-emerald-500'}`}
+                                title={(sLateness > 0 || sEarly > 0) ? "Есть нарушения" : "Все вовремя"}
                               />
                             </div>
 
@@ -422,32 +427,26 @@ export default function DashboardPage() {
                             </div>
                           </div>
 
-                          {/* ПОЛОСА СМЕНЫ */}
-                          <div 
-                            className={`absolute rounded-md shadow-sm overflow-hidden z-10 flex items-center ${isEmployee ? "h-7 top-2.5" : "h-8 top-3"}`} 
+                          <div
+                            className={`absolute rounded-md shadow-sm overflow-hidden z-10 flex items-center ${isEmployee ? "h-7 top-2.5" : "h-8 top-3"}`}
                             style={{ left: `${startPct}%`, width: `${widthPct}%`, backgroundColor: isEnded ? "#cbd5e1" : shift.templateColor || "#3b82f6" }}
                           >
-                            {/* Зона: Опоздание (слева, красная) */}
                             {sLateness > 0 && (
                               <div className="absolute left-0 top-0 bottom-0 bg-rose-600/90 border-r-2 border-rose-800 z-10" style={{ width: `${latenessPct}%` }} />
                             )}
 
-                            {/* Зона: Переработка (слева, зеленая) */}
                             {overtimeStartPct > 0 && (
                               <div className="absolute left-0 top-0 bottom-0 bg-emerald-500/90 border-r-2 border-emerald-700 z-10" style={{ width: `${overtimeStartPct}%` }} />
                             )}
 
-                            {/* Зона: Ранний уход (справа, красная) */}
                             {sEarly > 0 && (
                               <div className="absolute right-0 top-0 bottom-0 bg-rose-600/90 border-l-2 border-rose-800 z-10" style={{ width: `${earlyLeavePct}%` }} />
                             )}
 
-                            {/* Зона: Переработка (справа, зеленая) */}
                             {overtimeEndPct > 0 && (
                               <div className="absolute right-0 top-0 bottom-0 bg-emerald-500/90 border-l-2 border-emerald-700 z-10" style={{ width: `${overtimeEndPct}%` }} />
                             )}
 
-                            {/* Время смены */}
                             <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-white truncate drop-shadow-md z-20">
                               {shift.startTime} – {shift.endTime}
                             </span>
@@ -474,7 +473,7 @@ export default function DashboardPage() {
               <StatCard icon={Timer} label="Отработано сегодня" value={formatHours(actualToday)} highlight />
               <StatCard icon={CalendarDays} label="Часов на неделе" value={formatHours(plannedWeek)} />
               <StatCard icon={Activity} label="Отработано за неделю" value={formatHours(actualWeek)} highlight />
-              
+
               <StatCard icon={Banknote} label="Заработает за неделю" value={formatMoney(plannedWeek * hourlyRate)} />
               <StatCard icon={Wallet} label="Заработано" value={formatMoney(actualWeek * hourlyRate)} highlight />
               <div className="col-span-2">
@@ -483,24 +482,24 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="w-full lg:w-80 shrink-0 grid grid-cols-2 gap-3 auto-rows-max">
-              <StatCard 
-                icon={Timer} 
-                label="В работе" 
+              <StatCard
+                icon={Timer}
+                label="В работе"
                 value={todayShiftsToShow.filter(s => {
                   const end = s.endTime.split(":").map(Number);
                   const nowMins = now.getHours() * 60 + now.getMinutes();
                   const endMins = end[0] * 60 + end[1];
                   return nowMins < endMins;
-                }).length || 0} 
-                highlight 
+                }).length || 0}
+                highlight
               />
               <StatCard icon={ArrowRightLeft} label="Обмены" value={swapsIncoming} onClick={() => navigate("/swaps")} />
               <StatCard icon={AlertCircle} label="Запросы" value={vacationsPending + shiftChangesIncoming} onClick={() => navigate("/vacations")} alert={(vacationsPending + shiftChangesIncoming) > 0} />
               <StatCard icon={FileEdit} label="Ред. смены" value={shiftChangesIncoming} onClick={() => navigate("/weeks")} />
-              
+
               <div className="col-span-2 grid grid-cols-2 gap-3">
-                 <StatCard icon={CalendarDays} label="Смен за месяц" value={monthShiftsCount} />
-                 <StatCard icon={Wallet} label="Затраты за месяц" value={formatMoney(monthCost)} />
+                <StatCard icon={CalendarDays} label="Смен за месяц" value={monthShiftsCount} />
+                <StatCard icon={Wallet} label="Затраты за месяц" value={formatMoney(monthCost)} />
               </div>
             </div>
           )}
@@ -509,13 +508,14 @@ export default function DashboardPage() {
 
       {/* МОДАЛКА ДИСЦИПЛИНЫ */}
       {disciplineShift && (
-        <DisciplineModal 
-          shift={disciplineShift} 
-          onClose={() => setDisciplineShift(null)} 
+        <DisciplineModal
+          shift={disciplineShift}
+          onClose={() => setDisciplineShift(null)}
           onSave={async () => {
-            const res = await dashboardApi.summary();
+            if (!activeLocationId) return;
+            const res = await dashboardApi.summary(activeLocationId);
             setData(res);
-          }} 
+          }}
         />
       )}
     </div>
@@ -527,7 +527,6 @@ function DisciplineModal({ shift, onClose, onSave }: any) {
   const [earlyLeave, setEarlyLeave] = useState(shift.earlyLeaveMinutes || 0);
   const [busy, setBusy] = useState(false);
 
-  // Считаем переработку для этой конкретной смены
   let overtimeMins = 0;
   if (shift.templateStartTime && shift.templateEndTime) {
     const sStart = timeToMins(shift.startTime);
@@ -542,9 +541,8 @@ function DisciplineModal({ shift, onClose, onSave }: any) {
   const handleSave = async () => {
     setBusy(true);
     try {
-      // Отправляем только опоздание и ранний уход
-      await shiftsApi.update(shift.id, { 
-        latenessMinutes: lateness, 
+      await shiftsApi.update(shift.id, {
+        latenessMinutes: lateness,
         earlyLeaveMinutes: earlyLeave,
       });
       await onSave();
@@ -591,9 +589,9 @@ function DisciplineModal({ shift, onClose, onSave }: any) {
             )}
             <div className="flex gap-2 flex-wrap">
               {[0, 5, 15, 30, 60].map(m => (
-                <button 
-                  key={m} 
-                  onClick={() => setEarlyLeave(m)} 
+                <button
+                  key={m}
+                  onClick={() => setEarlyLeave(m)}
                   disabled={overtimeMins > 0 && m > 0}
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                     earlyLeave === m ? "bg-rose-600 text-white shadow-sm" : "bg-slate-100 text-slate-700 hover:bg-slate-200"

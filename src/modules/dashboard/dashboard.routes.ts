@@ -6,7 +6,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
 
   app.get("/", async (req) => {
     const { orgId } = req.user!;
-    const query = req.query as { date?: string };
-    return dashboardService.summary(orgId, query.date);
+    const q = req.query as { locationId?: string };
+    return dashboardService.summary(orgId, q.locationId);
   });
 }

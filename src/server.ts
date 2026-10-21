@@ -20,6 +20,7 @@ import { customTemplatesRoutes } from "./modules/documents/custom-templates.rout
 import { batchRoutes } from "./modules/documents/batch.routes.js";
 import { shiftChangeRequestsRoutes } from "./modules/shift-change-requests/shift-change-requests.routes.js";
 import { sickLeavesRoutes } from "./modules/sick-leaves/sick-leaves.routes.js";
+import { locationsRoutes } from "./modules/locations/locations.routes.js";
 
 const app = Fastify({ logger: true });
 
@@ -55,6 +56,7 @@ await app.register(customTemplatesRoutes, { prefix: "/api/documents/custom" });
 await app.register(batchRoutes, { prefix: "/api/documents/batch" });
 await app.register(shiftChangeRequestsRoutes, { prefix: "/api/shift-change-requests" });
 await app.register(sickLeavesRoutes, { prefix: "/api/sick-leaves" });
+await app.register(locationsRoutes, { prefix: "/api/locations" });
 
 const port = Number(process.env.PORT ?? 3001);
 await app.listen({ port, host: "0.0.0.0" });

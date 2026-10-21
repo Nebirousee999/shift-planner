@@ -26,27 +26,30 @@ export type TodayShift = {
   templateColor: string | null;
   latenessMinutes?: number;
   earlyLeaveMinutes?: number;
-  templateStartTime: string | null; // <--- ДОБАВИТЬ
-  templateEndTime: string | null;   // <--- ДОБАВИТЬ
+  templateStartTime: string | null;
+  templateEndTime: string | null;
 };
 
 export type DashboardSummary = {
   currentWeek: {
     id: string;
     weekStartDate: string;
+    locationId: string;
     status: "DRAFT" | "PUBLISHED" | "LOCKED";
     shifts: ScheduledShift[];
   } | null;
   todayShifts: TodayShift[];
   weekTimeEntries: TimeEntry[];
   userCount: number;
-  users: DashboardUser[]; // <--- Добавили это поле
+  users: DashboardUser[];
   monthlyHours: number;
 };
 
 export const dashboardApi = {
-  summary: async (): Promise<DashboardSummary> => {
-    const { data } = await api.get<DashboardSummary>("/dashboard");
+  summary: async (locationId?: string): Promise<DashboardSummary> => {
+    const { data } = await api.get<DashboardSummary>("/dashboard", {
+      params: locationId ? { locationId } : {},
+    });
     return data;
   },
 };

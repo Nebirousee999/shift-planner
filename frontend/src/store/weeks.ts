@@ -3,7 +3,6 @@ import {
   weeksApi,
   shiftsApi,
   type ScheduleWeek,
-  type ScheduledShift,
   type ShiftUpdateResult,
 } from "../api/weeks";
 
@@ -12,36 +11,14 @@ type State = {
   currentWeek: ScheduleWeek | null;
   loading: boolean;
   error: string | null;
-
-  // ─── Недели ────────────────────────────────────────
-  fetchWeeks: () => Promise<void>;
+  fetchWeeks: (locationId?: string) => Promise<void>;
   fetchWeek: (id: string) => Promise<void>;
-  createWeek: (weekStartDate: string) => Promise<ScheduleWeek>;
-  publishWeek: (id: string) => Promise<{ ok: boolean; violations?: string[] }>;
+  createWeek: (input: { weekStartDate: string; locationId: string }) => Promise<ScheduleWeek>;
+  publishWeek: (id: string) => Promise<{ ok: boolean; week?: ScheduleWeek; violations?: string[] }>;
   duplicateWeek: (id: string) => Promise<ScheduleWeek>;
-  removeWeek: (id: string) => Promise<void>; // <-- НОВЫЙ МЕТОД
-
-  // ─── Смены ─────────────────────────────────────────
-  addShift: (input: {
-    weekId: string;
-    templateId?: string;
-    userId?: string;
-    shiftDate: string;
-    startTime: string;
-    endTime: string;
-  }) => Promise<ShiftUpdateResult>;
-
-  updateShift: (
-    id: string,
-    input: Partial<{
-      templateId: string | null;
-      userId: string | null;
-      shiftDate: string;
-      startTime: string;
-      endTime: string;
-    }>
-  ) => Promise<ShiftUpdateResult>;
-
+  removeWeek: (id: string) => Promise<void>;
+  addShift: (input: Parameters<typeof shiftsApi.create>[0]) => Promise<ShiftUpdateResult>;
+  updateShift: (id: string, patch: Parameters<typeof shiftsApi.update>[1]) => Promise<ShiftUpdateResult>;
   removeShift: (id: string) => Promise<void>;
 };
 
@@ -51,20 +28,13 @@ export const useWeeks = create<State>((set, get) => ({
   loading: false,
   error: null,
 
-  // ══════════════════════════════════════════════════
-  // НЕДЕЛИ
-  // ══════════════════════════════════════════════════
-
-  fetchWeeks: async () => {
+  fetchWeeks: async (locationId?: string) => {
     set({ loading: true, error: null });
     try {
-      const weeks = await weeksApi.list();
+      const weeks = await weeksApi.list(locationId);
       set({ weeks, loading: false });
     } catch (e: any) {
-      set({
-        error: e.response?.data?.error ?? "Ошибка загрузки",
-        loading: false,
-      });
+      set({ error: e.response?.data?.error ?? "Ошибка загрузки", loading: false });
     }
   },
 
@@ -74,33 +44,27 @@ export const useWeeks = create<State>((set, get) => ({
       const week = await weeksApi.get(id);
       set({ currentWeek: week, loading: false });
     } catch (e: any) {
-      set({
-        error: e.response?.data?.error ?? "Ошибка загрузки",
-        loading: false,
-      });
+      set({ error: e.response?.data?.error ?? "Ошибка загрузки", loading: false });
     }
   },
 
-  createWeek: async (weekStartDate) => {
-    const week = await weeksApi.create({ weekStartDate });
+  createWeek: async (input) => {
+    const week = await weeksApi.create(input);
     set((s) => ({ weeks: [...s.weeks, week] }));
     return week;
   },
 
   publishWeek: async (id) => {
     try {
-      const updated = await weeksApi.publish(id);
+      const week = await weeksApi.publish(id);
       set((s) => ({
-        weeks: s.weeks.map((w) => (w.id === id ? updated : w)),
-        currentWeek:
-          s.currentWeek?.id === id
-            ? { ...s.currentWeek, ...updated }
-            : s.currentWeek,
+        weeks: s.weeks.map((w) => (w.id === id ? { ...w, ...week } : w)),
+        currentWeek: s.currentWeek?.id === id ? { ...s.currentWeek, ...week } : s.currentWeek,
       }));
-      return { ok: true };
+      return { ok: true, week };
     } catch (e: any) {
       if (e.response?.status === 422) {
-        return { ok: false, violations: e.response.data.violations ?? [] };
+        return { ok: false, violations: e.response.data?.violations ?? [] };
       }
       throw e;
     }
@@ -120,56 +84,24 @@ export const useWeeks = create<State>((set, get) => ({
     }));
   },
 
-  // ══════════════════════════════════════════════════
-  // СМЕНЫ
-  // ══════════════════════════════════════════════════
-
   addShift: async (input) => {
     const result = await shiftsApi.create(input);
-
     if (result.kind === "applied") {
-      const { currentWeek } = get();
-      if (currentWeek && currentWeek.id === input.weekId) {
-        set({
-          currentWeek: {
-            ...currentWeek,
-            shifts: [...(currentWeek.shifts ?? []), result.shift],
-          },
-        });
-      }
+      await get().fetchWeek(input.weekId);
     }
     return result;
   },
 
-  updateShift: async (id, input) => {
-    const result = await shiftsApi.update(id, input);
-
-    if (result.kind === "applied") {
-      const { currentWeek } = get();
-      if (currentWeek) {
-        set({
-          currentWeek: {
-            ...currentWeek,
-            shifts: (currentWeek.shifts ?? []).map((s) =>
-              s.id === id ? result.shift : s
-            ),
-          },
-        });
-      }
+  updateShift: async (id, patch) => {
+    const result = await shiftsApi.update(id, patch);
+    if (result.kind === "applied" && get().currentWeek) {
+      await get().fetchWeek(get().currentWeek!.id);
     }
     return result;
   },
 
   removeShift: async (id) => {
     await shiftsApi.remove(id);
-    const { currentWeek } = get();
-    if (currentWeek) {
-      set({
-        currentWeek: {
-          ...currentWeek,
-          shifts: (currentWeek.shifts ?? []).filter((s) => s.id !== id),
-        },
-      });
-    }
+    if (get().currentWeek) await get().fetchWeek(get().currentWeek!.id);
   },
 }));

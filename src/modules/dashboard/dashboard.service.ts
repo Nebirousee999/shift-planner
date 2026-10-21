@@ -9,26 +9,24 @@ import {
 } from "../../../db/schema.js";
 
 export const dashboardService = {
-  async summary(orgId: string) {
+  async summary(orgId: string, locationId?: string) {
     const todayDate = new Date().toISOString().slice(0, 10);
 
-    // 1. Находим текущую неделю
+    const weekConditions = [
+      eq(scheduleWeeks.orgId, orgId),
+      lte(scheduleWeeks.weekStartDate, todayDate),
+      gte(sql`${scheduleWeeks.weekStartDate} + interval '6 days'`, todayDate),
+    ];
+    if (locationId) weekConditions.push(eq(scheduleWeeks.locationId, locationId));
+
     const [currentWeek] = await db
       .select()
       .from(scheduleWeeks)
-      .where(
-        and(
-          eq(scheduleWeeks.orgId, orgId),
-          lte(scheduleWeeks.weekStartDate, todayDate),
-          gte(sql`${scheduleWeeks.weekStartDate} + interval '6 days'`, todayDate)
-        )
-      )
+      .where(and(...weekConditions))
       .limit(1);
 
     let weekShifts: any[] = [];
     let weekTimeEntries: any[] = [];
-    
-    // Если неделя опубликована, показываем смены и отработанное время
     const isPublished = currentWeek?.status === "PUBLISHED";
 
     if (currentWeek && isPublished) {
@@ -54,9 +52,7 @@ export const dashboardService = {
         );
     }
 
-    // 2. Смены на сегодня
     let todayShifts: any[] = [];
-    
     if (isPublished) {
       const todayShiftsRaw = await db
         .select({
@@ -65,60 +61,55 @@ export const dashboardService = {
           endTime: scheduledShifts.endTime,
           userId: users.id,
           userName: users.name,
-          latenessMinutes: scheduledShifts.latenessMinutes, // <--- ДОБАВИТЬ
-          earlyLeaveMinutes: scheduledShifts.earlyLeaveMinutes, // <--- ДОБАВИТЬ
+          latenessMinutes: scheduledShifts.latenessMinutes,
+          earlyLeaveMinutes: scheduledShifts.earlyLeaveMinutes,
           overtimeMinutes: scheduledShifts.overtimeMinutes,
           userPosition: users.position,
           templateId: shiftTemplates.id,
           templateColor: shiftTemplates.color,
-          templateStartTime: shiftTemplates.startTime, // <--- ДОБАВИТЬ
-          templateEndTime: shiftTemplates.endTime,     // <--- ДОБАВИТЬ
+          templateStartTime: shiftTemplates.startTime,
+          templateEndTime: shiftTemplates.endTime,
         })
         .from(scheduledShifts)
+        .innerJoin(scheduleWeeks, eq(scheduledShifts.weekId, scheduleWeeks.id))
         .leftJoin(users, eq(scheduledShifts.userId, users.id))
         .leftJoin(shiftTemplates, eq(scheduledShifts.templateId, shiftTemplates.id))
         .where(
           and(
             eq(scheduledShifts.shiftDate, todayDate),
-            isNotNull(scheduledShifts.userId)
+            isNotNull(scheduledShifts.userId),
+            locationId ? eq(scheduleWeeks.locationId, locationId) : undefined
           )
         );
 
       const orgUsers = await db.select({ id: users.id }).from(users).where(eq(users.orgId, orgId));
-      const orgUserIds = new Set(orgUsers.map(u => u.id));
-      
-      todayShifts = todayShiftsRaw.filter(s => s.userId && orgUserIds.has(s.userId));
+      const orgUserIds = new Set(orgUsers.map((u) => u.id));
+      todayShifts = todayShiftsRaw.filter((s) => s.userId && orgUserIds.has(s.userId));
     }
 
-    // 3. Список сотрудников для расчета затрат
     const orgUsersData = await db
-      .select({ 
-        id: users.id, 
-        name: users.name, 
-        hourlyRate: users.hourlyRate, 
-        position: users.position 
-      })
+      .select({ id: users.id, name: users.name, hourlyRate: users.hourlyRate, position: users.position })
       .from(users)
       .where(eq(users.orgId, orgId));
-      
-    const orgUserIds = new Set(orgUsersData.map(u => u.id));
-    
-    // Фильтруем записи времени, чтобы не было лишних
-    const validWeekTimeEntries = weekTimeEntries.filter(te => orgUserIds.has(te.userId));
 
-    // 4. Общее количество сотрудников
+    const orgUserIds = new Set(orgUsersData.map((u) => u.id));
+    const validWeekTimeEntries = weekTimeEntries.filter((te) => orgUserIds.has(te.userId));
+
     const [{ value: userCount }] = await db
       .select({ value: count() })
       .from(users)
       .where(eq(users.orgId, orgId));
 
     return {
-      currentWeek: currentWeek ? { 
-        id: currentWeek.id, 
-        weekStartDate: currentWeek.weekStartDate,
-        status: currentWeek.status,
-        shifts: weekShifts 
-      } : null,
+      currentWeek: currentWeek
+        ? {
+            id: currentWeek.id,
+            weekStartDate: currentWeek.weekStartDate,
+            locationId: currentWeek.locationId,
+            status: currentWeek.status,
+            shifts: weekShifts,
+          }
+        : null,
       todayShifts,
       weekTimeEntries: validWeekTimeEntries,
       userCount,

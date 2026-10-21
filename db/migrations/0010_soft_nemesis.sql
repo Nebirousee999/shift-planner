@@ -1,2 +1,0 @@
-ALTER TABLE "scheduled_shifts" ADD COLUMN "lateness_minutes" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
-ALTER TABLE "scheduled_shifts" ADD COLUMN "early_leave_minutes" integer DEFAULT 0 NOT NULL;

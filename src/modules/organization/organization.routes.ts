@@ -11,12 +11,12 @@ const updateSchema = z.object({
   timeTrackingEnabled: z.boolean().optional(),
   overtimeMultiplier1: z.string().optional(),
   overtimeMultiplier2: z.string().optional(),
+  maxLocations: z.number().int().min(1).max(1000).optional(),
 });
 
 export async function organizationRoutes(app: FastifyInstance) {
   app.addHook("preHandler", app.authenticate);
 
-  // Читать может любой сотрудник организации
   app.get("/", async (req, reply) => {
     const { orgId } = req.user!;
     const org = await organizationService.get(orgId);
@@ -24,7 +24,6 @@ export async function organizationRoutes(app: FastifyInstance) {
     return org;
   });
 
-  // Обновлять — только владелец
   app.patch(
     "/",
     { preHandler: app.requireRole(["OWNER"]) },
@@ -34,11 +33,17 @@ export async function organizationRoutes(app: FastifyInstance) {
         return reply.code(400).send({ error: parsed.error.flatten() });
       }
       const { orgId } = req.user!;
-      const updated = await organizationService.update({
-        orgId,
-        ...parsed.data,
-      });
-      return updated;
+      try {
+        const updated = await organizationService.update({ orgId, ...parsed.data });
+        return updated;
+      } catch (e: any) {
+        if (e.message === "MAX_LOCATIONS_TOO_LOW") {
+          return reply.code(400).send({
+            error: "Нельзя установить лимит меньше текущего числа точек",
+          });
+        }
+        throw e;
+      }
     }
   );
 }

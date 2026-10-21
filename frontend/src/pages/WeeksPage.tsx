@@ -1,13 +1,26 @@
 import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  ChevronLeft, ChevronRight, Plus, X, CalendarDays, CheckCircle2, FileEdit, Lock, Users, ChevronDown, ChevronUp, Trash2, Copy, ClipboardPaste
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  X,
+  CheckCircle2,
+  FileEdit,
+  Lock,
+  Users,
+  ChevronDown,
+  ChevronUp,
+  Trash2,
+  Copy,
+  ClipboardPaste,
 } from "lucide-react";
 import { useWeeks } from "../store/weeks";
 import { useShiftTemplates } from "../store/shiftTemplates";
 import { useUsers } from "../store/users";
 import { useVacations } from "../store/vacations";
 import { useSickLeaves } from "../store/sickLeaves";
+import { useLocations } from "../store/locations";
 import { shiftChangeRequestsApi } from "../api/shiftChangeRequests";
 import { confirmDialog, alertDialog } from "../store/dialogs";
 import NavBar from "../components/NavBar";
@@ -107,6 +120,7 @@ export default function WeeksPage() {
   const { items: users, fetch: fetchUsers } = useUsers();
   const { all: vacations, fetchAll: fetchVacations } = useVacations();
   const { all: sickLeaves, fetchAll: fetchSickLeaves } = useSickLeaves();
+  const { activeLocationId, fetch: fetchLocations } = useLocations();
 
   const today = new Date();
   const [year, setYear] = useState(today.getUTCFullYear());
@@ -117,29 +131,37 @@ export default function WeeksPage() {
   const [creating, setCreating] = useState(false);
   const [pendingDates, setPendingDates] = useState<Set<string>>(new Set());
   const [showSummary, setShowSummary] = useState(true);
-  
-  // Буфер обмена для целой недели
+
   const [clipboardWeek, setClipboardWeek] = useState<{ startDate: string; shifts: any[] } | null>(null);
 
   const todayStr = today.toISOString().slice(0, 10);
 
+  // Загружаем локации
   useEffect(() => {
-    fetchWeeks();
+    fetchLocations();
+  }, [fetchLocations]);
+
+  // Загружаем всё остальное, когда известна активная локация
+  useEffect(() => {
+    if (!activeLocationId) return;
+    fetchWeeks(activeLocationId);
     fetchTemplates();
     fetchUsers();
     fetchVacations();
     fetchSickLeaves();
-    Promise.all([shiftChangeRequestsApi.incoming().catch(() => []), shiftChangeRequestsApi.outgoing().catch(() => [])])
-      .then(([inc, out]) => {
-        const set = new Set<string>();
-        for (const r of [...inc, ...out]) {
-          if (r.status !== "PENDING") continue;
-          set.add(String(r.oldShiftDate).slice(0, 10));
-          set.add(String(r.newShiftDate).slice(0, 10));
-        }
-        setPendingDates(set);
-      });
-  }, [fetchWeeks, fetchTemplates, fetchUsers, fetchVacations, fetchSickLeaves]);
+    Promise.all([
+      shiftChangeRequestsApi.incoming().catch(() => []),
+      shiftChangeRequestsApi.outgoing().catch(() => []),
+    ]).then(([inc, out]) => {
+      const set = new Set<string>();
+      for (const r of [...inc, ...out]) {
+        if (r.status !== "PENDING") continue;
+        set.add(String(r.oldShiftDate).slice(0, 10));
+        set.add(String(r.newShiftDate).slice(0, 10));
+      }
+      setPendingDates(set);
+    });
+  }, [activeLocationId, fetchWeeks, fetchTemplates, fetchUsers, fetchVacations, fetchSickLeaves]);
 
   const calendarWeeks = useMemo(() => buildMonthWeeks(year, month), [year, month]);
   const weeksMap = useMemo(() => {
@@ -153,14 +175,13 @@ export default function WeeksPage() {
     return templates.find((t) => t.id === id)?.color ?? "#94A3B8";
   };
 
-  // --- РАСЧЕТЫ ДЛЯ МЕСЯЧНОЙ СВОДКИ ---
   const currentMonthStr = `${year}-${pad2(month + 1)}`;
-  
+
   const monthUserStats = users.map(u => {
     const rate = u.hourlyRate ? Number(u.hourlyRate) : 0;
     let monthHours = 0;
     let monthShiftsCount = 0;
-    
+
     for (const w of weeks) {
       if (!w.weekStartDate.startsWith(currentMonthStr)) continue;
       const shifts = w.shifts?.filter((s: any) => s.userId === u.id) || [];
@@ -183,10 +204,25 @@ export default function WeeksPage() {
   const nextMonth = () => { if (month === 11) { setMonth(0); setYear((y) => y + 1); } else setMonth((m) => m + 1); };
   const goToday = () => { setYear(today.getUTCFullYear()); setMonth(today.getUTCMonth()); };
 
+  const ensureLocation = async (): Promise<boolean> => {
+    if (!activeLocationId) {
+      await alertDialog(
+        "Сначала выберите или создайте точку в разделе «Точки»",
+        { title: "Нет активной точки", variant: "error" }
+      );
+      return false;
+    }
+    return true;
+  };
+
   const onCreate = async () => {
+    if (!(await ensureLocation())) return;
     setCreating(true);
     try {
-      const week = await createWeek(newDate);
+      const week = await createWeek({
+        weekStartDate: newDate,
+        locationId: activeLocationId!,
+      });
       setShowForm(false);
       navigate(`/weeks/${week.id}`);
     } catch (e: any) {
@@ -202,9 +238,13 @@ export default function WeeksPage() {
     if (existing) {
       navigate(`/weeks/${existing.id}`);
     } else {
+      if (!(await ensureLocation())) return;
       setCreating(true);
       try {
-        const week = await createWeek(key);
+        const week = await createWeek({
+          weekStartDate: key,
+          locationId: activeLocationId!,
+        });
         navigate(`/weeks/${week.id}`);
       } catch (e: any) {
         alertDialog(e.response?.data?.error ?? "Ошибка создания");
@@ -216,7 +256,10 @@ export default function WeeksPage() {
 
   const onDeleteWeek = async (e: React.MouseEvent, id: string, dateStr: string) => {
     e.stopPropagation();
-    const ok = await confirmDialog(`Удалить неделю с ${dateStr}? Все смены будут удалены.`, { title: "Удаление", confirmLabel: "Удалить", variant: "danger" });
+    const ok = await confirmDialog(
+      `Удалить неделю с ${dateStr}? Все смены будут удалены.`,
+      { title: "Удаление", confirmLabel: "Удалить", variant: "danger" }
+    );
     if (!ok) return;
     try {
       await removeWeek(id);
@@ -225,7 +268,6 @@ export default function WeeksPage() {
     }
   };
 
-  // --- КОПИРОВАНИЕ И ВСТАВКА НЕДЕЛИ ---
   const onCopyWeek = (e: React.MouseEvent, week: any) => {
     e.stopPropagation();
     if (!week || !week.shifts || week.shifts.length === 0) return;
@@ -238,13 +280,17 @@ export default function WeeksPage() {
   const onPasteWeek = async (e: React.MouseEvent, targetStartDate: Date) => {
     e.stopPropagation();
     if (!clipboardWeek) return;
-    
+    if (!(await ensureLocation())) return;
+
     const targetStr = toDateStr(targetStartDate);
     let targetWeek = weeksMap.get(targetStr);
 
     try {
       if (!targetWeek) {
-        targetWeek = await createWeek(targetStr);
+        targetWeek = await createWeek({
+          weekStartDate: targetStr,
+          locationId: activeLocationId!,
+        });
       }
 
       const origStart = new Date(clipboardWeek.startDate + "T00:00:00Z");
@@ -253,7 +299,6 @@ export default function WeeksPage() {
 
       let successCount = 0;
       for (const shift of clipboardWeek.shifts) {
-        // Вычисляем новую дату смены
         const origShiftDate = new Date(String(shift.shiftDate).slice(0, 10) + "T00:00:00Z");
         origShiftDate.setUTCDate(origShiftDate.getUTCDate() + diffDays);
         const newShiftDate = origShiftDate.toISOString().slice(0, 10);
@@ -269,8 +314,15 @@ export default function WeeksPage() {
         successCount++;
       }
 
-      await fetchWeeks();
-      await alertDialog(`Успешно вставлено ${successCount} смен(ы).\n\n${targetWeek.status === 'PUBLISHED' ? 'Так как неделя опубликована, изменения ушли на согласование сотрудникам.' : ''}`, { title: "Готово", variant: "success" });
+      if (activeLocationId) await fetchWeeks(activeLocationId);
+      await alertDialog(
+        `Успешно вставлено ${successCount} смен(ы).\n\n${
+          targetWeek.status === "PUBLISHED"
+            ? "Так как неделя опубликована, изменения ушли на согласование сотрудникам."
+            : ""
+        }`,
+        { title: "Готово", variant: "success" }
+      );
     } catch (err: any) {
       await alertDialog(err.response?.data?.error ?? "Ошибка вставки", { variant: "error" });
     }
@@ -318,7 +370,7 @@ export default function WeeksPage() {
             </div>
             {showSummary ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
           </button>
-          
+
           {showSummary && (
             <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {monthUserStats.map(u => (
@@ -330,7 +382,7 @@ export default function WeeksPage() {
                     </div>
                     <div className={`text-[10px] font-bold uppercase tracking-wider shrink-0 ${u.status === 'Свободен' ? 'text-emerald-600' : 'text-rose-600'}`}>{u.status}</div>
                   </div>
-                  
+
                   <div className="flex justify-between text-[11px] text-slate-500 font-medium mb-0.5">
                     <span>Месяц ({Math.round(u.monthHours)} ч • {u.monthShiftsCount} см.)</span>
                     <span className="text-slate-700">{formatMoney(u.monthCost)}</span>
@@ -342,7 +394,7 @@ export default function WeeksPage() {
           )}
         </div>
 
-        {/* НАВИГАЦИЯ ПО МЕСЯЦАМ + ОБЩАЯ СТАТИСТИКА */}
+        {/* НАВИГАЦИЯ ПО МЕСЯЦАМ */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-3 mb-4 flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <button onClick={prevMonth} className="p-2 rounded-lg hover:bg-slate-100 text-slate-600 transition-colors"><ChevronLeft className="w-4 h-4" /></button>
@@ -350,17 +402,17 @@ export default function WeeksPage() {
             <button onClick={nextMonth} className="p-2 rounded-lg hover:bg-slate-100 text-slate-600 transition-colors"><ChevronRight className="w-4 h-4" /></button>
             <button onClick={goToday} className="ml-2 text-xs px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 font-medium transition-colors">Сегодня</button>
           </div>
-          
+
           <div className="flex items-center gap-4 pr-2">
-             <div className="flex flex-col items-end">
-                <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wide">Смен за месяц</span>
-                <span className="text-lg font-bold text-slate-900 leading-tight">{totalMonthShifts}</span>
-             </div>
-             <div className="w-px h-8 bg-slate-200" />
-             <div className="flex flex-col items-end">
-                <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wide">Затраты за месяц</span>
-                <span className="text-lg font-bold text-emerald-600 leading-tight">{formatMoney(totalMonthCost)}</span>
-             </div>
+            <div className="flex flex-col items-end">
+              <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wide">Смен за месяц</span>
+              <span className="text-lg font-bold text-slate-900 leading-tight">{totalMonthShifts}</span>
+            </div>
+            <div className="w-px h-8 bg-slate-200" />
+            <div className="flex flex-col items-end">
+              <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wide">Затраты за месяц</span>
+              <span className="text-lg font-bold text-emerald-600 leading-tight">{formatMoney(totalMonthCost)}</span>
+            </div>
           </div>
         </div>
 
@@ -402,7 +454,6 @@ export default function WeeksPage() {
               <div key={key} onClick={() => onWeekClick(weekStart)} className={`flex w-full border-b border-slate-100 last:border-0 relative text-left transition-colors group cursor-pointer ${hasToday ? "bg-blue-50/60" : "hover:bg-slate-50/70"}`}>
                 {meta && <div className={`absolute left-0 top-0 bottom-0 w-1 ${meta.bar}`} />}
 
-                {/* 7 ДНЕЙ */}
                 <div className="flex-1 grid grid-cols-7">
                   {week.map((d, i) => {
                     const dateStr = toDateStr(d);
@@ -424,7 +475,7 @@ export default function WeeksPage() {
                           <div className={`text-base font-semibold ${isToday ? "w-7 h-7 rounded-full bg-brand-600 text-white flex items-center justify-center text-sm shadow-sm" : isOtherMonth ? "text-slate-300" : isWeekend ? "text-slate-400" : "text-slate-900"}`}>{d.getUTCDate()}</div>
                         </div>
                         <ShiftLines shifts={dayShifts} templateColorById={templateColorById} />
-                        
+
                         {dayShifts.length > 0 && (
                           <div className="mt-auto pt-1 text-center text-[10px] text-slate-600 leading-tight font-medium">
                             {dayShifts.length} см. • {new Intl.NumberFormat("ru-RU").format(dayCost)} ₽
@@ -435,7 +486,6 @@ export default function WeeksPage() {
                   })}
                 </div>
 
-                {/* ПРАВАЯ ПАНЕЛЬ СО СТАТУСОМ И ИТОГАМИ */}
                 <div className="w-36 shrink-0 border-l border-slate-200 bg-slate-50/80 flex flex-col justify-between items-center px-2 py-2 text-center">
                   <div className="flex items-center justify-center gap-1 w-full mt-1">
                     {meta && StatusIcon ? (
@@ -445,7 +495,7 @@ export default function WeeksPage() {
                           {meta.label}
                         </span>
                         {existing.status === "DRAFT" && (
-                          <button 
+                          <button
                             onClick={(e) => onDeleteWeek(e, existing.id, key)}
                             className="text-slate-400 hover:text-red-600 hover:bg-red-100 p-1 rounded-md transition-colors shrink-0"
                             title="Удалить черновик"
@@ -470,7 +520,6 @@ export default function WeeksPage() {
                     )}
                   </div>
 
-                  {/* Кнопки копирования / вставки недели */}
                   <div className="flex items-center gap-1 mt-auto">
                     <button
                       onClick={(e) => onCopyWeek(e, existing)}
@@ -501,7 +550,6 @@ export default function WeeksPage() {
           })}
         </div>
 
-        {/* Легенда */}
         <div className="flex items-center gap-4 mt-4 px-1 text-xs text-slate-500 flex-wrap">
           <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-slate-300" /> Черновик</div>
           <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-emerald-500" /> Опубликован</div>

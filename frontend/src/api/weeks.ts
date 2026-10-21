@@ -1,6 +1,5 @@
 import { api } from "./client";
 
-// ─── Типы ─────────────────────────────────────────────
 export type ScheduledShift = {
   id: string;
   weekId: string;
@@ -10,8 +9,8 @@ export type ScheduledShift = {
   startTime: string;
   endTime: string;
   status: string;
-  latenessMinutes?: number;     // <--- ДОБАВЛЕНО
-  earlyLeaveMinutes?: number;   // <--- ДОБАВЛЕНО
+  latenessMinutes?: number;
+  earlyLeaveMinutes?: number;
   overtimeMinutes?: number;
   createdAt?: string;
 };
@@ -19,6 +18,7 @@ export type ScheduledShift = {
 export type ScheduleWeek = {
   id: string;
   orgId: string;
+  locationId: string;
   weekStartDate: string;
   status: "DRAFT" | "PUBLISHED" | "LOCKED";
   publishedAt: string | null;
@@ -46,43 +46,34 @@ export type ShiftUpdateResult =
   | { kind: "applied"; shift: ScheduledShift }
   | { kind: "requested"; request: any };
 
-// ─── API недель ───────────────────────────────────────
 export const weeksApi = {
-  list: async (): Promise<ScheduleWeek[]> => {
-    const { data } = await api.get<ScheduleWeek[]>("/schedule-weeks");
+  list: async (locationId?: string): Promise<ScheduleWeek[]> => {
+    const { data } = await api.get<ScheduleWeek[]>("/schedule-weeks", {
+      params: locationId ? { locationId } : {},
+    });
     return data;
   },
-
   get: async (id: string): Promise<ScheduleWeek> => {
     const { data } = await api.get<ScheduleWeek>(`/schedule-weeks/${id}`);
     return data;
   },
-
-  create: async (input: { weekStartDate: string }): Promise<ScheduleWeek> => {
+  create: async (input: { weekStartDate: string; locationId: string }): Promise<ScheduleWeek> => {
     const { data } = await api.post<ScheduleWeek>("/schedule-weeks", input);
     return data;
   },
-
   publish: async (id: string): Promise<ScheduleWeek> => {
-    const { data } = await api.post<ScheduleWeek>(
-      `/schedule-weeks/${id}/publish`
-    );
+    const { data } = await api.post<ScheduleWeek>(`/schedule-weeks/${id}/publish`);
     return data;
   },
-
   duplicate: async (id: string): Promise<ScheduleWeek> => {
-    const { data } = await api.post<ScheduleWeek>(
-      `/schedule-weeks/${id}/duplicate`
-    );
+    const { data } = await api.post<ScheduleWeek>(`/schedule-weeks/${id}/duplicate`);
     return data;
   },
-
   remove: async (id: string) => {
     await api.delete(`/schedule-weeks/${id}`);
   },
 };
 
-// ─── API смен ─────────────────────────────────────────
 export const shiftsApi = {
   create: async (input: {
     weekId: string;
@@ -92,13 +83,9 @@ export const shiftsApi = {
     startTime: string;
     endTime: string;
   }): Promise<ShiftUpdateResult> => {
-    const { data } = await api.post<ShiftUpdateResult>(
-      "/scheduled-shifts",
-      input
-    );
+    const { data } = await api.post<ShiftUpdateResult>("/scheduled-shifts", input);
     return data;
   },
-
   update: async (
     id: string,
     input: Partial<{
@@ -107,22 +94,17 @@ export const shiftsApi = {
       shiftDate: string;
       startTime: string;
       endTime: string;
-      latenessMinutes: number;     // <--- ДОБАВЛЕНО
-      earlyLeaveMinutes: number;   // <--- ДОБАВЛЕНО
+      latenessMinutes: number;
+      earlyLeaveMinutes: number;
       overtimeMinutes: number;
     }>
   ): Promise<ShiftUpdateResult> => {
-    const { data } = await api.patch<ShiftUpdateResult>(
-      `/scheduled-shifts/${id}`,
-      input
-    );
+    const { data } = await api.patch<ShiftUpdateResult>(`/scheduled-shifts/${id}`, input);
     return data;
   },
-
   remove: async (id: string): Promise<void> => {
     await api.delete(`/scheduled-shifts/${id}`);
   },
-
   checkLimits: async (params: {
     userId: string;
     weekId: string;
@@ -130,13 +112,9 @@ export const shiftsApi = {
     endTime: string;
     excludeShiftId?: string;
   }): Promise<LimitCheck> => {
-    const { data } = await api.get<LimitCheck>(
-      "/scheduled-shifts/check-limits",
-      { params }
-    );
+    const { data } = await api.get<LimitCheck>("/scheduled-shifts/check-limits", { params });
     return data;
   },
-
   checkOverlap: async (params: {
     userId: string;
     weekId: string;
@@ -145,10 +123,7 @@ export const shiftsApi = {
     endTime: string;
     excludeShiftId?: string;
   }): Promise<OverlapCheck> => {
-    const { data } = await api.get<OverlapCheck>(
-      "/scheduled-shifts/check-overlap",
-      { params }
-    );
+    const { data } = await api.get<OverlapCheck>("/scheduled-shifts/check-overlap", { params });
     return data;
   },
 };

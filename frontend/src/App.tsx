@@ -17,6 +17,7 @@ import VacationsPage from "./pages/VacationsPage";
 import TimesheetPage from "./pages/TimesheetPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import HelpPage from "./pages/HelpPage";
+import LocationsPage from "./pages/LocationsPage";
 import DialogHost from "./components/DialogHost";
 import SickLeavesPage from "./pages/SickLeavesPage";
 
@@ -30,178 +31,49 @@ function ProtectedRoute({
   employeeOnly?: boolean;
 }) {
   const { token, user } = useAuth();
-
   if (!token) return <Navigate to="/login" replace />;
 
-
   const isEmployee = user?.role === "EMPLOYEE";
-
   if (adminOnly && isEmployee) return <Navigate to="/my" replace />;
   if (employeeOnly && !isEmployee) return <Navigate to="/" replace />;
-
   return <>{children}</>;
 }
 
 export default function App() {
   const { hydrate, token, hydrated } = useAuth();
 
-  // 1. Гидратация auth из localStorage
-  useEffect(() => {
-    hydrate();
-  }, [hydrate]);
+  useEffect(() => { hydrate(); }, [hydrate]);
 
-  // 2. После гидратации и при наличии токена — подтянуть организацию
   useEffect(() => {
-    if (hydrated && token) {
-      useOrganization.getState().fetch();
-    }
+    if (hydrated && token) useOrganization.getState().fetch();
   }, [hydrated, token]);
 
   if (!hydrated) return null;
-
   const homePath = "/";
 
   return (
     <BrowserRouter>
       <DialogHost />
       <Routes>
-        <Route
-          path="/login"
-          element={token ? <Navigate to={homePath} replace /> : <LoginPage />}
-        />
+        <Route path="/login" element={token ? <Navigate to={homePath} replace /> : <LoginPage />} />
 
-        {/* ─── Админские ─── */}
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute>
-              <DashboardPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/templates"
-          element={
-            <ProtectedRoute adminOnly>
-              <TemplatesPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/team"
-          element={
-            <ProtectedRoute adminOnly>
-              <TeamPage />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+        <Route path="/templates" element={<ProtectedRoute adminOnly><TemplatesPage /></ProtectedRoute>} />
+        <Route path="/team" element={<ProtectedRoute adminOnly><TeamPage /></ProtectedRoute>} />
+        <Route path="/locations" element={<ProtectedRoute adminOnly><LocationsPage /></ProtectedRoute>} />
+        <Route path="/vacations" element={<ProtectedRoute adminOnly><VacationsPage /></ProtectedRoute>} />
+        <Route path="/weeks" element={<ProtectedRoute adminOnly><WeeksPage /></ProtectedRoute>} />
+        <Route path="/weeks/:id" element={<ProtectedRoute adminOnly><WeekDetailPage /></ProtectedRoute>} />
+        <Route path="/time" element={<ProtectedRoute adminOnly><TimePage /></ProtectedRoute>} />
+        <Route path="/documents" element={<ProtectedRoute adminOnly><DocumentsPage /></ProtectedRoute>} />
+        <Route path="/timesheet" element={<ProtectedRoute adminOnly><TimesheetPage /></ProtectedRoute>} />
+        <Route path="/swaps" element={<ProtectedRoute adminOnly><SwapsPage /></ProtectedRoute>} />
+        <Route path="/sick-leaves" element={<ProtectedRoute adminOnly><SickLeavesPage /></ProtectedRoute>} />
+        <Route path="/analytics" element={<ProtectedRoute adminOnly><AnalyticsPage /></ProtectedRoute>} />
 
-        <Route
-          path="/vacations"
-          element={
-            <ProtectedRoute adminOnly>
-              <VacationsPage />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/weeks"
-          element={
-            <ProtectedRoute adminOnly>
-              <WeeksPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/weeks/:id"
-          element={
-            <ProtectedRoute adminOnly>
-              <WeekDetailPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/time"
-          element={
-            <ProtectedRoute adminOnly>
-              <TimePage />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/documents"
-          element={
-            <ProtectedRoute adminOnly>
-              <DocumentsPage />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/timesheet"
-          element={
-            <ProtectedRoute adminOnly>
-              <TimesheetPage />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/swaps"
-          element={
-            <ProtectedRoute adminOnly>
-              <SwapsPage />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* ─── Общие ─── */}
-        <Route
-          path="/profile"
-          element={
-            <ProtectedRoute>
-              <ProfilePage />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route 
-          path="/sick-leaves" 
-          element={
-            <ProtectedRoute adminOnly>
-              <SickLeavesPage />
-            </ProtectedRoute>
-          } />
-
-        <Route
-          path="/analytics"
-          element={
-            <ProtectedRoute adminOnly>
-              <AnalyticsPage />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/help"
-          element={
-            <ProtectedRoute>
-              <HelpPage />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* ─── Сотрудник ─── */}
-        <Route
-          path="/my"
-          element={
-            <ProtectedRoute employeeOnly>
-              <MySchedulePage />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+        <Route path="/help" element={<ProtectedRoute><HelpPage /></ProtectedRoute>} />
+        <Route path="/my" element={<ProtectedRoute employeeOnly><MySchedulePage /></ProtectedRoute>} />
 
         <Route path="*" element={<Navigate to={homePath} replace />} />
       </Routes>

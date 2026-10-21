@@ -14,10 +14,12 @@ import {
   BarChart3,
   HelpCircle,
   AlertCircle,
+  MapPin,
 } from "lucide-react";
 import { useAuth } from "../store/auth";
 import { useNotifications } from "../store/notifications";
 import { useOrganization } from "../store/organization";
+import LocationSwitcher from "./LocationSwitcher";
 
 type TabLink = {
   path: string;
@@ -33,6 +35,7 @@ const CATEGORIES: TabCategory[] = [
     label: "Расписание",
     links: [
       { path: "/weeks", label: "Недели", icon: CalendarDays },
+      { path: "/locations", label: "Точки", icon: MapPin },
       { path: "/templates", label: "Шаблоны", icon: Calendar },
       {
         path: "/time",
@@ -49,7 +52,7 @@ const CATEGORIES: TabCategory[] = [
     links: [
       { path: "/team", label: "Сотрудники", icon: Users },
       { path: "/vacations", label: "Отпуска", icon: Palmtree },
-      { path: "/sick-leaves", label: "Больничные", icon: AlertCircle }, // Импортируйте AlertCircle из lucide-react
+      { path: "/sick-leaves", label: "Больничные", icon: AlertCircle },
     ],
   },
   {
@@ -71,13 +74,10 @@ function isActive(pathname: string, path: string): boolean {
   return pathname === path || pathname.startsWith(path + "/");
 }
 
-// Универсальный inline-бейдж
 function Badge({ value, tone = "red" }: { value: number; tone?: "red" | "amber" }) {
   if (value <= 0) return null;
   const cls =
-    tone === "red"
-      ? "bg-red-500 text-white"
-      : "bg-amber-500 text-white";
+    tone === "red" ? "bg-red-500 text-white" : "bg-amber-500 text-white";
   return (
     <span
       className={`ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold leading-none ${cls}`}
@@ -91,12 +91,8 @@ export default function NavBar() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { user, logout } = useAuth();
-  const {
-    vacationsPending,
-    swapsIncoming,
-    shiftChangesIncoming,
-    refresh,
-  } = useNotifications();
+  const { vacationsPending, swapsIncoming, shiftChangesIncoming, refresh } =
+    useNotifications();
   const org = useOrganization((s) => s.org);
 
   const isAdmin = user?.role === "OWNER" || user?.role === "MANAGER";
@@ -299,7 +295,7 @@ export default function NavBar() {
         </div>
       </div>
 
-      {/* Подменю активной категории */}
+      {/* Подменю активной категории + переключатель точек */}
       {currentCategory && currentCategory.links.length > 0 && (
         <div className="border-t border-slate-100 bg-slate-50/50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center gap-1 overflow-x-auto">
@@ -328,6 +324,12 @@ export default function NavBar() {
                 </button>
               );
             })}
+
+            {currentCategory.id === "schedule" && (
+              <div className="ml-auto py-1.5 pl-3 shrink-0">
+                <LocationSwitcher />
+              </div>
+            )}
           </div>
         </div>
       )}
