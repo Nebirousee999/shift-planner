@@ -19,6 +19,8 @@ import { organizationRoutes } from "./modules/organization/organization.routes.j
 import { customTemplatesRoutes } from "./modules/documents/custom-templates.routes.js";
 import { batchRoutes } from "./modules/documents/batch.routes.js";
 import { shiftChangeRequestsRoutes } from "./modules/shift-change-requests/shift-change-requests.routes.js";
+import { sickLeavesRoutes } from "./modules/sick-leaves/sick-leaves.routes.js";
+
 const app = Fastify({ logger: true });
 
 await app.register(cors, {
@@ -52,6 +54,7 @@ await app.register(organizationRoutes, { prefix: "/api/organization" });
 await app.register(customTemplatesRoutes, { prefix: "/api/documents/custom" });
 await app.register(batchRoutes, { prefix: "/api/documents/batch" });
 await app.register(shiftChangeRequestsRoutes, { prefix: "/api/shift-change-requests" });
+await app.register(sickLeavesRoutes, { prefix: "/api/sick-leaves" });
 
 const port = Number(process.env.PORT ?? 3001);
 await app.listen({ port, host: "0.0.0.0" });

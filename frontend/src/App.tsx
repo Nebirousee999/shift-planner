@@ -18,6 +18,8 @@ import TimesheetPage from "./pages/TimesheetPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import HelpPage from "./pages/HelpPage";
 import DialogHost from "./components/DialogHost";
+import SickLeavesPage from "./pages/SickLeavesPage";
+
 function ProtectedRoute({
   children,
   adminOnly = false,
@@ -164,6 +166,14 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+
+        <Route 
+          path="/sick-leaves" 
+          element={
+            <ProtectedRoute adminOnly>
+              <SickLeavesPage />
+            </ProtectedRoute>
+          } />
 
         <Route
           path="/analytics"

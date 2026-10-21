@@ -102,6 +102,10 @@ export const scheduledShifts = pgTable("scheduled_shifts", {
     endTime: varchar("end_time", { length: 5 }).notNull(),
     status: shiftStatusEnum("status").default("SCHEDULED").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    // В файле db/schema.ts найдите таблицу scheduledShifts и добавьте:
+    latenessMinutes: integer("lateness_minutes").default(0).notNull(),
+    earlyLeaveMinutes: integer("early_leave_minutes").default(0).notNull(),
+    overtimeMinutes: integer("overtime_minutes").default(0).notNull(),
 });
 
 // ─── AVAILABILITY ──────────────────────────────────────
@@ -233,5 +237,17 @@ export const shiftChangeRequests = pgTable("shift_change_requests", {
   comment: varchar("comment", { length: 500 }),
   status: shiftChangeStatusEnum("status").default("PENDING").notNull(),
   reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// db/schema.ts
+export const sickLeaves = pgTable("sick_leaves", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  comment: varchar("comment", { length: 255 }),
+  status: varchar("status", { length: 20 }).notNull().default("APPROVED"), // Врач открыл - значит уже факт
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

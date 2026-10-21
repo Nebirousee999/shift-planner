@@ -109,7 +109,6 @@ export const scheduledShiftsService = {
       .where(and(eq(users.id, input.userId), eq(users.orgId, input.orgId)));
     if (!user) throw new Error("USER_NOT_FOUND");
 
-    // Смены сотрудника в этот день
     const dayShifts = await db
       .select()
       .from(scheduledShifts)
@@ -165,7 +164,6 @@ export const scheduledShiftsService = {
     | { kind: "applied"; shift: any }
     | { kind: "requested"; request: any }
   > {
-    // 1. Неделя принадлежит организации?
     const [week] = await db
       .select()
       .from(scheduleWeeks)
@@ -178,13 +176,11 @@ export const scheduledShiftsService = {
     if (!week) throw new Error("WEEK_NOT_FOUND");
     if (week.status === "LOCKED") throw new Error("WEEK_LOCKED");
 
-    // 2. Дата попадает в неделю?
     const weekStart = toDateStr(week.weekStartDate);
     if (!isWithinWeek(input.shiftDate, weekStart)) {
       throw new Error("DATE_OUT_OF_WEEK");
     }
 
-    // 3. Шаблон принадлежит организации?
     if (input.templateId) {
       const [tpl] = await db
         .select()
@@ -198,7 +194,6 @@ export const scheduledShiftsService = {
       if (!tpl) throw new Error("TEMPLATE_NOT_FOUND");
     }
 
-    // 4. Сотрудник принадлежит организации?
     if (input.userId) {
       const [u] = await db
         .select()
@@ -214,12 +209,14 @@ export const scheduledShiftsService = {
       shiftDate: input.shiftDate,
       startTime: input.startTime,
       endTime: input.endTime,
+      latenessMinutes: 0,
+      earlyLeaveMinutes: 0,
+      overtimeMinutes: 0, // <--- ДОБАВЛЕНО
     };
 
     const isManager =
       input.requesterRole === "OWNER" || input.requesterRole === "MANAGER";
 
-    // ─── Черновик — применяем сразу ───
     if (week.status === "DRAFT") {
       const [shift] = await db
         .insert(scheduledShifts)
@@ -228,12 +225,9 @@ export const scheduledShiftsService = {
       return { kind: "applied", shift };
     }
 
-    // ─── Опубликовано — нужен запрос ───
-
     let targetUserId: string | null = null;
 
     if (!isManager) {
-      // Сотрудник создаёт — согласовывает OWNER (приоритет), иначе MANAGER
       const [manager] = await db
         .select({ id: users.id })
         .from(users)
@@ -247,9 +241,7 @@ export const scheduledShiftsService = {
         .limit(1);
       targetUserId = manager?.id ?? null;
     } else {
-      // Менеджер создаёт — согласовывает тот сотрудник, кому назначают
       if (!input.userId) {
-        // никому не назначена — применяем сразу
         const [shift] = await db
           .insert(scheduledShifts)
           .values(values)
@@ -259,7 +251,6 @@ export const scheduledShiftsService = {
       targetUserId = input.userId;
     }
 
-    // Некому согласовывать или сам себе — применяем сразу
     if (!targetUserId || targetUserId === input.requesterId) {
       const [shift] = await db
         .insert(scheduledShifts)
@@ -278,7 +269,6 @@ export const scheduledShiftsService = {
         templateId: input.templateId ?? null,
         requestedBy: input.requesterId,
         targetUserId,
-        // Для CREATE старых значений нет — дублируем новые, чтобы UI не сломался
         oldShiftDate: input.shiftDate,
         oldStartTime: input.startTime,
         oldEndTime: input.endTime,
@@ -304,6 +294,9 @@ export const scheduledShiftsService = {
     shiftDate?: string;
     startTime?: string;
     endTime?: string;
+    latenessMinutes?: number;
+    earlyLeaveMinutes?: number;
+    overtimeMinutes?: number; // <--- ДОБАВЛЕНО
   }): Promise<
     | { kind: "applied"; shift: any }
     | { kind: "requested"; request: any }
@@ -325,8 +318,18 @@ export const scheduledShiftsService = {
     const isManager =
       input.requesterRole === "OWNER" || input.requesterRole === "MANAGER";
 
-    // ─── Черновик — правим сразу ───
-    if (week.status === "DRAFT") {
+    // Если меняются только дисциплинарные метрики, применяем сразу (без согласования)
+    const isOnlyDiscipline =
+      (input.latenessMinutes !== undefined || 
+       input.earlyLeaveMinutes !== undefined || 
+       input.overtimeMinutes !== undefined) &&
+      input.templateId === undefined &&
+      input.userId === undefined &&
+      input.shiftDate === undefined &&
+      input.startTime === undefined &&
+      input.endTime === undefined;
+
+    if (week.status === "DRAFT" || isOnlyDiscipline) {
       const [updated] = await db
         .update(scheduledShifts)
         .set({
@@ -335,21 +338,21 @@ export const scheduledShiftsService = {
           ...(input.shiftDate !== undefined && { shiftDate: input.shiftDate }),
           ...(input.startTime !== undefined && { startTime: input.startTime }),
           ...(input.endTime !== undefined && { endTime: input.endTime }),
+          ...(input.latenessMinutes !== undefined && { latenessMinutes: input.latenessMinutes }),
+          ...(input.earlyLeaveMinutes !== undefined && { earlyLeaveMinutes: input.earlyLeaveMinutes }),
+          ...(input.overtimeMinutes !== undefined && { overtimeMinutes: input.overtimeMinutes }),
         })
         .where(eq(scheduledShifts.id, input.id))
         .returning();
       return { kind: "applied", shift: updated };
     }
 
-    // ─── Опубликовано — нужен запрос ───
     const oldDate = String(shift.shiftDate).slice(0, 10);
     const newDate = input.shiftDate ?? oldDate;
     const newStart = input.startTime ?? shift.startTime;
     const newEnd = input.endTime ?? shift.endTime;
-    const newUserId =
-      input.userId !== undefined ? input.userId : shift.userId;
+    const newUserId = input.userId !== undefined ? input.userId : shift.userId;
 
-    // Ничего не изменилось
     if (
       newDate === oldDate &&
       newStart === shift.startTime &&
@@ -359,11 +362,9 @@ export const scheduledShiftsService = {
       return { kind: "applied", shift };
     }
 
-    // Определяем, кому согласовывать
     let targetUserId: string | null = null;
 
     if (!isManager) {
-      // Сотрудник → согласовывает OWNER (приоритет), иначе MANAGER
       const [manager] = await db
         .select({ id: users.id })
         .from(users)
@@ -377,8 +378,6 @@ export const scheduledShiftsService = {
         .limit(1);
       targetUserId = manager?.id ?? null;
     } else {
-      // Менеджер → согласовывает сотрудник, чью смену меняют.
-      // Если смена ничья — согласовывать не с кем, применяем сразу.
       const involvedUserId = shift.userId ?? newUserId;
       if (!involvedUserId) {
         const [updated] = await db
@@ -388,9 +387,10 @@ export const scheduledShiftsService = {
             startTime: newStart,
             endTime: newEnd,
             ...(input.userId !== undefined && { userId: input.userId }),
-            ...(input.templateId !== undefined && {
-              templateId: input.templateId,
-            }),
+            ...(input.templateId !== undefined && { templateId: input.templateId }),
+            ...(input.latenessMinutes !== undefined && { latenessMinutes: input.latenessMinutes }),
+            ...(input.earlyLeaveMinutes !== undefined && { earlyLeaveMinutes: input.earlyLeaveMinutes }),
+            ...(input.overtimeMinutes !== undefined && { overtimeMinutes: input.overtimeMinutes }),
           })
           .where(eq(scheduledShifts.id, input.id))
           .returning();
@@ -399,8 +399,7 @@ export const scheduledShiftsService = {
       targetUserId = involvedUserId;
     }
 
-    // Если согласовывать некому — применяем сразу
-    if (!targetUserId) {
+    if (!targetUserId || targetUserId === input.requesterId) {
       const [updated] = await db
         .update(scheduledShifts)
         .set({
@@ -408,27 +407,10 @@ export const scheduledShiftsService = {
           startTime: newStart,
           endTime: newEnd,
           ...(input.userId !== undefined && { userId: input.userId }),
-          ...(input.templateId !== undefined && {
-            templateId: input.templateId,
-          }),
-        })
-        .where(eq(scheduledShifts.id, input.id))
-        .returning();
-      return { kind: "applied", shift: updated };
-    }
-
-    // Сам себе — применяем сразу
-    if (targetUserId === input.requesterId) {
-      const [updated] = await db
-        .update(scheduledShifts)
-        .set({
-          shiftDate: newDate,
-          startTime: newStart,
-          endTime: newEnd,
-          ...(input.userId !== undefined && { userId: input.userId }),
-          ...(input.templateId !== undefined && {
-            templateId: input.templateId,
-          }),
+          ...(input.templateId !== undefined && { templateId: input.templateId }),
+          ...(input.latenessMinutes !== undefined && { latenessMinutes: input.latenessMinutes }),
+          ...(input.earlyLeaveMinutes !== undefined && { earlyLeaveMinutes: input.earlyLeaveMinutes }),
+          ...(input.overtimeMinutes !== undefined && { overtimeMinutes: input.overtimeMinutes }),
         })
         .where(eq(scheduledShifts.id, input.id))
         .returning();

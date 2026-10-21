@@ -1,20 +1,30 @@
 import { api } from "./client";
 
-export type UserStat = {
+export type AnalyticsUser = {
   userId: string;
   name: string;
-  role: "OWNER" | "MANAGER" | "EMPLOYEE";
+  role: string;
   hourlyRate: number | null;
   shiftsCount: number;
   plannedHours: number;
   actualHours: number;
-  payroll: number;
+  plannedPayroll: number;
+  actualPayroll: number;
+  overtimeHours: number;
+  overtimeCost: number;
+  avgCost: number;
 };
 
 export type AnalyticsSummary = {
   period: { from: string; to: string };
-  totals: { hours: number; shifts: number; payroll: number };
-  users: UserStat[];
+  totals: {
+    hours: number;
+    shifts: number;
+    payroll: number;
+    actualPayroll: number;
+    overtimeCost: number;
+  };
+  users: AnalyticsUser[];
   planVsFact: {
     plannedHours: number;
     actualHours: number;
@@ -22,36 +32,11 @@ export type AnalyticsSummary = {
   };
 };
 
-export type OvertimeUser = {
-  userId: string;
-  name: string;
-  hourlyRate: number;
-  plannedHours: number;
-  actualHours: number;
-  overtimeHours: number;
-  overtimePay: number;
-};
-
-export type OvertimeSummary = {
-  period: { from: string; to: string };
-  settings: { mult1: number; mult2: number };
-  users: OvertimeUser[];
-};
-
-
 export const analyticsApi = {
-  summary: async (from: string, to: string): Promise<AnalyticsSummary> => {
+  summary: async (from: string, to: string) => {
     const { data } = await api.get<AnalyticsSummary>("/analytics", {
       params: { from, to },
     });
     return data;
   },
-
-  getOvertime: async (from: string, to: string): Promise<OvertimeSummary> => {
-    const { data } = await api.get<OvertimeSummary>("/analytics/overtime", {
-      params: { from, to },
-    });
-    return data;
-  },
-
 };

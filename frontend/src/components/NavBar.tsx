@@ -13,6 +13,7 @@ import {
   FileSpreadsheet,
   BarChart3,
   HelpCircle,
+  AlertCircle,
 } from "lucide-react";
 import { useAuth } from "../store/auth";
 import { useNotifications } from "../store/notifications";
@@ -48,6 +49,7 @@ const CATEGORIES: TabCategory[] = [
     links: [
       { path: "/team", label: "Сотрудники", icon: Users },
       { path: "/vacations", label: "Отпуска", icon: Palmtree },
+      { path: "/sick-leaves", label: "Больничные", icon: AlertCircle }, // Импортируйте AlertCircle из lucide-react
     ],
   },
   {

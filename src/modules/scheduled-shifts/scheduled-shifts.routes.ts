@@ -37,6 +37,9 @@ const updateSchema = z.object({
   shiftDate: z.string().regex(dateRegex).optional(),
   startTime: z.string().regex(timeRegex).optional(),
   endTime: z.string().regex(timeRegex).optional(),
+  latenessMinutes: z.number().int().min(0).optional(),     // <--- ДОБАВИТЬ ЭТУ СТРОКУ
+  earlyLeaveMinutes: z.number().int().min(0).optional(),   // <--- ДОБАВИТЬ ЭТУ СТРОКУ
+  overtimeMinutes: z.number().int().min(0).optional(),
 });
 
 export async function scheduledShiftsRoutes(app: FastifyInstance) {

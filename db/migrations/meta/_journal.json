@@ -64,6 +64,27 @@
       "when": 1792523820713,
       "tag": "0008_chief_molten_man",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792562637498,
+      "tag": "0009_tiresome_slayback",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792583105399,
+      "tag": "0010_soft_nemesis",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792585746709,
+      "tag": "0011_naive_red_skull",
+      "breakpoints": true
     }
   ]
 }

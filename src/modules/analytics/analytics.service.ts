@@ -21,22 +21,17 @@ function round1(n: number): number {
 
 export const analyticsService = {
   async summary(orgId: string, from: string, to: string) {
-    // Все сотрудники организации
-    const orgUsers = await db
-      .select()
-      .from(users)
-      .where(eq(users.orgId, orgId));
+    const orgUsers = await db.select().from(users).where(eq(users.orgId, orgId));
 
     if (orgUsers.length === 0) {
       return {
         period: { from, to },
-        totals: { hours: 0, shifts: 0, payroll: 0 },
+        totals: { hours: 0, shifts: 0, payroll: 0, actualPayroll: 0, overtimeCost: 0 },
         users: [],
         planVsFact: { plannedHours: 0, actualHours: 0, diffPercent: 0 },
       };
     }
 
-    // Смены за период
     const allShifts = await db
       .select()
       .from(scheduledShifts)
@@ -47,20 +42,15 @@ export const analyticsService = {
         )
       );
 
-    // Фильтруем только смены сотрудников этой организации
     const orgUserIds = new Set(orgUsers.map((u) => u.id));
-    const shifts = allShifts.filter(
-      (s) => s.userId && orgUserIds.has(s.userId)
-    );
+    const shifts = allShifts.filter((s) => s.userId && orgUserIds.has(s.userId));
 
-    // Часы за период
     const entries = await db
       .select()
       .from(timeEntries)
       .where(
         and(
           isNotNull(timeEntries.clockIn),
-          isNotNull(timeEntries.clockOut),
           gte(timeEntries.clockIn, new Date(from + "T00:00:00Z")),
           lte(timeEntries.clockIn, new Date(to + "T23:59:59Z"))
         )
@@ -68,23 +58,36 @@ export const analyticsService = {
 
     const orgEntries = entries.filter((e) => orgUserIds.has(e.userId));
 
-    // По каждому сотруднику
+    let totalPlannedHours = 0;
+    let totalActualHours = 0;
+    let totalPlannedPayroll = 0;
+    let totalActualPayroll = 0;
+    let totalOvertimeCost = 0;
+
     const userStats = orgUsers.map((u) => {
       const userShifts = shifts.filter((s) => s.userId === u.id);
-      const plannedHours = userShifts.reduce(
-        (sum, s) => sum + hoursBetween(s.startTime, s.endTime),
-        0
-      );
+      const plannedHours = userShifts.reduce((sum, s) => sum + hoursBetween(s.startTime, s.endTime), 0);
 
       const userEntries = orgEntries.filter((e) => e.userId === u.id);
       const actualHours = userEntries.reduce((sum, e) => {
-        const ms =
-          new Date(e.clockOut!).getTime() - new Date(e.clockIn!).getTime();
-        return sum + ms / 3600000;
+        const end = e.clockOut ? new Date(e.clockOut).getTime() : Date.now();
+        const start = new Date(e.clockIn!).getTime();
+        return sum + (end - start) / 3600000;
       }, 0);
 
       const rate = u.hourlyRate ? Number(u.hourlyRate) : 0;
-      const payroll = rate * plannedHours;
+      const plannedPayroll = rate * plannedHours;
+      const actualPayroll = rate * actualHours;
+
+      // Считаем переработку (всё, что свыше 160 часов в месяц, берем с коэфф. 1.5)
+      const overtimeHours = Math.max(0, actualHours - 160);
+      const overtimeCost = overtimeHours * rate * 1.5;
+
+      totalPlannedHours += plannedHours;
+      totalActualHours += actualHours;
+      totalPlannedPayroll += plannedPayroll;
+      totalActualPayroll += actualPayroll;
+      totalOvertimeCost += overtimeCost;
 
       return {
         userId: u.id,
@@ -94,39 +97,34 @@ export const analyticsService = {
         shiftsCount: userShifts.length,
         plannedHours: round1(plannedHours),
         actualHours: round1(actualHours),
-        payroll: Math.round(payroll),
+        plannedPayroll: Math.round(plannedPayroll),
+        actualPayroll: Math.round(actualPayroll),
+        overtimeHours: round1(overtimeHours),
+        overtimeCost: Math.round(overtimeCost),
       };
     });
 
-    const totals = userStats.reduce(
-      (acc, u) => ({
-        hours: acc.hours + u.plannedHours,
-        shifts: acc.shifts + u.shiftsCount,
-        payroll: acc.payroll + u.payroll,
-      }),
-      { hours: 0, shifts: 0, payroll: 0 }
-    );
-
-    const totalPlanned = totals.hours;
-    const totalActual = userStats.reduce((s, u) => s + u.actualHours, 0);
     const diffPercent =
-      totalPlanned > 0
-        ? round1(((totalActual - totalPlanned) / totalPlanned) * 100)
+      totalPlannedHours > 0
+        ? round1(((totalActualHours - totalPlannedHours) / totalPlannedHours) * 100)
         : 0;
 
     return {
       period: { from, to },
       totals: {
-        hours: round1(totals.hours),
-        shifts: totals.shifts,
-        payroll: totals.payroll,
+        hours: round1(totalPlannedHours),
+        shifts: shifts.length,
+        payroll: Math.round(totalPlannedPayroll),
+        actualPayroll: Math.round(totalActualPayroll),
+        overtimeCost: Math.round(totalOvertimeCost),
+        avgCost: shifts.length > 0 ? Math.round(totalPlannedPayroll / shifts.length) : 0,
       },
       users: userStats
         .filter((u) => u.shiftsCount > 0 || u.actualHours > 0)
         .sort((a, b) => b.plannedHours - a.plannedHours),
       planVsFact: {
-        plannedHours: round1(totalPlanned),
-        actualHours: round1(totalActual),
+        plannedHours: round1(totalPlannedHours),
+        actualHours: round1(totalActualHours),
         diffPercent,
       },
     };

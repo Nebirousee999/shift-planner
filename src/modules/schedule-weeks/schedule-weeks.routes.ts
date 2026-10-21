@@ -85,4 +85,19 @@ export async function scheduleWeeksRoutes(app: FastifyInstance) {
       return reply.code(500).send({ error: "Ошибка копирования" });
     }
   });
+
+  app.delete<{ Params: { id: string } }>("/:id", async (req, reply) => {
+    try {
+      const { orgId } = req.user!;
+      await scheduleWeeksService.remove(req.params.id, orgId);
+      return { success: true };
+    } catch (e: any) {
+      if (e.message === "WEEK_NOT_FOUND") return reply.code(404).send({ error: "Неделя не найдена" });
+      if (e.message === "ONLY_DRAFT_CAN_BE_DELETED") return reply.code(400).send({ error: "Можно удалить только черновик" });
+      app.log.error(e);
+      return reply.code(500).send({ error: "Ошибка удаления" });
+    }
+  });
+
+
 }

@@ -206,4 +206,17 @@ export const scheduleWeeksService = {
         return newWeek;
     },
 
+      async remove(id: string, orgId: string) {
+    const [week] = await db
+      .select()
+      .from(scheduleWeeks)
+      .where(and(eq(scheduleWeeks.id, id), eq(scheduleWeeks.orgId, orgId)));
+    if (!week) throw new Error("WEEK_NOT_FOUND");
+    if (week.status !== "DRAFT") throw new Error("ONLY_DRAFT_CAN_BE_DELETED");
+
+    await db.delete(scheduledShifts).where(eq(scheduledShifts.weekId, id));
+    await db.delete(scheduleWeeks).where(eq(scheduleWeeks.id, id));
+    return { success: true };
+  },
+
 };

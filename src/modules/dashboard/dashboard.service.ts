@@ -1,4 +1,4 @@
-import { eq, and, gte, lte, isNull, isNotNull, count, sql, inArray } from "drizzle-orm";
+import { eq, and, gte, lte, isNotNull, count, sql } from "drizzle-orm";
 import { db } from "../../../db/client.js";
 import {
   users,
@@ -6,13 +6,13 @@ import {
   scheduleWeeks,
   scheduledShifts,
   timeEntries,
-  shiftChangeRequests, // 👈 Добавляем импорт
 } from "../../../db/schema.js";
 
 export const dashboardService = {
-  async summary(orgId: string, customDate?: string) {
-    const todayDate = customDate || new Date().toISOString().slice(0, 10);
+  async summary(orgId: string) {
+    const todayDate = new Date().toISOString().slice(0, 10);
 
+    // 1. Находим текущую неделю
     const [currentWeek] = await db
       .select()
       .from(scheduleWeeks)
@@ -27,8 +27,8 @@ export const dashboardService = {
 
     let weekShifts: any[] = [];
     let weekTimeEntries: any[] = [];
-    let weekShiftChanges: any[] = []; // 👈 Добавляем переменную
     
+    // Если неделя опубликована, показываем смены и отработанное время
     const isPublished = currentWeek?.status === "PUBLISHED";
 
     if (currentWeek && isPublished) {
@@ -36,20 +36,6 @@ export const dashboardService = {
         .select()
         .from(scheduledShifts)
         .where(eq(scheduledShifts.weekId, currentWeek.id));
-
-      // Если есть смены, ищем одобренные запросы на их изменение
-      if (weekShifts.length > 0) {
-        const shiftIds = weekShifts.map((s) => s.id);
-        weekShiftChanges = await db
-          .select()
-          .from(shiftChangeRequests)
-          .where(
-            and(
-              eq(shiftChangeRequests.status, "APPROVED"),
-              inArray(shiftChangeRequests.shiftId, shiftIds)
-            )
-          );
-      }
 
       const start = currentWeek.weekStartDate;
       const d = new Date(start + "T00:00:00Z");
@@ -68,6 +54,7 @@ export const dashboardService = {
         );
     }
 
+    // 2. Смены на сегодня
     let todayShifts: any[] = [];
     
     if (isPublished) {
@@ -76,12 +63,16 @@ export const dashboardService = {
           id: scheduledShifts.id,
           startTime: scheduledShifts.startTime,
           endTime: scheduledShifts.endTime,
-          shiftDate: scheduledShifts.shiftDate, // 👈 Добавили дату, она понадобится
           userId: users.id,
           userName: users.name,
+          latenessMinutes: scheduledShifts.latenessMinutes, // <--- ДОБАВИТЬ
+          earlyLeaveMinutes: scheduledShifts.earlyLeaveMinutes, // <--- ДОБАВИТЬ
+          overtimeMinutes: scheduledShifts.overtimeMinutes,
           userPosition: users.position,
           templateId: shiftTemplates.id,
           templateColor: shiftTemplates.color,
+          templateStartTime: shiftTemplates.startTime, // <--- ДОБАВИТЬ
+          templateEndTime: shiftTemplates.endTime,     // <--- ДОБАВИТЬ
         })
         .from(scheduledShifts)
         .leftJoin(users, eq(scheduledShifts.userId, users.id))
@@ -99,10 +90,23 @@ export const dashboardService = {
       todayShifts = todayShiftsRaw.filter(s => s.userId && orgUserIds.has(s.userId));
     }
 
-    const orgUsers = await db.select({ id: users.id }).from(users).where(eq(users.orgId, orgId));
-    const orgUserIds = new Set(orgUsers.map(u => u.id));
+    // 3. Список сотрудников для расчета затрат
+    const orgUsersData = await db
+      .select({ 
+        id: users.id, 
+        name: users.name, 
+        hourlyRate: users.hourlyRate, 
+        position: users.position 
+      })
+      .from(users)
+      .where(eq(users.orgId, orgId));
+      
+    const orgUserIds = new Set(orgUsersData.map(u => u.id));
+    
+    // Фильтруем записи времени, чтобы не было лишних
     const validWeekTimeEntries = weekTimeEntries.filter(te => orgUserIds.has(te.userId));
 
+    // 4. Общее количество сотрудников
     const [{ value: userCount }] = await db
       .select({ value: count() })
       .from(users)
@@ -117,8 +121,8 @@ export const dashboardService = {
       } : null,
       todayShifts,
       weekTimeEntries: validWeekTimeEntries,
-      weekShiftChanges, // 👈 Возвращаем на фронтенд
       userCount,
+      users: orgUsersData,
       monthlyHours: 0,
     };
   },

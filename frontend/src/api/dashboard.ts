@@ -1,6 +1,13 @@
 import { api } from "./client";
 import type { ScheduledShift } from "./weeks";
 
+export type DashboardUser = {
+  id: string;
+  name: string;
+  hourlyRate: string | null;
+  position: string | null;
+};
+
 export type TimeEntry = {
   id: string;
   userId: string;
@@ -17,16 +24,11 @@ export type TodayShift = {
   userPosition: string | null;
   templateId: string | null;
   templateColor: string | null;
+  latenessMinutes?: number;
+  earlyLeaveMinutes?: number;
+  templateStartTime: string | null; // <--- ДОБАВИТЬ
+  templateEndTime: string | null;   // <--- ДОБАВИТЬ
 };
-
-export type ShiftChangeRequest = {
-  id: string;
-  shiftId: string;
-  oldEndTime: string;
-  newEndTime: string;
-  // ... другие поля, если нужны
-};
-
 
 export type DashboardSummary = {
   currentWeek: {
@@ -36,22 +38,15 @@ export type DashboardSummary = {
     shifts: ScheduledShift[];
   } | null;
   todayShifts: TodayShift[];
-  weekTimeEntries: TimeEntry[]; // <--- Новое поле
+  weekTimeEntries: TimeEntry[];
   userCount: number;
+  users: DashboardUser[]; // <--- Добавили это поле
   monthlyHours: number;
-  weekShiftChanges: ShiftChangeRequest[]; // 👈
 };
 
-
-
-
-
-
 export const dashboardApi = {
-  summary: async (date?: string): Promise<DashboardSummary> => {
-    const { data } = await api.get<DashboardSummary>("/dashboard", {
-      params: date ? { date } : undefined,
-    });
+  summary: async (): Promise<DashboardSummary> => {
+    const { data } = await api.get<DashboardSummary>("/dashboard");
     return data;
   },
 };

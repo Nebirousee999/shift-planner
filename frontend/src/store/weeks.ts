@@ -3,7 +3,7 @@ import {
   weeksApi,
   shiftsApi,
   type ScheduleWeek,
-
+  type ScheduledShift,
   type ShiftUpdateResult,
 } from "../api/weeks";
 
@@ -19,6 +19,7 @@ type State = {
   createWeek: (weekStartDate: string) => Promise<ScheduleWeek>;
   publishWeek: (id: string) => Promise<{ ok: boolean; violations?: string[] }>;
   duplicateWeek: (id: string) => Promise<ScheduleWeek>;
+  removeWeek: (id: string) => Promise<void>; // <-- НОВЫЙ МЕТОД
 
   // ─── Смены ─────────────────────────────────────────
   addShift: (input: {
@@ -111,20 +112,18 @@ export const useWeeks = create<State>((set, get) => ({
     return week;
   },
 
+  removeWeek: async (id) => {
+    await weeksApi.remove(id);
+    set((s) => ({
+      weeks: s.weeks.filter((w) => w.id !== id),
+      currentWeek: s.currentWeek?.id === id ? null : s.currentWeek,
+    }));
+  },
+
   // ══════════════════════════════════════════════════
   // СМЕНЫ
   // ══════════════════════════════════════════════════
 
-  /**
-   * Создание смены.
-   *
-   * Два сценария на бэке:
-   *   - DRAFT или некому согласовывать → kind: "applied", shift создана
-   *   - PUBLISHED и есть кому согласовывать → kind: "requested", shift НЕ создана
-   *
-   * Возвращаем результат наружу, чтобы вызывающий код мог показать
-   * правильное уведомление. currentWeek обновляем только при "applied".
-   */
   addShift: async (input) => {
     const result = await shiftsApi.create(input);
 
@@ -139,21 +138,9 @@ export const useWeeks = create<State>((set, get) => ({
         });
       }
     }
-    // при "requested" — currentWeek не трогаем: смена физически не создана,
-    // она появится после approve
-
     return result;
   },
 
-  /**
-   * Обновление смены.
-   *
-   * Два сценария на бэке:
-   *   - DRAFT или согласовывать некому → kind: "applied", смена обновлена
-   *   - PUBLISHED и есть кому согласовывать → kind: "requested", смена НЕ обновлена
-   *
-   * currentWeek обновляем только при "applied".
-   */
   updateShift: async (id, input) => {
     const result = await shiftsApi.update(id, input);
 
@@ -170,7 +157,6 @@ export const useWeeks = create<State>((set, get) => ({
         });
       }
     }
-
     return result;
   },
 

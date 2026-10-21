@@ -1,0 +1,1 @@
+ALTER TABLE "scheduled_shifts" ADD COLUMN "overtime_minutes" integer DEFAULT 0 NOT NULL;
