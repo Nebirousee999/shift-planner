@@ -8,6 +8,7 @@ import {
   shiftChangeRequests,
 } from "../../../db/schema.js";
 import { isWithinWeek, toDateStr, shiftsOverlap } from "../../lib/time.js";
+import { messengerService } from "../../lib/messenger.service.js"; // <--- ДОБАВЛЕН ИМПОРТ
 
 const WEEKLY_LIMIT_HOURS = 40;
 
@@ -211,12 +212,13 @@ export const scheduledShiftsService = {
       endTime: input.endTime,
       latenessMinutes: 0,
       earlyLeaveMinutes: 0,
-      overtimeMinutes: 0, // <--- ДОБАВЛЕНО
+      overtimeMinutes: 0,
     };
 
     const isManager =
       input.requesterRole === "OWNER" || input.requesterRole === "MANAGER";
 
+    // Если неделя черновик — применяем сразу
     if (week.status === "DRAFT") {
       const [shift] = await db
         .insert(scheduledShifts)
@@ -251,6 +253,7 @@ export const scheduledShiftsService = {
       targetUserId = input.userId;
     }
 
+    // Если некому отправлять запрос (нет менеджера или это тот же человек) — применяем сразу
     if (!targetUserId || targetUserId === input.requesterId) {
       const [shift] = await db
         .insert(scheduledShifts)
@@ -259,6 +262,7 @@ export const scheduledShiftsService = {
       return { kind: "applied", shift };
     }
 
+    // Создаем запрос на согласование (неделя опубликована)
     const [request] = await db
       .insert(shiftChangeRequests)
       .values({
@@ -280,6 +284,12 @@ export const scheduledShiftsService = {
       })
       .returning();
 
+    // 🔔 Отправляем уведомление сотруднику, что ему предлагают смену
+    await messengerService.sendToUser(
+      targetUserId,
+      `<b>Новая смена</b>\n\nРуководитель предлагает вам смену на ${input.shiftDate} (${input.startTime}–${input.endTime}).\nЗайдите в приложение, чтобы подтвердить.`
+    );
+
     return { kind: "requested", request };
   },
 
@@ -296,7 +306,7 @@ export const scheduledShiftsService = {
     endTime?: string;
     latenessMinutes?: number;
     earlyLeaveMinutes?: number;
-    overtimeMinutes?: number; // <--- ДОБАВЛЕНО
+    overtimeMinutes?: number;
   }): Promise<
     | { kind: "applied"; shift: any }
     | { kind: "requested"; request: any }
@@ -320,9 +330,9 @@ export const scheduledShiftsService = {
 
     // Если меняются только дисциплинарные метрики, применяем сразу (без согласования)
     const isOnlyDiscipline =
-      (input.latenessMinutes !== undefined || 
-       input.earlyLeaveMinutes !== undefined || 
-       input.overtimeMinutes !== undefined) &&
+      (input.latenessMinutes !== undefined ||
+        input.earlyLeaveMinutes !== undefined ||
+        input.overtimeMinutes !== undefined) &&
       input.templateId === undefined &&
       input.userId === undefined &&
       input.shiftDate === undefined &&

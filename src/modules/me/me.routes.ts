@@ -1,6 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { eq, and } from "drizzle-orm";
+import { db } from "../../../db/client.js";
+import { userMessengers } from "../../../db/schema.js";
 import { meService } from "./me.service.js";
+import { messengerService } from "../../lib/messenger.service.js"; // <--- ДОБАВЛЕН ИМПОРТ
 
 const changePasswordSchema = z.object({
   oldPassword: z.string().min(1),
@@ -10,6 +14,12 @@ const changePasswordSchema = z.object({
 const myShiftsQuerySchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+
+// Схема для привязки мессенджера
+const bindMessengerSchema = z.object({
+  provider: z.enum(["telegram", "max"]),
+  externalId: z.string().min(1),
 });
 
 export async function meRoutes(app: FastifyInstance) {
@@ -64,10 +74,71 @@ export async function meRoutes(app: FastifyInstance) {
       return reply.code(500).send({ error: "Ошибка загрузки смен" });
     }
   });
-  // Коллеги — доступно всем ролям
+
   app.get("/colleagues", async (req) => {
     const { orgId } = req.user!;
     return meService.colleagues(orgId);
   });
 
+  // ─── ПРИВЯЗКА МЕССЕНДЖЕРОВ ───────────────────────
+  app.post("/messengers/bind", async (req, reply) => {
+    const parsed = bindMessengerSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.flatten() });
+    }
+
+    const { sub: userId } = req.user!;
+    const { provider, externalId } = parsed.data;
+
+    try {
+      // Проверяем, не привязан ли этот аккаунт к другому пользователю
+      const existing = await db
+        .select()
+        .from(userMessengers)
+        .where(
+          and(
+            eq(userMessengers.provider, provider),
+            eq(userMessengers.externalId, externalId)
+          )
+        );
+
+      if (existing.length > 0 && existing[0].userId !== userId) {
+        return reply
+          .code(400)
+          .send({ error: "Этот аккаунт уже привязан к другому пользователю" });
+      }
+
+      // Удаляем старую привязку этого провайдера у пользователя (если была)
+      await db
+        .delete(userMessengers)
+        .where(
+          and(
+            eq(userMessengers.userId, userId),
+            eq(userMessengers.provider, provider)
+          )
+        );
+
+      // Создаем новую привязку
+      await db.insert(userMessengers).values({ userId, provider, externalId });
+
+      return { success: true };
+    } catch (e: any) {
+      app.log.error(e);
+      return reply.code(500).send({ error: "Ошибка привязки мессенджера" });
+    }
+  });
+
+  // ─── ТЕСТ ОТПРАВКИ УВЕДОМЛЕНИЯ ───────────────────
+  app.get("/test-messenger", async (req, reply) => {
+    const { sub: userId } = req.user!;
+    
+    console.log(`\n🧪 [Test] Запуск теста отправки для userId: ${userId}`);
+    
+    const success = await messengerService.sendToUser(
+      userId,
+      `<b>Тест связи!</b>\n\nЭто сообщение отправлено из твоего планировщика. Если ты его видишь — значит интеграция с MAX работает идеально.`
+    );
+
+    return { success };
+  });
 }

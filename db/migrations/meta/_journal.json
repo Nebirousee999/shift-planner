@@ -8,6 +8,20 @@
       "when": 1792615443363,
       "tag": "0000_striped_namora",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792733150480,
+      "tag": "0001_sudden_cannonball",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792737844636,
+      "tag": "0002_nasty_rocket_racer",
+      "breakpoints": true
     }
   ]
 }

@@ -295,38 +295,44 @@ export default function NavBar() {
         </div>
       </div>
 
-      {/* Подменю активной категории + переключатель точек */}
+      {/* Подменю активной категории + переключатель точек.
+          Вкладки и свитчер — ДВА разных контейнера:
+          overflow-x-auto только на вкладках, чтобы не обрезать dropdown. */}
       {currentCategory && currentCategory.links.length > 0 && (
         <div className="border-t border-slate-100 bg-slate-50/50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center gap-1 overflow-x-auto">
-            {currentCategory.links.map((link) => {
-              const Icon = link.icon;
-              const active = isActive(pathname, link.path);
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-stretch gap-3">
+            {/* Вкладки — скроллятся при переполнении */}
+            <div className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0">
+              {currentCategory.links.map((link) => {
+                const Icon = link.icon;
+                const active = isActive(pathname, link.path);
 
-              let badge = 0;
-              if (link.path === "/vacations") badge = vacationsPending;
-              if (link.path === "/swaps") badge = swapsIncoming;
-              if (link.path === "/weeks") badge = shiftChangesIncoming;
+                let badge = 0;
+                if (link.path === "/vacations") badge = vacationsPending;
+                if (link.path === "/swaps") badge = swapsIncoming;
+                if (link.path === "/weeks") badge = shiftChangesIncoming;
 
-              return (
-                <button
-                  key={link.path}
-                  onClick={() => navigate(link.path)}
-                  className={`inline-flex items-center gap-2 px-3 py-2 text-sm whitespace-nowrap border-b-2 transition-colors ${
-                    active
-                      ? "border-brand-600 text-brand-700 font-medium"
-                      : "border-transparent text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span>{link.label}</span>
-                  <Badge value={badge} />
-                </button>
-              );
-            })}
+                return (
+                  <button
+                    key={link.path}
+                    onClick={() => navigate(link.path)}
+                    className={`inline-flex items-center gap-2 px-3 py-2 text-sm whitespace-nowrap border-b-2 transition-colors ${
+                      active
+                        ? "border-brand-600 text-brand-700 font-medium"
+                        : "border-transparent text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span>{link.label}</span>
+                    <Badge value={badge} />
+                  </button>
+                );
+              })}
+            </div>
 
+            {/* Свитчер — ВНЕ overflow-x-auto, чтобы dropdown не обрезался */}
             {currentCategory.id === "schedule" && (
-              <div className="ml-auto py-1.5 pl-3 shrink-0">
+              <div className="flex items-center shrink-0 py-1.5">
                 <LocationSwitcher />
               </div>
             )}

@@ -252,6 +252,46 @@ export default function ProfilePage() {
                       </div>
                     </div>
 
+                    {/* Блок подписки */}
+                    <div className="bg-gradient-to-br from-brand-50 to-violet-50 rounded-2xl border border-brand-200 p-6 mb-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="font-semibold text-slate-900">Ваш тариф: Free</h3>
+                          <p className="text-sm text-slate-500 mt-1">Доступно 3 сотрудника и 1 точка</p>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            const token = localStorage.getItem("token");
+                            try {
+                              const res = await fetch("http://localhost:3001/api/payments/create", {
+                                method: "POST",
+                                headers: {
+                                  "Content-Type": "application/json",
+                                  Authorization: `Bearer ${token}`,
+                                },
+                                body: JSON.stringify({
+                                  tariffId: "pro",
+                                  amount: 990,
+                                  description: "Тариф Pro на 1 месяц",
+                                }),
+                              });
+                              const data = await res.json();
+                              if (data.confirmationUrl) window.location.href = data.confirmationUrl;
+                              else alert(data.error || "Ошибка");
+                            } catch (e) {
+                              alert("Ошибка соединения с сервером");
+                            }
+                          }}
+                          className="bg-brand-600 text-white px-5 py-2.5 rounded-xl hover:bg-brand-700 text-sm font-medium shadow-sm transition-all"
+                        >
+                          Перейти на Pro за 990 ₽
+                        </button>
+                      </div>
+                    </div>
+
+
+
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
                       <ProfileField
                         icon={Mail}

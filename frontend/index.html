@@ -5,12 +5,51 @@
     <link rel="icon" type="image/png" href="/icon-192.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="theme-color" content="#2563eb" />
+
+    <!-- Viewport — без user-scalable=no для доступности -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- SEO -->
+    <title>Планировщик смен — график для кафе и магазинов</title>
     <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+      name="description"
+      content="Планируйте смены за 5 минут, согласовывайте отпуска, генерируйте приказы по ТК. Бесплатно для команд до 3 человек. Работает на телефоне."
     />
-    <meta name="description" content="Планировщик смен для микробизнеса" />
-    <title>Планировщик смен</title>
+
+    <!-- Open Graph (для Telegram, VK, WhatsApp) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Планировщик смен — график для кафе и магазинов" />
+    <meta property="og:description" content="Смены, отпуска и документы в одном окне. Бесплатно для команд до 3 человек." />
+    <meta property="og:image" content="https://shift-planner.ru/og-image.png" />
+    <meta property="og:url" content="https://shift-planner.ru/" />
+    <meta property="og:site_name" content="Планировщик смен" />
+    <meta property="og:locale" content="ru_RU" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Планировщик смен" />
+    <meta name="twitter:description" content="Смены, отпуска и документы в одном окне" />
+    <meta name="twitter:image" content="https://shift-planner.ru/og-image.png" />
+
+    <!-- Yandex.Metrika counter (закомментировано) -->
+    <!-- 
+    <script type="text/javascript">
+      (function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+      m[i].l=1*new Date();
+      for (var j = 0; j < document.scripts.length; j++) {if (document.scripts[j].src === r) { return; }}
+      k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})
+      (window, document, "script", "https://mc.yandex.ru/metrika/tag.js", "ym");
+
+      ym(XXXXXX, "init", {
+        clickmap:true,
+        trackLinks:true,
+        accurateTrackBounce:true,
+        webvisor:true
+      });
+    </script>
+    <noscript><div><img src="https://mc.yandex.ru/watch/XXXXXX" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+    -->
+    <!-- /Yandex.Metrika counter -->
   </head>
   <body>
     <div id="root"></div>

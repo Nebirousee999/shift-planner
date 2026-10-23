@@ -2,7 +2,10 @@ import { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./store/auth";
 import { useOrganization } from "./store/organization";
+
+// Основные страницы
 import LoginPage from "./pages/LoginPage";
+import LandingPage from "./pages/LandingPage";
 import DashboardPage from "./pages/DashboardPage";
 import TemplatesPage from "./pages/TemplatesPage";
 import TeamPage from "./pages/TeamPage";
@@ -18,8 +21,17 @@ import TimesheetPage from "./pages/TimesheetPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import HelpPage from "./pages/HelpPage";
 import LocationsPage from "./pages/LocationsPage";
-import DialogHost from "./components/DialogHost";
 import SickLeavesPage from "./pages/SickLeavesPage";
+
+// Публичные страницы
+import AboutPage from "./pages/AboutPage";
+import ContactsPage from "./pages/ContactsPage";
+import LegalPage from "./pages/LegalPage";
+
+// Глобальные компоненты
+import DialogHost from "./components/DialogHost";
+import CookieBanner from "./components/CookieBanner";
+import PaymentSuccessPage from "./pages/PaymentSuccessPage";
 
 function ProtectedRoute({
   children,
@@ -31,33 +43,64 @@ function ProtectedRoute({
   employeeOnly?: boolean;
 }) {
   const { token, user } = useAuth();
-  if (!token) return <Navigate to="/login" replace />;
+  
+  if (!token) return <Navigate to="/welcome" replace />;
 
   const isEmployee = user?.role === "EMPLOYEE";
   if (adminOnly && isEmployee) return <Navigate to="/my" replace />;
   if (employeeOnly && !isEmployee) return <Navigate to="/" replace />;
+  
   return <>{children}</>;
 }
 
 export default function App() {
   const { hydrate, token, hydrated } = useAuth();
 
-  useEffect(() => { hydrate(); }, [hydrate]);
-
+  // 1. Гидратация auth из localStorage
   useEffect(() => {
-    if (hydrated && token) useOrganization.getState().fetch();
+    hydrate();
+  }, [hydrate]);
+
+  // 2. После гидратации и при наличии токена — подтянуть организацию
+  useEffect(() => {
+    if (hydrated && token) {
+      useOrganization.getState().fetch();
+    }
   }, [hydrated, token]);
 
   if (!hydrated) return null;
-  const homePath = "/";
 
   return (
     <BrowserRouter>
       <DialogHost />
+      
+      {/* Cookie-баннер рендерим глобально, чтобы он был на всех страницах */}
+      <CookieBanner />
+      
       <Routes>
-        <Route path="/login" element={token ? <Navigate to={homePath} replace /> : <LoginPage />} />
+        {/* ─── ПУБЛИЧНЫЕ (Лендинг и Авторизация) ─── */}
+        <Route
+          path="/login"
+          element={token ? <Navigate to="/" replace /> : <LoginPage />}
+        />
+        
+        {/* Корень — лендинг для гостей, дашборд для авторизованных */}
+        <Route path="/" element={token ? <DashboardPage /> : <LandingPage />} />
+        
+        {/* Прямая ссылка на лендинг (для редиректов из ProtectedRoute) */}
+        <Route
+          path="/welcome"
+          element={token ? <Navigate to="/" replace /> : <LandingPage />}
+        />
 
-        <Route path="/" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+        {/* ─── ПУБЛИЧНЫЕ (Информационные страницы) ─── */}
+        <Route path="/about" element={<AboutPage />} />
+        <Route path="/contacts" element={<ContactsPage />} />
+        <Route path="/privacy" element={<LegalPage type="privacy" />} />
+        <Route path="/terms" element={<LegalPage type="terms" />} />
+        <Route path="/offer" element={<LegalPage type="offer" />} />
+
+        {/* ─── АДМИНСКИЕ (Только OWNER и MANAGER) ─── */}
         <Route path="/templates" element={<ProtectedRoute adminOnly><TemplatesPage /></ProtectedRoute>} />
         <Route path="/team" element={<ProtectedRoute adminOnly><TeamPage /></ProtectedRoute>} />
         <Route path="/locations" element={<ProtectedRoute adminOnly><LocationsPage /></ProtectedRoute>} />
@@ -71,11 +114,16 @@ export default function App() {
         <Route path="/sick-leaves" element={<ProtectedRoute adminOnly><SickLeavesPage /></ProtectedRoute>} />
         <Route path="/analytics" element={<ProtectedRoute adminOnly><AnalyticsPage /></ProtectedRoute>} />
 
+        {/* ─── ОБЩИЕ (Для всех авторизованных) ─── */}
         <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
         <Route path="/help" element={<ProtectedRoute><HelpPage /></ProtectedRoute>} />
+        
+        {/* ─── СОТРУДНИК (Только EMPLOYEE) ─── */}
         <Route path="/my" element={<ProtectedRoute employeeOnly><MySchedulePage /></ProtectedRoute>} />
 
-        <Route path="*" element={<Navigate to={homePath} replace />} />
+        {/* ─── 404 ─── */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="/payment/success" element={<PaymentSuccessPage />} />
       </Routes>
     </BrowserRouter>
   );

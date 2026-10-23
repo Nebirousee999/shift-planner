@@ -6,6 +6,7 @@ import {
   scheduleWeeks,
   users,
 } from "../../../db/schema.js";
+import { messengerService } from "../../lib/messenger.service.js";
 
 export const shiftChangeRequestsService = {
   // Все запросы организации (для менеджера)
@@ -113,6 +114,15 @@ export const shiftChangeRequestsService = {
         })
         .where(eq(shiftChangeRequests.id, id))
         .returning();
+
+      // Отправка уведомления для CREATE
+      if (req.newUserId) {
+        await messengerService.sendToUser(
+          req.newUserId,
+          `<b>Новая смена</b>\n\nВам назначена смена на ${req.newShiftDate} (${req.newStartTime}–${req.newEndTime}).`
+        );
+      }
+
       return updated;
     }
 
@@ -134,6 +144,15 @@ export const shiftChangeRequestsService = {
       .set({ status: "APPROVED", reviewedAt: new Date() })
       .where(eq(shiftChangeRequests.id, id))
       .returning();
+
+    // Отправка уведомления для UPDATE (до return!)
+    if (req.newUserId) {
+      await messengerService.sendToUser(
+        req.newUserId,
+        `<b>Смена изменена</b>\n\nВаша смена перенесена на ${req.newShiftDate} (${req.newStartTime}–${req.newEndTime}).`
+      );
+    }
+
     return updated;
   },
 

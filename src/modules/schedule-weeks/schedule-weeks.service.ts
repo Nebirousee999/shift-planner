@@ -8,6 +8,7 @@ import {
   locations,
 } from "../../../db/schema.js";
 import { getMonday, hoursBetween, shiftsOverlap, toDateStr } from "../../lib/time.js";
+import { messengerService } from "../../lib/messenger.service.js";
 
 export const scheduleWeeksService = {
   async list(orgId: string, locationId?: string) {
@@ -102,11 +103,13 @@ export const scheduleWeeksService = {
     if (!week) throw new Error("WEEK_NOT_FOUND");
     if (week.status === "PUBLISHED") throw new Error("ALREADY_PUBLISHED");
 
+    // 1. Получаем смены один раз
     const shifts = await db
       .select()
       .from(scheduledShifts)
       .where(eq(scheduledShifts.weekId, id));
 
+    // 2. Проверяем нарушения ТК
     const violations: string[] = [];
     const byUser = new Map<string, typeof shifts>();
     for (const s of shifts) {
@@ -146,11 +149,22 @@ export const scheduleWeeksService = {
 
     if (violations.length > 0) return { ok: false, violations };
 
+    // 3. Обновляем статус недели
     const [updated] = await db
       .update(scheduleWeeks)
       .set({ status: "PUBLISHED", publishedAt: new Date() })
       .where(eq(scheduleWeeks.id, id))
       .returning();
+
+    // 4. Отправляем уведомления ТОЛЬКО ПОСЛЕ успешной публикации
+    const userIds = [...new Set(shifts.map(s => s.userId).filter(Boolean))] as string[];
+    for (const userId of userIds) {
+      await messengerService.sendToUser(
+        userId,
+        `<b>Новый график!</b>\n\nОпубликовано расписание на неделю с ${week.weekStartDate}.\nПроверьте свои смены в приложении.`
+      );
+    }
+
     return { ok: true, week: updated };
   },
 

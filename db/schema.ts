@@ -234,3 +234,30 @@ export const sickLeaves = pgTable("sick_leaves", {
   status: varchar("status", { length: 20 }).notNull().default("APPROVED"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// ─── PAYMENTS (платежи ЮKassa) ─────────────────────────
+export const payments = pgTable("payments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .references(() => users.id, { onDelete: "cascade" })
+    .notNull(),
+  yookassaId: varchar("yookassa_id", { length: 255 }).notNull().unique(),
+  amount: numeric("amount", { precision: 10, scale: 2 }).notNull(),
+  currency: varchar("currency", { length: 3 }).default("RUB").notNull(),
+  status: varchar("status", { length: 50 }).notNull(),
+  description: varchar("description", { length: 255 }),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ─── USER MESSENGERS (привязка Telegram / MAX) ────────
+export const userMessengers = pgTable("user_messengers", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .references(() => users.id, { onDelete: "cascade" })
+    .notNull(),
+  provider: varchar("provider", { length: 20 }).notNull(), // 'telegram' или 'max'
+  externalId: varchar("external_id", { length: 255 }).notNull(), // chat_id в TG или user_id в MAX
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
