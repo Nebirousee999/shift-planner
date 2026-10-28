@@ -40,6 +40,8 @@ const updateSchema = z.object({
   latenessMinutes: z.number().int().min(0).optional(),     // <--- ДОБАВИТЬ ЭТУ СТРОКУ
   earlyLeaveMinutes: z.number().int().min(0).optional(),   // <--- ДОБАВИТЬ ЭТУ СТРОКУ
   overtimeMinutes: z.number().int().min(0).optional(),
+  isNoShow: z.boolean().optional(),
+  isUnknownAbsence: z.boolean().optional(),
 });
 
 export async function scheduledShiftsRoutes(app: FastifyInstance) {

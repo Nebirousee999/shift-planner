@@ -23,6 +23,7 @@ export const organizationService = {
     overtimeMultiplier2?: string; // 👈
     positionHeaderOpacity?: number;
     positionRowOpacity?: number;
+    taxRate?: string;
   }) {
     const [updated] = await db
       .update(organizations)
@@ -38,6 +39,7 @@ export const organizationService = {
         ...(input.overtimeMultiplier2 !== undefined && { overtimeMultiplier2: input.overtimeMultiplier2 }),
         ...(input.positionHeaderOpacity !== undefined && { positionHeaderOpacity: input.positionHeaderOpacity }),
         ...(input.positionRowOpacity !== undefined && { positionRowOpacity: input.positionRowOpacity }),
+        ...(input.taxRate !== undefined && { taxRate: input.taxRate }),
       })
       .where(eq(organizations.id, input.orgId))
       .returning();

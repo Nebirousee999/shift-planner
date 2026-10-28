@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Briefcase, Layers, Search, X, ChevronDown } from "lucide-react";
 import { withAlpha } from "../lib/colors";
 
@@ -47,7 +47,26 @@ export default function TeamSummary({
     return map;
   }, [positions]);
 
-  // 👇 дедуплицируем локации по имени (защита от дублей в БД)
+  // 👇 Должности, доступные в выбранной локации (или все, если локация не выбрана)
+  const availablePositions = useMemo(() => {
+    if (!fArea) return positions;
+    const namesInArea = new Set<string>();
+    for (const u of users) {
+      if (u.position && (u.areaIds ?? []).includes(fArea)) {
+        namesInArea.add(u.position);
+      }
+    }
+    return positions.filter((p) => namesInArea.has(p.name));
+  }, [positions, users, fArea]);
+
+  // 👇 Если выбранная должность не входит в новую локацию — сбросить
+  useEffect(() => {
+    if (fPosition && !availablePositions.some((p) => p.name === fPosition)) {
+      setFPosition("");
+    }
+  }, [availablePositions, fPosition]);
+
+  // 👇 дедуплицируем локации по имени
   const uniqueAreas = useMemo(() => {
     const seen = new Set<string>();
     return areas.filter((a) => {
@@ -70,15 +89,11 @@ export default function TeamSummary({
 
   const grouped = useMemo(() => {
     const byArea = new Map<string, Map<string, SummaryUser[]>>();
-    // 👇 карта areaId → его фактическое присутствие в props.areas
     const validAreaIds = new Set(areas.map((a) => a.id));
-
     for (const u of filtered) {
-      // 👇 берём только areaIds, которые реально есть в текущей выборке
       const userAreaIds = (u.areaIds ?? []).filter((id) => validAreaIds.has(id));
       const areaIds: (string | null)[] =
         userAreaIds.length > 0 ? userAreaIds : [null];
-
       for (const areaId of areaIds) {
         const areaKey = areaId ?? "__noArea__";
         if (!byArea.has(areaKey)) byArea.set(areaKey, new Map());
@@ -119,7 +134,6 @@ export default function TeamSummary({
 
       {open && (
         <div className="border-t border-slate-200 p-3 space-y-3">
-          {/* Фильтры — только для просмотра */}
           <div className="flex flex-wrap gap-2 items-center">
             <div className="relative flex-1 min-w-[160px]">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
@@ -130,13 +144,29 @@ export default function TeamSummary({
                 className="!pl-8 !text-sm !py-1.5"
               />
             </div>
-            <select value={fArea} onChange={(e) => setFArea(e.target.value)} className="!w-auto !text-sm !py-1.5">
+            <select
+              value={fArea}
+              onChange={(e) => setFArea(e.target.value)}
+              className="!w-auto !text-sm !py-1.5"
+            >
               <option value="">Все локации</option>
-              {uniqueAreas.map((a) => (<option key={a.id} value={a.id}>{a.name}</option>))}
+              {uniqueAreas.map((a) => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+              ))}
             </select>
-            <select value={fPosition} onChange={(e) => setFPosition(e.target.value)} className="!w-auto !text-sm !py-1.5">
+            <select
+              value={fPosition}
+              onChange={(e) => setFPosition(e.target.value)}
+              className="!w-auto !text-sm !py-1.5"
+            >
               <option value="">Все должности</option>
-              {positions.map((p) => (<option key={p.id} value={p.name}>{p.name}</option>))}
+              {availablePositions.map((p) => (
+                <option key={p.id} value={p.name}>{p.name}</option>
+              ))}
+              {/* 👇 если выбранная должность исчезла из списка — оставляем опцию, чтобы не сломать селект */}
+              {fPosition && !availablePositions.some((p) => p.name === fPosition) && (
+                <option value={fPosition}>{fPosition}</option>
+              )}
             </select>
             {anyFilter && (
               <button
@@ -148,7 +178,6 @@ export default function TeamSummary({
             )}
           </div>
 
-          {/* Сводка */}
           {filtered.length === 0 ? (
             <div className="text-center text-slate-500 text-sm py-6">Нет сотрудников по фильтру</div>
           ) : (
@@ -189,7 +218,6 @@ export default function TeamSummary({
                                   posArr.length > 1 ? "break-inside-avoid mb-2 inline-block w-full" : ""
                                 }`}
                               >
-                                {/* Заголовок должности — крупный, чёрный, без тени */}
                                 <div
                                   className="flex items-center gap-1.5 px-2 py-2"
                                   style={{ backgroundColor: withAlpha(posColor, headerOpacity) }}
@@ -203,7 +231,6 @@ export default function TeamSummary({
                                   </span>
                                 </div>
 
-                                {/* Сотрудники с прогресс-баром — только просмотр */}
                                 <div>
                                   {list.map((u) => {
                                     const st = getStat(u.id);

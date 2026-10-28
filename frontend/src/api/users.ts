@@ -11,6 +11,8 @@ export type TeamUser = {
   createdAt: string;
   locationIds: string[];
   areaIds: string[];
+  paymentType: "HOURLY" | "MONTHLY";
+  employmentType: "GPH" | "SHTAT";
 };
 
 export type BulkActionPayload =
@@ -18,7 +20,9 @@ export type BulkActionPayload =
   | { action: "addToArea"; value: string }
   | { action: "setPosition"; value: string | null }
   | { action: "setRate"; value: string | null }
-  | { action: "setRole"; value: "OWNER" | "MANAGER" | "EMPLOYEE" };
+  | { action: "setRole"; value: "OWNER" | "MANAGER" | "EMPLOYEE" }
+  | { action: "setPaymentType"; value: "HOURLY" | "MONTHLY" }
+  | { action: "setEmploymentType"; value: "GPH" | "SHTAT" };
 
 export const usersApi = {
   list: async (): Promise<TeamUser[]> => {
@@ -36,6 +40,8 @@ export const usersApi = {
     phone?: string;
     locationIds?: string[];
     areaIds?: string[];
+    paymentType?: "HOURLY" | "MONTHLY";
+    employmentType?: "GPH" | "SHTAT";
   }): Promise<{ user: TeamUser; tempPassword?: string }> => {
     const { data } = await api.post("/users", input);
     return data;
@@ -51,6 +57,8 @@ export const usersApi = {
       hourlyRate: string | null;
       locationIds: string[];
       areaIds: string[];
+      paymentType?: "HOURLY" | "MONTHLY";
+      employmentType?: "GPH" | "SHTAT";
     }>
   ): Promise<TeamUser> => {
     const { data } = await api.patch<TeamUser>(`/users/${id}`, input);

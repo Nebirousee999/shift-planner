@@ -29,8 +29,10 @@ const calcHours = (start: string, end: string) => {
   if (m <= 0) m += 24 * 60;
   return m / 60;
 };
+
 const formatMoney = (n: number) =>
   new Intl.NumberFormat("ru-RU").format(n) + " ₽";
+
 const addDays = (dateStr: string, n: number): string => {
   const d = new Date(dateStr + "T00:00:00Z");
   d.setUTCDate(d.getUTCDate() + n);
@@ -81,7 +83,6 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(new Date());
 
-  // 👇 Выбранный день (по умолчанию — сегодня)
   const todayDate = now.toISOString().slice(0, 10);
   const [selectedDate, setSelectedDate] = useState(todayDate);
 
@@ -116,12 +117,10 @@ export default function DashboardPage() {
 
   const dates = data?.currentWeek ? weekDates(data.currentWeek.weekStartDate) : [];
 
-  // Ограничиваем выбранный день текущей неделей
   const canPrev = dates.length > 0 && selectedDate > dates[0];
   const canNext = dates.length > 0 && selectedDate < dates[6];
   const dateInWeek = dates.includes(selectedDate);
 
-  // 👇 Сдвиг при смене недели
   useEffect(() => {
     if (dates.length === 0) return;
     if (!dates.includes(selectedDate)) setSelectedDate(todayDate);
@@ -136,10 +135,8 @@ export default function DashboardPage() {
         : "/weeks"
     );
 
-  // --- СТАТИСТИКА СОТРУДНИКА (для selectedDate) ---
   const hourlyRate = profile?.hourlyRate ? Number(profile.hourlyRate) : 0;
 
-  // 👇 Собираем смены для выбранного дня из currentWeek.shifts
   const shiftsForSelectedDate = useMemo(() => {
     if (!data?.currentWeek?.shifts) return [];
     const all = data.currentWeek.shifts;
@@ -156,9 +153,12 @@ export default function DashboardPage() {
           userName: u?.name ?? null,
           userPosition: u?.position ?? null,
           templateId: s.templateId,
+          templateName: (s as any).templateName ?? tpl?.name ?? null,
           templateColor: tpl?.color ?? null,
           latenessMinutes: (s as any).latenessMinutes ?? 0,
           earlyLeaveMinutes: (s as any).earlyLeaveMinutes ?? 0,
+          isNoShow: (s as any).isNoShow ?? false,
+          isUnknownAbsence: (s as any).isUnknownAbsence ?? false,
           templateStartTime: tpl?.startTime ?? null,
           templateEndTime: tpl?.endTime ?? null,
         };
@@ -189,16 +189,30 @@ export default function DashboardPage() {
     data?.weekTimeEntries?.filter((te) => te.userId === user?.id) || []
   );
 
-  // 👇 Статусы с учётом даты
+  /**
+   * Статус смены:
+   * - корректно обрабатывает «ровно 12:00» и ночные смены (endM <= startM)
+   * - если смена ещё не началась — возвращает "future", а НЕ "past"
+   */
   const getShiftStatus = (shift: any): "past" | "active" | "future" => {
     if (selectedDate < todayDate) return "past";
     if (selectedDate > todayDate) return "future";
+
     const nowM = now.getHours() * 60 + now.getMinutes();
     const startM = timeToMins(shift.startTime);
     const endM = timeToMins(shift.endTime);
-    if (nowM >= endM) return "past";
-    if (nowM >= startM) return "active";
-    return "future";
+    const isOvernight = endM < startM;
+
+    if (isOvernight) {
+      // Смена начинается вечером и уходит за полночь
+      if (nowM >= startM) return "active";
+      if (nowM < endM) return "active"; // утреннее «хвостовое» окно (маловероятно при текущей дате)
+      return "future";
+    }
+
+    if (nowM < startM) return "future";
+    if (nowM < endM) return "active";
+    return "past";
   };
 
   let statusText = "Нет смен";
@@ -207,8 +221,13 @@ export default function DashboardPage() {
     const activeEntry = myEntriesToday.find((te) => !te.clockOut);
     const shift = myShiftsToday[0];
     const st = getShiftStatus(shift);
-    if (activeEntry) { statusText = "В работе"; isWorking = true; }
-    else if (st === "past") statusText = "Смена окончена";
+    const isAbsent = (shift as any).isNoShow || (shift as any).isUnknownAbsence;
+    if (isAbsent) {
+      statusText = (shift as any).isNoShow ? "Прогул" : "Неявка";
+    } else if (activeEntry) {
+      statusText = "В работе";
+      isWorking = true;
+    } else if (st === "past") statusText = "Смена окончена";
     else if (st === "active") { statusText = "В работе"; isWorking = true; }
     else statusText = "Не началась";
   }
@@ -249,7 +268,7 @@ export default function DashboardPage() {
       </div>
     );
 
-  // hovered
+  // hovered banner
   let hoveredOvertime = 0;
   if (hoveredShift && hoveredShift.templateStartTime && hoveredShift.templateEndTime) {
     const sStart = timeToMins(hoveredShift.startTime);
@@ -259,17 +278,19 @@ export default function DashboardPage() {
     if (sStart < tStart) hoveredOvertime += tStart - sStart;
     if (sEnd > tEnd) hoveredOvertime += sEnd - tEnd;
   }
+
   const lateness = hoveredShift?.latenessMinutes || 0;
   const early = hoveredShift?.earlyLeaveMinutes || 0;
   const hasViolation = lateness > 0 || early > 0;
 
+  const hoveredIsNoShow = !!(hoveredShift as any)?.isNoShow;
+  const hoveredIsUnknown = !!(hoveredShift as any)?.isUnknownAbsence;
+  const hoveredIsAbsent = hoveredIsNoShow || hoveredIsUnknown;
+
   const hoveredStatus: "future" | "active" | "ended" | null = (() => {
     if (!hoveredShift) return null;
-    return getShiftStatus(hoveredShift) === "past"
-      ? "ended"
-      : getShiftStatus(hoveredShift) === "active"
-      ? "active"
-      : "future";
+    const st = getShiftStatus(hoveredShift);
+    return st === "past" ? "ended" : st === "active" ? "active" : "future";
   })();
 
   let overtimeText = "";
@@ -283,7 +304,7 @@ export default function DashboardPage() {
       <NavBar />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 flex flex-col gap-6">
-        {/* ВЕРХНЯЯ ПАНЕЛЬ: неделя */}
+        {/* Верхняя панель — неделя */}
         {data?.currentWeek ? (
           <button
             onClick={() => navigate("/weeks")}
@@ -330,11 +351,7 @@ export default function DashboardPage() {
                       setSelectedDate(date);
                     }}
                     className={`p-2 flex flex-col min-h-[140px] transition-colors cursor-pointer ${
-                      isSelected
-                        ? "bg-brand-50 ring-2 ring-brand-500/30"
-                        : isToday
-                        ? "bg-brand-50/30"
-                        : "hover:bg-slate-50"
+                      isSelected ? "bg-brand-50 ring-2 ring-brand-500/30" : isToday ? "bg-brand-50/30" : "hover:bg-slate-50"
                     }`}
                   >
                     <div className="flex items-center justify-between text-[11px] whitespace-nowrap mb-1">
@@ -382,13 +399,8 @@ export default function DashboardPage() {
         )}
 
         <div className={isEmployee ? "flex flex-col gap-4" : "flex flex-col lg:flex-row gap-6 flex-1"}>
-          {/* ТЕКУЩИЙ ДЕНЬ */}
-          <div
-            className={`bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex flex-col min-w-0 ${
-              isEmployee ? "shrink-0" : "flex-1"
-            }`}
-          >
-            {/* Шапка блока */}
+          {/* Текущий день */}
+          <div className={`bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex flex-col min-w-0 ${isEmployee ? "shrink-0" : "flex-1"}`}>
             <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
               <div>
                 <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2 flex-wrap">
@@ -397,7 +409,6 @@ export default function DashboardPage() {
                     {shortDate(selectedDate)}
                   </span>
 
-                  {/* 👇 Кнопки переключения дня */}
                   <div className="flex items-center gap-1 ml-2">
                     <button
                       onClick={() => canPrev && setSelectedDate(addDays(selectedDate, -1))}
@@ -449,28 +460,44 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Баннер статуса */}
+            {/* Баннер при ховере */}
             <div className="h-10 mb-2 flex items-center justify-center transition-all">
               {hoveredShift && hoveredStatus && (
                 <div
                   className={`animate-fade-in flex items-center gap-2 px-5 py-2 rounded-full border shadow-sm ${
-                    hoveredStatus === "future"
+                    hoveredIsAbsent
+                      ? "bg-rose-50 border-rose-200"
+                      : hoveredStatus === "future"
                       ? "bg-slate-50 border-slate-200"
                       : hasViolation
                       ? "bg-rose-50 border-rose-200"
                       : "bg-emerald-50 border-emerald-200"
                   }`}
                 >
-                  <span className="text-sm font-bold tracking-wide flex items-center gap-2">
-                    {hoveredStatus === "future" ? (
+                  <span className="text-sm font-bold tracking-wide flex items-center gap-2 flex-wrap">
+                    {hoveredIsAbsent ? (
+                      <span className="text-rose-700">
+                        {hoveredIsNoShow ? "Прогул (ПР)" : "Отсутствие по неизвестной причине (НН)"}
+                      </span>
+                    ) : hoveredStatus === "future" ? (
                       <span className="text-slate-600">Не началась</span>
                     ) : (
                       <>
-                        {lateness > 0 && <span className="text-rose-700">Опоздание: {lateness} мин</span>}
-                        {lateness > 0 && (early > 0 || hoveredOvertime > 0) && <span className="text-rose-300">|</span>}
-                        {early > 0 && <span className="text-rose-700">Ранний уход: {early} мин</span>}
-                        {early > 0 && hoveredOvertime > 0 && <span className="text-rose-300">|</span>}
-                        {hoveredOvertime > 0 && <span className="text-emerald-600">Переработка: {overtimeText}</span>}
+                        {lateness > 0 && (
+                          <span className="text-rose-700">Опоздание: {lateness} мин</span>
+                        )}
+                        {lateness > 0 && (early > 0 || hoveredOvertime > 0) && (
+                          <span className="text-rose-300">|</span>
+                        )}
+                        {early > 0 && (
+                          <span className="text-rose-700">Ранний уход: {early} мин</span>
+                        )}
+                        {early > 0 && hoveredOvertime > 0 && (
+                          <span className="text-rose-300">|</span>
+                        )}
+                        {hoveredOvertime > 0 && (
+                          <span className="text-emerald-600">Переработка: {overtimeText}</span>
+                        )}
                         {lateness === 0 && early === 0 && hoveredOvertime === 0 && (
                           <span className="text-emerald-700">
                             {hoveredStatus === "ended" ? "Смена окончена" : "Приход вовремя"}
@@ -483,13 +510,13 @@ export default function DashboardPage() {
               )}
             </div>
 
+            {/* Таймлайн */}
             <div className={`relative overflow-x-auto overflow-y-hidden ${isEmployee ? "min-h-[220px]" : "flex-1 min-h-[400px]"}`}>
               <div className="min-w-[800px] h-full flex flex-col relative">
                 <div className="absolute inset-0 pointer-events-none z-0">
                   {Array.from({ length: 25 }).map((_, i) => (
                     <div key={i} className="absolute top-0 bottom-0 border-l border-slate-100" style={{ left: `${(i / 24) * 100}%` }} />
                   ))}
-                  {/* Красная линия — только для сегодня */}
                   {selectedDate === todayDate && (
                     <>
                       <div className="absolute top-0 bottom-0 bg-slate-900/5 left-0" style={{ width: `${currentTimePercent}%` }} />
@@ -528,6 +555,8 @@ export default function DashboardPage() {
                       const isEnded = st === "past";
                       const isStarted = st === "active";
 
+                      const isAbsent = shift.isNoShow || shift.isUnknownAbsence;
+
                       const sLateness = shift.latenessMinutes || 0;
                       const sEarly = shift.earlyLeaveMinutes || 0;
                       const shiftDurationMinutes = calcHours(shift.startTime, shift.endTime) * 60;
@@ -544,6 +573,13 @@ export default function DashboardPage() {
                         if (sStart < tStart) overtimeStartPct = ((tStart - sStart) / (24 * 60)) * 100;
                         if (sEnd > tEnd) overtimeEndPct = ((sEnd - tEnd) / (24 * 60)) * 100;
                       }
+
+                      // Цвет полоски
+                      const barColor = isAbsent
+                        ? "#dc2626" // 👈 ПР/НН — целиком красная
+                        : isEnded
+                        ? "#cbd5e1"
+                        : shift.templateColor || "#3b82f6";
 
                       return (
                         <div
@@ -565,7 +601,9 @@ export default function DashboardPage() {
                               <div className="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center">
                                 <UserCircle className="w-4 h-4 text-slate-500" />
                               </div>
-                              <span className={`absolute -top-0.5 -right-1.5 w-2.5 h-2.5 rounded-full border-2 border-white shadow-sm ${sLateness > 0 || sEarly > 0 ? "bg-rose-500" : "bg-emerald-500"}`} />
+                              <span className={`absolute -top-0.5 -right-1.5 w-2.5 h-2.5 rounded-full border-2 border-white shadow-sm ${
+                                isAbsent || sLateness > 0 || sEarly > 0 ? "bg-rose-500" : "bg-emerald-500"
+                              }`} />
                             </div>
                             <div className="min-w-0 bg-white/80 backdrop-blur-sm px-1.5 py-0.5 rounded">
                               <div className="text-xs font-semibold text-slate-900 truncate">{shift.userName}</div>
@@ -578,21 +616,42 @@ export default function DashboardPage() {
                             style={{
                               left: `${startPct}%`,
                               width: `${widthPct}%`,
-                              backgroundColor: isEnded ? "#cbd5e1" : shift.templateColor || "#3b82f6",
+                              backgroundColor: barColor,
                             }}
                           >
-                            {sLateness > 0 && <div className="absolute left-0 top-0 bottom-0 bg-rose-600/90 border-r-2 border-rose-800 z-10" style={{ width: `${latenessPct}%` }} />}
-                            {overtimeStartPct > 0 && <div className="absolute left-0 top-0 bottom-0 bg-emerald-500/90 border-r-2 border-emerald-700 z-10" style={{ width: `${overtimeStartPct}%` }} />}
-                            {sEarly > 0 && <div className="absolute right-0 top-0 bottom-0 bg-rose-600/90 border-l-2 border-rose-800 z-10" style={{ width: `${earlyLeavePct}%` }} />}
-                            {overtimeEndPct > 0 && <div className="absolute right-0 top-0 bottom-0 bg-emerald-500/90 border-l-2 border-emerald-700 z-10" style={{ width: `${overtimeEndPct}%` }} />}
-                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-white truncate drop-shadow-md z-20">
-                              {shift.startTime} – {shift.endTime}
+                            {!isAbsent && sLateness > 0 && (
+                              <div className="absolute left-0 top-0 bottom-0 bg-rose-600/90 border-r-2 border-rose-800 z-10" style={{ width: `${latenessPct}%` }} />
+                            )}
+                            {!isAbsent && overtimeStartPct > 0 && (
+                              <div className="absolute left-0 top-0 bottom-0 bg-emerald-500/90 border-r-2 border-emerald-700 z-10" style={{ width: `${overtimeStartPct}%` }} />
+                            )}
+                            {!isAbsent && sEarly > 0 && (
+                              <div className="absolute right-0 top-0 bottom-0 bg-rose-600/90 border-l-2 border-rose-800 z-10" style={{ width: `${earlyLeavePct}%` }} />
+                            )}
+                            {!isAbsent && overtimeEndPct > 0 && (
+                              <div className="absolute right-0 top-0 bottom-0 bg-emerald-500/90 border-l-2 border-emerald-700 z-10" style={{ width: `${overtimeEndPct}%` }} />
+                            )}
+
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-white truncate drop-shadow-md z-20 flex items-center gap-1.5">
+                              {isAbsent && (
+                                <span className="font-bold">{shift.isNoShow ? "ПР" : "НН"}</span>
+                              )}
+                              <span className={isAbsent ? "opacity-80 font-normal" : "font-medium"}>
+                                {shift.startTime} – {shift.endTime}
+                              </span>
+                              {shift.templateName && (
+                                <span className="opacity-80 font-normal">· {shift.templateName}</span>
+                              )}
                             </span>
                           </div>
 
                           <div className="w-28 shrink-0 pl-2 text-right relative z-30 ml-auto pointer-events-none">
                             <div className="bg-white/80 backdrop-blur-sm px-2 py-0.5 rounded inline-block">
-                              {isEnded ? (
+                              {isAbsent ? (
+                                <span className="text-[10px] font-medium text-rose-600">
+                                  {shift.isNoShow ? "Прогул" : "Неявка"}
+                                </span>
+                              ) : isEnded ? (
                                 <span className="text-[10px] font-medium text-slate-400">Окончена</span>
                               ) : isStarted ? (
                                 <span className="text-[10px] font-medium text-emerald-600 flex items-center justify-end gap-1">
@@ -613,7 +672,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* ПРАВАЯ ПАНЕЛЬ — без изменений, берёт данные из todayShiftsToShow/monthShiftsCount */}
+          {/* Правая панель */}
           {isEmployee ? (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <StatCard icon={Clock} label="Смена (день)" value={formatHours(plannedToday)} />
@@ -623,7 +682,13 @@ export default function DashboardPage() {
               <StatCard icon={Banknote} label="Заработает за неделю" value={formatMoney(plannedWeek * hourlyRate)} />
               <StatCard icon={Wallet} label="Заработано" value={formatMoney(actualWeek * hourlyRate)} highlight />
               <div className="col-span-2">
-                <StatCard icon={UserCircle} label="Текущий статус" value={statusText} alert={statusText === "Не началась"} highlight={isWorking} />
+                <StatCard
+                  icon={UserCircle}
+                  label="Текущий статус"
+                  value={statusText}
+                  alert={statusText === "Не началась" || statusText === "Неявка" || statusText === "Прогул"}
+                  highlight={isWorking}
+                />
               </div>
             </div>
           ) : (
@@ -631,9 +696,7 @@ export default function DashboardPage() {
               <StatCard
                 icon={Timer}
                 label="В работе"
-                value={
-                  todayShiftsToShow.filter((s) => getShiftStatus(s) === "active").length || 0
-                }
+                value={todayShiftsToShow.filter((s) => getShiftStatus(s) === "active" && !(s.isNoShow || s.isUnknownAbsence)).length || 0}
                 highlight
               />
               <StatCard icon={ArrowRightLeft} label="Обмены" value={swapsIncoming} onClick={() => navigate("/swaps")} />
@@ -669,9 +732,12 @@ export default function DashboardPage() {
   );
 }
 
+// ─── Модалка дисциплины ────────────────────────────────
 function DisciplineModal({ shift, onClose, onSave }: any) {
   const [lateness, setLateness] = useState(shift.latenessMinutes || 0);
   const [earlyLeave, setEarlyLeave] = useState(shift.earlyLeaveMinutes || 0);
+  const [isNoShow, setIsNoShow] = useState(shift.isNoShow || false);
+  const [isUnknownAbsence, setIsUnknownAbsence] = useState(shift.isUnknownAbsence || false);
   const [busy, setBusy] = useState(false);
 
   let overtimeMins = 0;
@@ -684,65 +750,160 @@ function DisciplineModal({ shift, onClose, onSave }: any) {
     if (sEnd > tEnd) overtimeMins += sEnd - tEnd;
   }
 
+  const isAbsent = isNoShow || isUnknownAbsence;
+
   const handleSave = async () => {
     setBusy(true);
     try {
-      await shiftsApi.update(shift.id, { latenessMinutes: lateness, earlyLeaveMinutes: earlyLeave });
+      await shiftsApi.update(shift.id, {
+        latenessMinutes: isAbsent ? 0 : lateness,
+        earlyLeaveMinutes: isAbsent ? 0 : earlyLeave,
+        isNoShow,
+        isUnknownAbsence,
+      } as any);
       await onSave();
       onClose();
     } catch (e: any) {
       alert(e.response?.data?.error ?? "Ошибка сохранения");
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-fade-in" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-fade-in"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-start justify-between mb-5">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center"><AlertTriangle className="w-5 h-5 text-amber-600" /></div>
+            <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
+              <AlertTriangle className="w-5 h-5 text-amber-600" />
+            </div>
             <div>
               <h3 className="font-semibold text-slate-900 text-lg">Дисциплина</h3>
-              <p className="text-xs text-slate-500">{shift.userName} · {shift.startTime}–{shift.endTime}</p>
+              <p className="text-xs text-slate-500">
+                {shift.userName} · {shift.startTime}–{shift.endTime}
+                {shift.templateName && ` · ${shift.templateName}`}
+              </p>
             </div>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100"><X className="w-4 h-4" /></button>
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
-        <div className="space-y-5">
+
+        {/* Прогул */}
+        <label className={`flex items-start gap-3 p-3 rounded-xl border-2 mb-3 cursor-pointer transition-all ${
+          isNoShow ? "bg-rose-50 border-rose-300" : "bg-slate-50 border-slate-200 hover:border-slate-300"
+        }`}>
+          <input
+            type="checkbox"
+            checked={isNoShow}
+            onChange={(e) => {
+              setIsNoShow(e.target.checked);
+              if (e.target.checked) setIsUnknownAbsence(false);
+            }}
+            className="!w-4 !h-4 mt-1 !p-0 cursor-pointer accent-rose-600"
+          />
+          <div>
+            <div className={`text-sm font-semibold ${isNoShow ? "text-rose-900" : "text-slate-900"}`}>
+              Прогул (ПР)
+            </div>
+            <div className="text-xs text-slate-500 mt-0.5">
+              Сотрудник не пришёл без уважительной причины.
+            </div>
+          </div>
+        </label>
+
+        {/* НН */}
+        <label className={`flex items-start gap-3 p-3 rounded-xl border-2 mb-4 cursor-pointer transition-all ${
+          isUnknownAbsence ? "bg-rose-50 border-rose-300" : "bg-slate-50 border-slate-200 hover:border-slate-300"
+        }`}>
+          <input
+            type="checkbox"
+            checked={isUnknownAbsence}
+            onChange={(e) => {
+              setIsUnknownAbsence(e.target.checked);
+              if (e.target.checked) setIsNoShow(false);
+            }}
+            className="!w-4 !h-4 mt-1 !p-0 cursor-pointer accent-rose-600"
+          />
+          <div>
+            <div className={`text-sm font-semibold ${isUnknownAbsence ? "text-rose-900" : "text-slate-900"}`}>
+              Отсутствие по неизвестной причине (НН)
+            </div>
+            <div className="text-xs text-slate-500 mt-0.5">
+              Причина отсутствия пока не установлена.
+            </div>
+          </div>
+        </label>
+
+        <div className={`space-y-5 ${isAbsent ? "opacity-40 pointer-events-none" : ""}`}>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">Опоздание (мин)</label>
             <div className="flex gap-2 flex-wrap">
               {[0, 5, 15, 30, 60].map((m) => (
-                <button key={m} onClick={() => setLateness(m)} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${lateness === m ? "bg-rose-600 text-white shadow-sm" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}>
+                <button
+                  key={m}
+                  onClick={() => setLateness(m)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                    lateness === m ? "bg-rose-600 text-white shadow-sm" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  }`}
+                >
                   {m === 0 ? "Нет" : `До ${m}`}
                 </button>
               ))}
             </div>
           </div>
+
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">Ранний уход (мин)</label>
             {overtimeMins > 0 ? (
-              <p className="text-xs text-rose-500 mb-2 font-medium">Нельзя указать ранний уход при наличии переработки.</p>
+              <p className="text-xs text-rose-500 mb-2 font-medium">
+                Нельзя указать ранний уход при наличии переработки.
+              </p>
             ) : (
               <p className="text-xs text-slate-400 mb-2">Доступно только если нет переработки.</p>
             )}
             <div className="flex gap-2 flex-wrap">
               {[0, 5, 15, 30, 60].map((m) => (
-                <button key={m} onClick={() => setEarlyLeave(m)} disabled={overtimeMins > 0 && m > 0}
+                <button
+                  key={m}
+                  onClick={() => setEarlyLeave(m)}
+                  disabled={overtimeMins > 0 && m > 0}
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                     earlyLeave === m ? "bg-rose-600 text-white shadow-sm" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                  } ${overtimeMins > 0 && m > 0 ? "opacity-50 cursor-not-allowed" : ""}`}>
+                  } ${overtimeMins > 0 && m > 0 ? "opacity-50 cursor-not-allowed" : ""}`}
+                >
                   {m === 0 ? "Нет" : `До ${m}`}
                 </button>
               ))}
             </div>
           </div>
         </div>
+
         <div className="flex gap-2 mt-8">
-          <button onClick={handleSave} disabled={busy} className="flex-1 bg-brand-600 text-white px-4 py-2.5 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium transition-all shadow-sm">
+          <button
+            onClick={handleSave}
+            disabled={busy}
+            className="flex-1 bg-brand-600 text-white px-4 py-2.5 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium transition-all shadow-sm"
+          >
             {busy ? "Сохранение..." : "Сохранить"}
           </button>
-          <button onClick={onClose} className="px-4 py-2.5 rounded-xl text-slate-600 hover:bg-slate-100 text-sm font-medium transition-colors">Отмена</button>
+          <button
+            onClick={onClose}
+            className="px-4 py-2.5 rounded-xl text-slate-600 hover:bg-slate-100 text-sm font-medium transition-colors"
+          >
+            Отмена
+          </button>
         </div>
       </div>
     </div>

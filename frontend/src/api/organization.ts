@@ -14,6 +14,7 @@ export type Organization = {
   maxLocations: number;
   positionHeaderOpacity: number;
   positionRowOpacity: number;
+  taxRate: string;
 };
 
 export const organizationApi = {
@@ -33,6 +34,7 @@ export const organizationApi = {
     maxLocations?: number;
     positionHeaderOpacity?: number;
     positionRowOpacity?: number;
+    taxRate?: string;
   }): Promise<Organization> => {
     const { data } = await api.patch<Organization>("/organization", input);
     return data;

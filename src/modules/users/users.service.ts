@@ -13,6 +13,7 @@ import {
   userAreas,
   positionTemplates,
 } from "../../../db/schema.js";
+import { POSITION_PALETTE } from "../../lib/colors.js";
 
 function generateTempPassword(length = 8): string {
   const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
@@ -20,8 +21,6 @@ function generateTempPassword(length = 8): string {
     chars[Math.floor(Math.random() * chars.length)],
   ).join("");
 }
-
-import { POSITION_PALETTE } from "../../lib/colors.js";
 
 async function ensurePosition(orgId: string, rawName: string): Promise<string> {
   const name = rawName.trim();
@@ -46,23 +45,25 @@ async function ensurePosition(orgId: string, rawName: string): Promise<string> {
   return name;
 }
 
-/** Возвращает валидные ID локаций (помещений), принадлежащих организации. */
 async function resolveAreaIds(orgId: string, ids: string[]): Promise<string[]> {
-  if (ids.length === 0) return [];
+  if (!ids || ids.length === 0) return [];
+  const clean = ids.filter((id) => typeof id === "string" && id.length === 36);
+  if (clean.length === 0) return [];
   const valid = await db
     .select({ id: areas.id })
     .from(areas)
-    .where(and(eq(areas.orgId, orgId), inArray(areas.id, ids)));
+    .where(and(eq(areas.orgId, orgId), inArray(areas.id, clean)));
   return valid.map((a) => a.id);
 }
 
-/** Возвращает валидные ID точек, принадлежащих организации. */
 async function resolveLocationIds(orgId: string, ids: string[]): Promise<string[]> {
-  if (ids.length === 0) return [];
+  if (!ids || ids.length === 0) return [];
+  const clean = ids.filter((id) => typeof id === "string" && id.length === 36);
+  if (clean.length === 0) return [];
   const valid = await db
     .select({ id: locations.id })
     .from(locations)
-    .where(and(eq(locations.orgId, orgId), inArray(locations.id, ids)));
+    .where(and(eq(locations.orgId, orgId), inArray(locations.id, clean)));
   return valid.map((l) => l.id);
 }
 
@@ -77,6 +78,8 @@ export const usersService = {
         role: users.role,
         position: users.position,
         hourlyRate: users.hourlyRate,
+        paymentType: users.paymentType,
+        employmentType: users.employmentType,
         createdAt: users.createdAt,
       })
       .from(users)
@@ -124,6 +127,8 @@ export const usersService = {
     role?: "OWNER" | "MANAGER" | "EMPLOYEE";
     position?: string;
     hourlyRate?: string;
+    paymentType?: "HOURLY" | "MONTHLY";
+    employmentType?: "GPH" | "SHTAT";
     phone?: string;
     locationIds?: string[];
     areaIds?: string[];
@@ -147,6 +152,8 @@ export const usersService = {
         role: input.role ?? "EMPLOYEE",
         position: input.position,
         hourlyRate: input.hourlyRate,
+        paymentType: input.paymentType ?? "HOURLY",
+        employmentType: input.employmentType ?? "SHTAT",
         phone: input.phone,
       })
       .returning({
@@ -157,6 +164,8 @@ export const usersService = {
         role: users.role,
         position: users.position,
         hourlyRate: users.hourlyRate,
+        paymentType: users.paymentType,
+        employmentType: users.employmentType,
         createdAt: users.createdAt,
       });
 
@@ -164,25 +173,25 @@ export const usersService = {
       await ensurePosition(input.orgId, input.position);
     }
 
-    // Точки
     let validLocIds: string[] = [];
     if (input.locationIds && input.locationIds.length > 0) {
       validLocIds = await resolveLocationIds(input.orgId, input.locationIds);
       if (validLocIds.length > 0) {
         await db
           .insert(userLocations)
-          .values(validLocIds.map((locationId) => ({ userId: user.id, locationId })));
+          .values(validLocIds.map((locationId) => ({ userId: user.id, locationId })))
+          .onConflictDoNothing();
       }
     }
 
-    // Локации (помещения)
     let validAreaIds: string[] = [];
     if (input.areaIds && input.areaIds.length > 0) {
       validAreaIds = await resolveAreaIds(input.orgId, input.areaIds);
       if (validAreaIds.length > 0) {
         await db
           .insert(userAreas)
-          .values(validAreaIds.map((areaId) => ({ userId: user.id, areaId })));
+          .values(validAreaIds.map((areaId) => ({ userId: user.id, areaId })))
+          .onConflictDoNothing();
       }
     }
 
@@ -200,20 +209,68 @@ export const usersService = {
     position?: string | null;
     role?: "OWNER" | "MANAGER" | "EMPLOYEE";
     hourlyRate?: string | null;
+    paymentType?: "HOURLY" | "MONTHLY";
+    employmentType?: "GPH" | "SHTAT";
     locationIds?: string[];
     areaIds?: string[];
   }) {
-    const [updated] = await db
-      .update(users)
-      .set({
-        ...(input.name !== undefined && { name: input.name }),
-        ...(input.phone !== undefined && { phone: input.phone }),
-        ...(input.position !== undefined && { position: input.position }),
-        ...(input.role !== undefined && { role: input.role }),
-        ...(input.hourlyRate !== undefined && { hourlyRate: input.hourlyRate }),
-      })
-      .where(and(eq(users.id, input.id), eq(users.orgId, input.orgId)))
-      .returning({
+    // 1. Проверяем, что пользователь существует и принадлежит org
+    const [existing] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.id, input.id), eq(users.orgId, input.orgId)));
+    if (!existing) return null;
+
+    // 2. Собираем поля для UPDATE (только присланные)
+    const userSet: Record<string, any> = {};
+    if (input.name !== undefined) userSet.name = input.name;
+    if (input.phone !== undefined) userSet.phone = input.phone;
+    if (input.position !== undefined) userSet.position = input.position;
+    if (input.role !== undefined) userSet.role = input.role;
+    if (input.hourlyRate !== undefined) userSet.hourlyRate = input.hourlyRate;
+    if (input.paymentType !== undefined) userSet.paymentType = input.paymentType;
+    if (input.employmentType !== undefined) userSet.employmentType = input.employmentType;
+
+    // 3. UPDATE только если есть что менять
+    if (Object.keys(userSet).length > 0) {
+      await db
+        .update(users)
+        .set(userSet)
+        .where(and(eq(users.id, input.id), eq(users.orgId, input.orgId)));
+    }
+
+    // 4. Обновление должности в шаблонах
+    if (input.position) {
+      await ensurePosition(input.orgId, input.position);
+    }
+
+    // 5. Обновление точек
+    if (input.locationIds !== undefined) {
+      const validLocIds = await resolveLocationIds(input.orgId, input.locationIds);
+      await db.delete(userLocations).where(eq(userLocations.userId, input.id));
+      if (validLocIds.length > 0) {
+        await db
+          .insert(userLocations)
+          .values(validLocIds.map((locationId) => ({ userId: input.id, locationId })))
+          .onConflictDoNothing();
+      }
+    }
+
+    // 6. Обновление локаций
+    if (input.areaIds !== undefined) {
+      const validAreaIds = await resolveAreaIds(input.orgId, input.areaIds);
+      await db.delete(userAreas).where(eq(userAreas.userId, input.id));
+      if (validAreaIds.length > 0) {
+        await db
+          .insert(userAreas)
+          .values(validAreaIds.map((areaId) => ({ userId: input.id, areaId })))
+          .onConflictDoNothing();
+      }
+    }
+
+    // 7. Возвращаем финальное состояние
+    const [finalUser] = await db
+      .select({
         id: users.id,
         name: users.name,
         email: users.email,
@@ -221,36 +278,12 @@ export const usersService = {
         role: users.role,
         position: users.position,
         hourlyRate: users.hourlyRate,
+        paymentType: users.paymentType,
+        employmentType: users.employmentType,
         createdAt: users.createdAt,
-      });
-
-    if (!updated) return null;
-
-    if (input.position) {
-      await ensurePosition(input.orgId, input.position);
-    }
-
-    // Точки
-    if (input.locationIds !== undefined) {
-      const validLocIds = await resolveLocationIds(input.orgId, input.locationIds);
-      await db.delete(userLocations).where(eq(userLocations.userId, input.id));
-      if (validLocIds.length > 0) {
-        await db
-          .insert(userLocations)
-          .values(validLocIds.map((locationId) => ({ userId: input.id, locationId })));
-      }
-    }
-
-    // Локации
-    if (input.areaIds !== undefined) {
-      const validAreaIds = await resolveAreaIds(input.orgId, input.areaIds);
-      await db.delete(userAreas).where(eq(userAreas.userId, input.id));
-      if (validAreaIds.length > 0) {
-        await db
-          .insert(userAreas)
-          .values(validAreaIds.map((areaId) => ({ userId: input.id, areaId })));
-      }
-    }
+      })
+      .from(users)
+      .where(eq(users.id, input.id));
 
     const locs = await db
       .select({ locationId: userLocations.locationId })
@@ -263,7 +296,7 @@ export const usersService = {
       .where(eq(userAreas.userId, input.id));
 
     return {
-      ...updated,
+      ...finalUser,
       locationIds: locs.map((l) => l.locationId),
       areaIds: ars.map((a) => a.areaId),
     };
@@ -278,13 +311,11 @@ export const usersService = {
       .where(and(eq(users.id, id), eq(users.orgId, orgId)));
     if (!user) return null;
 
-    // 1. Смены: обнуляем userId (остаются в графике, но без назначения)
     await db
       .update(scheduledShifts)
       .set({ userId: null })
       .where(eq(scheduledShifts.userId, id));
 
-    // 2. Обмены
     await db
       .delete(shiftSwapRequests)
       .where(eq(shiftSwapRequests.requestedBy, id));
@@ -292,7 +323,6 @@ export const usersService = {
       .delete(shiftSwapRequests)
       .where(eq(shiftSwapRequests.swapWithUserId, id));
 
-    // 3. Запросы на изменение смен (все 4 поля с FK на users)
     await db
       .delete(shiftChangeRequests)
       .where(eq(shiftChangeRequests.requestedBy, id));
@@ -306,11 +336,8 @@ export const usersService = {
       .delete(shiftChangeRequests)
       .where(eq(shiftChangeRequests.newUserId, id));
 
-    // 4. Отпуска
     await db.delete(vacations).where(eq(vacations.userId, id));
 
-    // Каскадом удалятся: userLocations, userAreas, timeEntries, availability,
-    // payments, userMessengers, sickLeaves, generatedDocuments.userId → set null.
     const [deleted] = await db
       .delete(users)
       .where(and(eq(users.id, id), eq(users.orgId, orgId)))
@@ -326,7 +353,9 @@ export const usersService = {
       | "addToArea"
       | "setPosition"
       | "setRate"
-      | "setRole";
+      | "setRole"
+      | "setPaymentType"
+      | "setEmploymentType";
     value: string | null;
   }): Promise<{ updated: number; skipped?: number }> {
     if (input.userIds.length === 0) return { updated: 0 };
@@ -344,20 +373,16 @@ export const usersService = {
         const [loc] = await db
           .select({ id: locations.id })
           .from(locations)
-          .where(
-            and(eq(locations.id, input.value), eq(locations.orgId, input.orgId)),
-          );
+          .where(and(eq(locations.id, input.value), eq(locations.orgId, input.orgId)));
         if (!loc) throw new Error("LOCATION_NOT_FOUND");
 
         const existing = await db
           .select({ userId: userLocations.userId })
           .from(userLocations)
-          .where(
-            and(
-              eq(userLocations.locationId, loc.id),
-              inArray(userLocations.userId, validIds),
-            ),
-          );
+          .where(and(
+            eq(userLocations.locationId, loc.id),
+            inArray(userLocations.userId, validIds),
+          ));
         const existingSet = new Set(existing.map((e) => e.userId));
         const toInsert = validIds
           .filter((id) => !existingSet.has(id))
@@ -374,16 +399,13 @@ export const usersService = {
           .where(and(eq(areas.id, input.value), eq(areas.orgId, input.orgId)));
         if (!area) throw new Error("AREA_NOT_FOUND");
 
-        // 1) Привязка к точке локации (если ещё нет)
         const existingLoc = await db
           .select({ userId: userLocations.userId })
           .from(userLocations)
-          .where(
-            and(
-              eq(userLocations.locationId, area.locationId),
-              inArray(userLocations.userId, validIds),
-            ),
-          );
+          .where(and(
+            eq(userLocations.locationId, area.locationId),
+            inArray(userLocations.userId, validIds),
+          ));
         const inPointSet = new Set(existingLoc.map((e) => e.userId));
         const toAddToPoint = validIds.filter((id) => !inPointSet.has(id));
         if (toAddToPoint.length > 0) {
@@ -392,7 +414,6 @@ export const usersService = {
             .values(toAddToPoint.map((userId) => ({ userId, locationId: area.locationId })));
         }
 
-        // 2) Привязка к локации
         const existingAreas = await db
           .select({ userId: userAreas.userId })
           .from(userAreas)
@@ -400,9 +421,10 @@ export const usersService = {
         const existingAreaSet = new Set(existingAreas.map((e) => e.userId));
         const toAddToArea = validIds.filter((id) => !existingAreaSet.has(id));
         if (toAddToArea.length > 0) {
-          await db.insert(userAreas).values(toAddToArea.map((userId) => ({ userId, areaId: area.id })));
+          await db
+            .insert(userAreas)
+            .values(toAddToArea.map((userId) => ({ userId, areaId: area.id })));
         }
-
         return { updated: validIds.length };
       }
 
@@ -433,6 +455,30 @@ export const usersService = {
         await db
           .update(users)
           .set({ role })
+          .where(and(eq(users.orgId, input.orgId), inArray(users.id, validIds)));
+        return { updated: validIds.length };
+      }
+
+      case "setPaymentType": {
+        const v = input.value as "HOURLY" | "MONTHLY";
+        if (!["HOURLY", "MONTHLY"].includes(v)) {
+          throw new Error("INVALID_PAYMENT_TYPE");
+        }
+        await db
+          .update(users)
+          .set({ paymentType: v })
+          .where(and(eq(users.orgId, input.orgId), inArray(users.id, validIds)));
+        return { updated: validIds.length };
+      }
+
+      case "setEmploymentType": {
+        const v = input.value as "GPH" | "SHTAT";
+        if (!["GPH", "SHTAT"].includes(v)) {
+          throw new Error("INVALID_EMPLOYMENT_TYPE");
+        }
+        await db
+          .update(users)
+          .set({ employmentType: v })
           .where(and(eq(users.orgId, input.orgId), inArray(users.id, validIds)));
         return { updated: validIds.length };
       }

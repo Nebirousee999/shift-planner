@@ -3,26 +3,15 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
-  Mail,
-  Phone,
-  Coins,
-  Shield,
-  KeyRound,
-  Save,
-  CalendarDays,
-  Building2,
-  Lock,
-  Pencil,
-  Settings as SettingsIcon,
-  Clock,
-  Percent,
+  Mail, Phone, Coins, Shield, KeyRound, Save, CalendarDays, Building2,
+  Lock, Pencil, Settings as SettingsIcon, Clock, Percent, Palette,
 } from "lucide-react";
 import { useAuth } from "../store/auth";
 import { meApi, type MyProfile } from "../api/me";
 import { organizationApi, type Organization } from "../api/organization";
 import { useOrganization } from "../store/organization";
 import NavBar from "../components/NavBar";
-import { Palette } from "lucide-react";
+
 const passwordSchema = z
   .object({
     oldPassword: z.string().min(1, "Введите текущий пароль"),
@@ -66,7 +55,7 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<Tab>("profile");
 
-  // ─── Организация ────────────────────────────────────
+  // Организация
   const [org, setOrg] = useState<Organization | null>(null);
   const [orgForm, setOrgForm] = useState({
     name: "",
@@ -76,6 +65,7 @@ export default function ProfilePage() {
     legalAddress: "",
     overtimeMultiplier1: "1.5",
     overtimeMultiplier2: "2.0",
+    taxRate: "13",
     positionHeaderOpacity: 70,
     positionRowOpacity: 20,
   });
@@ -109,8 +99,9 @@ export default function ProfilePage() {
             legalAddress: o.legalAddress ?? "",
             overtimeMultiplier1: o.overtimeMultiplier1 ?? "1.5",
             overtimeMultiplier2: o.overtimeMultiplier2 ?? "2.0",
-            positionHeaderOpacity: o.positionHeaderOpacity ?? 70,
-            positionRowOpacity: o.positionRowOpacity ?? 20,
+            taxRate: (o as any).taxRate ?? "13",
+            positionHeaderOpacity: (o as any).positionHeaderOpacity ?? 70,
+            positionRowOpacity: (o as any).positionRowOpacity ?? 20,
           });
           useOrganization.getState().set(o);
         }
@@ -149,9 +140,10 @@ export default function ProfilePage() {
         legalAddress: orgForm.legalAddress || null,
         overtimeMultiplier1: orgForm.overtimeMultiplier1,
         overtimeMultiplier2: orgForm.overtimeMultiplier2,
+        taxRate: orgForm.taxRate,
         positionHeaderOpacity: orgForm.positionHeaderOpacity,
         positionRowOpacity: orgForm.positionRowOpacity,
-      });
+      } as any);
       setOrg(updated);
       useOrganization.getState().set(updated);
       setOrgEditing(false);
@@ -167,18 +159,13 @@ export default function ProfilePage() {
     if (!org || !isOwner) return;
 
     const previous = org;
-    const optimistic: Organization = {
-      ...org,
-      timeTrackingEnabled: enabled,
-    };
+    const optimistic: Organization = { ...org, timeTrackingEnabled: enabled };
     setOrg(optimistic);
     useOrganization.getState().set(optimistic);
     setTogglingTime(true);
 
     try {
-      const updated = await organizationApi.update({
-        timeTrackingEnabled: enabled,
-      });
+      const updated = await organizationApi.update({ timeTrackingEnabled: enabled });
       setOrg(updated);
       useOrganization.getState().set(updated);
     } catch (err: any) {
@@ -204,7 +191,7 @@ export default function ProfilePage() {
 
         {profile && (
           <>
-            {/* ═══ Вкладки ═══ */}
+            {/* Вкладки */}
             <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
               <button
                 onClick={() => setTab("profile")}
@@ -233,7 +220,7 @@ export default function ProfilePage() {
               )}
             </div>
 
-            {/* ═══ ВКЛАДКА: ПРОФИЛЬ ═══ */}
+            {/* ПРОФИЛЬ */}
             {tab === "profile" && (
               <>
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-6 animate-fade-in">
@@ -248,9 +235,7 @@ export default function ProfilePage() {
                           {profile.name}
                         </div>
                         <span
-                          className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-0.5 rounded-full font-medium mt-1 ${
-                            ROLE_BADGES[profile.role]
-                          }`}
+                          className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-0.5 rounded-full font-medium mt-1 ${ROLE_BADGES[profile.role]}`}
                         >
                           <Shield className="w-3 h-3" />
                           {ROLE_LABELS[profile.role]}
@@ -258,64 +243,20 @@ export default function ProfilePage() {
                       </div>
                     </div>
 
-                    {/* Блок подписки */}
-                    <div className="bg-gradient-to-br from-brand-50 to-violet-50 rounded-2xl border border-brand-200 p-6 mb-6">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="font-semibold text-slate-900">Ваш тариф: Free</h3>
-                          <p className="text-sm text-slate-500 mt-1">Доступно 3 сотрудника и 1 точка</p>
-                        </div>
-                        <button
-                          onClick={async () => {
-                            const token = localStorage.getItem("token");
-                            try {
-                              const res = await fetch("http://localhost:3001/api/payments/create", {
-                                method: "POST",
-                                headers: {
-                                  "Content-Type": "application/json",
-                                  Authorization: `Bearer ${token}`,
-                                },
-                                body: JSON.stringify({
-                                  tariffId: "pro",
-                                  amount: 990,
-                                  description: "Тариф Pro на 1 месяц",
-                                }),
-                              });
-                              const data = await res.json();
-                              if (data.confirmationUrl) window.location.href = data.confirmationUrl;
-                              else alert(data.error || "Ошибка");
-                            } catch (e) {
-                              alert("Ошибка соединения с сервером");
-                            }
-                          }}
-                          className="bg-brand-600 text-white px-5 py-2.5 rounded-xl hover:bg-brand-700 text-sm font-medium shadow-sm transition-all"
-                        >
-                          Перейти на Pro за 990 ₽
-                        </button>
-                      </div>
-                    </div>
-
-
-
-
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-                      <ProfileField
-                        icon={Mail}
-                        label="Email"
-                        value={profile.email}
-                      />
+                      <ProfileField icon={Mail} label="Email" value={profile.email} />
                       {profile.phone && (
-                        <ProfileField
-                          icon={Phone}
-                          label="Телефон"
-                          value={profile.phone}
-                        />
+                        <ProfileField icon={Phone} label="Телефон" value={profile.phone} />
                       )}
                       {profile.hourlyRate && (
                         <ProfileField
                           icon={Coins}
                           label="Ставка"
-                          value={`${profile.hourlyRate} ₽/ч`}
+                          value={
+                            (profile as any).paymentType === "MONTHLY"
+                              ? `${profile.hourlyRate} ₽/мес`
+                              : `${profile.hourlyRate} ₽/ч`
+                          }
                         />
                       )}
                       <ProfileField
@@ -339,9 +280,7 @@ export default function ProfilePage() {
                           <Building2 className="w-5 h-5 text-blue-600" />
                         </div>
                         <div>
-                          <h2 className="font-semibold text-slate-900">
-                            Данные организации
-                          </h2>
+                          <h2 className="font-semibold text-slate-900">Данные организации</h2>
                           <p className="text-xs text-slate-500">
                             Используются по умолчанию при генерации документов
                           </p>
@@ -357,66 +296,29 @@ export default function ProfilePage() {
                               : "bg-brand-50 text-brand-700 hover:bg-brand-100"
                           }`}
                         >
-                          {orgEditing ? (
-                            <>Отмена</>
-                          ) : (
-                            <>
-                              <Pencil className="w-3 h-3" />
-                              Редактировать
-                            </>
-                          )}
+                          {orgEditing ? <>Отмена</> : <><Pencil className="w-3 h-3" /> Редактировать</>}
                         </button>
                       )}
                     </div>
 
                     <form onSubmit={onSaveOrg} className="space-y-4">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <OrgField
-                          label="Название организации"
-                          value={orgForm.name}
-                          editing={orgEditing}
-                          onChange={(v) =>
-                            setOrgForm((f) => ({ ...f, name: v }))
-                          }
-                          placeholder="ООО Ромашка"
-                        />
-                        <OrgField
-                          label="Город"
-                          value={orgForm.city}
-                          editing={orgEditing}
-                          onChange={(v) =>
-                            setOrgForm((f) => ({ ...f, city: v }))
-                          }
-                          placeholder="Москва"
-                        />
-                        <OrgField
-                          label="ФИО директора"
-                          value={orgForm.directorName}
-                          editing={orgEditing}
-                          onChange={(v) =>
-                            setOrgForm((f) => ({ ...f, directorName: v }))
-                          }
-                          placeholder="Иванов Иван Иванович"
-                        />
-                        <OrgField
-                          label="ИНН"
-                          value={orgForm.inn}
-                          editing={orgEditing}
-                          onChange={(v) =>
-                            setOrgForm((f) => ({ ...f, inn: v }))
-                          }
-                          placeholder="7701234567"
-                        />
+                        <OrgField label="Название организации" value={orgForm.name} editing={orgEditing}
+                          onChange={(v) => setOrgForm((f) => ({ ...f, name: v }))}
+                          placeholder="ООО Ромашка" />
+                        <OrgField label="Город" value={orgForm.city} editing={orgEditing}
+                          onChange={(v) => setOrgForm((f) => ({ ...f, city: v }))}
+                          placeholder="Москва" />
+                        <OrgField label="ФИО директора" value={orgForm.directorName} editing={orgEditing}
+                          onChange={(v) => setOrgForm((f) => ({ ...f, directorName: v }))}
+                          placeholder="Иванов Иван Иванович" />
+                        <OrgField label="ИНН" value={orgForm.inn} editing={orgEditing}
+                          onChange={(v) => setOrgForm((f) => ({ ...f, inn: v }))}
+                          placeholder="7701234567" />
                         <div className="md:col-span-2">
-                          <OrgField
-                            label="Юридический адрес"
-                            value={orgForm.legalAddress}
-                            editing={orgEditing}
-                            onChange={(v) =>
-                              setOrgForm((f) => ({ ...f, legalAddress: v }))
-                            }
-                            placeholder="г. Москва, ул. Ленина, д. 1"
-                          />
+                          <OrgField label="Юридический адрес" value={orgForm.legalAddress} editing={orgEditing}
+                            onChange={(v) => setOrgForm((f) => ({ ...f, legalAddress: v }))}
+                            placeholder="г. Москва, ул. Ленина, д. 1" />
                         </div>
                       </div>
 
@@ -441,67 +343,35 @@ export default function ProfilePage() {
                       <KeyRound className="w-5 h-5 text-amber-600" />
                     </div>
                     <div>
-                      <h2 className="font-semibold text-slate-900">
-                        Сменить пароль
-                      </h2>
+                      <h2 className="font-semibold text-slate-900">Сменить пароль</h2>
                       <p className="text-xs text-slate-500">
                         Минимум 8 символов. Используйте буквы, цифры и символы.
                       </p>
                     </div>
                   </div>
 
-                  <form
-                    onSubmit={handleSubmit(onSubmit)}
-                    className="space-y-4 max-w-md"
-                  >
+                  <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 max-w-md">
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                        Текущий пароль
-                      </label>
-                      <input
-                        type="password"
-                        {...register("oldPassword")}
-                        className="w-full"
-                        placeholder="••••••••"
-                      />
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Текущий пароль</label>
+                      <input type="password" {...register("oldPassword")} className="w-full" placeholder="••••••••" />
                       {errors.oldPassword && (
-                        <p className="text-red-500 text-xs mt-1">
-                          {errors.oldPassword.message}
-                        </p>
+                        <p className="text-red-500 text-xs mt-1">{errors.oldPassword.message}</p>
                       )}
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                        Новый пароль
-                      </label>
-                      <input
-                        type="password"
-                        {...register("newPassword")}
-                        className="w-full"
-                        placeholder="Минимум 8 символов"
-                      />
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Новый пароль</label>
+                      <input type="password" {...register("newPassword")} className="w-full" placeholder="Минимум 8 символов" />
                       {errors.newPassword && (
-                        <p className="text-red-500 text-xs mt-1">
-                          {errors.newPassword.message}
-                        </p>
+                        <p className="text-red-500 text-xs mt-1">{errors.newPassword.message}</p>
                       )}
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                        Повторите новый пароль
-                      </label>
-                      <input
-                        type="password"
-                        {...register("confirmPassword")}
-                        className="w-full"
-                        placeholder="••••••••"
-                      />
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Повторите новый пароль</label>
+                      <input type="password" {...register("confirmPassword")} className="w-full" placeholder="••••••••" />
                       {errors.confirmPassword && (
-                        <p className="text-red-500 text-xs mt-1">
-                          {errors.confirmPassword.message}
-                        </p>
+                        <p className="text-red-500 text-xs mt-1">{errors.confirmPassword.message}</p>
                       )}
                     </div>
 
@@ -518,10 +388,9 @@ export default function ProfilePage() {
               </>
             )}
 
-            {/* ═══ ВКЛАДКА: НАСТРОЙКИ (только OWNER) ═══ */}
+            {/* НАСТРОЙКИ (OWNER) */}
             {tab === "settings" && isOwner && (
               <div className="space-y-6 animate-fade-in">
-                
                 {/* Модули */}
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
                   <div className="flex items-start gap-3 mb-5">
@@ -529,28 +398,18 @@ export default function ProfilePage() {
                       <SettingsIcon className="w-5 h-5 text-brand-600" />
                     </div>
                     <div>
-                      <h2 className="font-semibold text-slate-900">
-                        Настройки
-                      </h2>
-                      <p className="text-xs text-slate-500">
-                        Модули и функции системы
-                      </p>
+                      <h2 className="font-semibold text-slate-900">Настройки</h2>
+                      <p className="text-xs text-slate-500">Модули и функции системы</p>
                     </div>
                   </div>
 
-                  <label
-                    className={`flex items-start gap-3 p-4 rounded-xl border-2 transition-all cursor-pointer ${
-                      togglingTime
-                        ? "border-slate-100 opacity-70"
-                        : "border-slate-200 hover:border-brand-300"
-                    }`}
-                  >
+                  <label className={`flex items-start gap-3 p-4 rounded-xl border-2 transition-all cursor-pointer ${
+                    togglingTime ? "border-slate-100 opacity-70" : "border-slate-200 hover:border-brand-300"
+                  }`}>
                     <input
                       type="checkbox"
                       checked={org?.timeTrackingEnabled !== false}
-                      onChange={(e) =>
-                        onToggleTimeTracking(e.target.checked)
-                      }
+                      onChange={(e) => onToggleTimeTracking(e.target.checked)}
                       disabled={togglingTime || !org}
                       className="!w-4 !h-4 mt-1 !p-0"
                     />
@@ -560,17 +419,12 @@ export default function ProfilePage() {
                         <span className="font-medium text-slate-900 text-sm">
                           Учёт рабочего времени
                         </span>
-                        {togglingTime && (
-                          <span className="text-xs text-slate-400">
-                            сохранение...
-                          </span>
-                        )}
+                        {togglingTime && <span className="text-xs text-slate-400">сохранение...</span>}
                       </div>
                       <div className="text-xs text-slate-500 mt-1">
-                        Сотрудники смогут отмечать начало и конец смены.
-                        Если выключить — часы для зарплаты считаются
-                        по графику, кнопка «Начать смену» скрывается у всех
-                        сотрудников.
+                        Сотрудники смогут отмечать начало и конец смены. Если выключить — в табель
+                        явки ставятся по умолчанию (из дисциплины: Я / НН / ПР), а кнопка «Начать смену»
+                        скрывается у всех сотрудников.
                       </div>
                     </div>
                   </label>
@@ -583,21 +437,15 @@ export default function ProfilePage() {
                       <Percent className="w-5 h-5 text-amber-600" />
                     </div>
                     <div>
-                      <h2 className="font-semibold text-slate-900">
-                        Коэффициенты переработки
-                      </h2>
-                      <p className="text-xs text-slate-500">
-                        Настройка оплаты сверхурочных часов
-                      </p>
+                      <h2 className="font-semibold text-slate-900">Коэффициенты переработки</h2>
+                      <p className="text-xs text-slate-500">Настройка оплаты сверхурочных часов</p>
                     </div>
                   </div>
 
                   <form onSubmit={onSaveOrg} className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                          Первые 2 часа
-                        </label>
+                        <label className="block text-sm font-medium text-slate-700 mb-1.5">Первые 2 часа</label>
                         <input
                           type="number"
                           step="0.1"
@@ -606,14 +454,10 @@ export default function ProfilePage() {
                           onChange={(e) => setOrgForm((f) => ({ ...f, overtimeMultiplier1: e.target.value }))}
                           className="w-full"
                         />
-                        <p className="text-xs text-slate-500 mt-1">
-                          По умолчанию 1.5
-                        </p>
+                        <p className="text-xs text-slate-500 mt-1">По умолчанию 1.5</p>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                          Последующие часы
-                        </label>
+                        <label className="block text-sm font-medium text-slate-700 mb-1.5">Последующие часы</label>
                         <input
                           type="number"
                           step="0.1"
@@ -622,9 +466,7 @@ export default function ProfilePage() {
                           onChange={(e) => setOrgForm((f) => ({ ...f, overtimeMultiplier2: e.target.value }))}
                           className="w-full"
                         />
-                        <p className="text-xs text-slate-500 mt-1">
-                          По умолчанию 2.0
-                        </p>
+                        <p className="text-xs text-slate-500 mt-1">По умолчанию 2.0</p>
                       </div>
                     </div>
 
@@ -635,6 +477,50 @@ export default function ProfilePage() {
                     >
                       <Save className="w-4 h-4" />
                       {orgSaving ? "Сохранение..." : "Сохранить коэффициенты"}
+                    </button>
+                  </form>
+                </div>
+
+                {/* Налоги */}
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+                  <div className="flex items-start gap-3 mb-5">
+                    <div className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center">
+                      <Percent className="w-5 h-5 text-rose-600" />
+                    </div>
+                    <div>
+                      <h2 className="font-semibold text-slate-900">Налоги</h2>
+                      <p className="text-xs text-slate-500">
+                        НДФЛ для расчёта «К выплате» в табеле
+                      </p>
+                    </div>
+                  </div>
+
+                  <form onSubmit={onSaveOrg}>
+                    <div className="max-w-xs">
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                        Ставка НДФЛ, %
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="100"
+                        value={orgForm.taxRate}
+                        onChange={(e) => setOrgForm((f) => ({ ...f, taxRate: e.target.value }))}
+                        className="w-full"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">
+                        Применяется в разделе «Табель»:<br />
+                        <b>К выплате</b> = Начислено − НДФЛ.
+                      </p>
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={orgSaving}
+                      className="inline-flex items-center gap-2 bg-brand-600 text-white px-5 py-2.5 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium shadow-sm hover:shadow transition-all mt-4"
+                    >
+                      <Save className="w-4 h-4" />
+                      {orgSaving ? "Сохранение..." : "Сохранить НДФЛ"}
                     </button>
                   </form>
                 </div>
@@ -656,12 +542,8 @@ export default function ProfilePage() {
                   <form onSubmit={onSaveOrg} className="space-y-5">
                     <div>
                       <div className="flex items-center justify-between mb-2">
-                        <label className="text-sm font-medium text-slate-700">
-                          Заголовки групп должностей
-                        </label>
-                        <span className="text-sm font-bold text-slate-900">
-                          {orgForm.positionHeaderOpacity}%
-                        </span>
+                        <label className="text-sm font-medium text-slate-700">Заголовки групп должностей</label>
+                        <span className="text-sm font-bold text-slate-900">{orgForm.positionHeaderOpacity}%</span>
                       </div>
                       <input
                         type="range"
@@ -669,37 +551,15 @@ export default function ProfilePage() {
                         max={100}
                         step={5}
                         value={orgForm.positionHeaderOpacity}
-                        onChange={(e) =>
-                          setOrgForm((f) => ({
-                            ...f,
-                            positionHeaderOpacity: Number(e.target.value),
-                          }))
-                        }
+                        onChange={(e) => setOrgForm((f) => ({ ...f, positionHeaderOpacity: Number(e.target.value) }))}
                         className="w-full accent-brand-600"
                       />
-                      <div
-                        className="mt-2 h-6 rounded"
-                        style={{
-                          backgroundColor: `#3B82F6${Math.round(
-                            (orgForm.positionHeaderOpacity / 100) * 255
-                          )
-                            .toString(16)
-                            .padStart(2, "0")}`,
-                        }}
-                      />
-                      <p className="text-xs text-slate-500 mt-1">
-                        Фон заголовка «Продавцы», «Повара» и т.п.
-                      </p>
                     </div>
 
                     <div>
                       <div className="flex items-center justify-between mb-2">
-                        <label className="text-sm font-medium text-slate-700">
-                          Строки сотрудников
-                        </label>
-                        <span className="text-sm font-bold text-slate-900">
-                          {orgForm.positionRowOpacity}%
-                        </span>
+                        <label className="text-sm font-medium text-slate-700">Строки сотрудников</label>
+                        <span className="text-sm font-bold text-slate-900">{orgForm.positionRowOpacity}%</span>
                       </div>
                       <input
                         type="range"
@@ -707,27 +567,9 @@ export default function ProfilePage() {
                         max={100}
                         step={5}
                         value={orgForm.positionRowOpacity}
-                        onChange={(e) =>
-                          setOrgForm((f) => ({
-                            ...f,
-                            positionRowOpacity: Number(e.target.value),
-                          }))
-                        }
+                        onChange={(e) => setOrgForm((f) => ({ ...f, positionRowOpacity: Number(e.target.value) }))}
                         className="w-full accent-brand-600"
                       />
-                      <div
-                        className="mt-2 h-6 rounded"
-                        style={{
-                          backgroundColor: `#3B82F6${Math.round(
-                            (orgForm.positionRowOpacity / 100) * 255
-                          )
-                            .toString(16)
-                            .padStart(2, "0")}`,
-                        }}
-                      />
-                      <p className="text-xs text-slate-500 mt-1">
-                        Фон строк с сотрудниками под заголовком должности.
-                      </p>
                     </div>
 
                     <button
@@ -740,8 +582,6 @@ export default function ProfilePage() {
                     </button>
                   </form>
                 </div>
-
-
               </div>
             )}
           </>
@@ -751,12 +591,8 @@ export default function ProfilePage() {
   );
 }
 
-// ═══ Вспомогательные компоненты ═══
-
 function ProfileField({
-  icon: Icon,
-  label,
-  value,
+  icon: Icon, label, value,
 }: {
   icon: React.ElementType;
   label: string;
@@ -769,20 +605,14 @@ function ProfileField({
       </div>
       <div className="min-w-0">
         <div className="text-xs text-slate-500">{label}</div>
-        <div className="text-sm font-medium text-slate-900 truncate">
-          {value}
-        </div>
+        <div className="text-sm font-medium text-slate-900 truncate">{value}</div>
       </div>
     </div>
   );
 }
 
 function OrgField({
-  label,
-  value,
-  editing,
-  onChange,
-  placeholder,
+  label, value, editing, onChange, placeholder,
 }: {
   label: string;
   value: string;
@@ -792,22 +622,13 @@ function OrgField({
 }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-slate-500 mb-1.5">
-        {label}
-      </label>
+      <label className="block text-xs font-medium text-slate-500 mb-1.5">{label}</label>
       {editing ? (
-        <input
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          className="w-full"
-        />
+        <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="w-full" />
       ) : (
         <div className="flex items-center gap-2 text-sm py-2 px-3 bg-slate-50 rounded-lg border border-slate-200">
           <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-          <span
-            className={value ? "text-slate-900" : "text-slate-400 italic"}
-          >
+          <span className={value ? "text-slate-900" : "text-slate-400 italic"}>
             {value || "Не заполнено"}
           </span>
         </div>

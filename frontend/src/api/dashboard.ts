@@ -28,6 +28,9 @@ export type TodayShift = {
   earlyLeaveMinutes?: number;
   templateStartTime: string | null;
   templateEndTime: string | null;
+  templateName: string | null;
+  isNoShow: boolean;
+  isUnknownAbsence: boolean;
 };
 
 export type DashboardSummary = {

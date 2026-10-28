@@ -17,6 +17,8 @@ const createSchema = z.object({
   phone: z.string().max(20).optional(),
   locationIds: z.array(z.string().uuid()).optional(),
   areaIds: z.array(z.string().uuid()).optional(),
+  paymentType: z.enum(["HOURLY", "MONTHLY"]).optional(),
+  employmentType: z.enum(["GPH", "SHTAT"]).optional(),
 });
 
 const updateSchema = z.object({
@@ -27,11 +29,16 @@ const updateSchema = z.object({
   hourlyRate: z.string().regex(/^\d+(\.\d{1,2})?$/).nullable().optional(),
   locationIds: z.array(z.string().uuid()).optional(),
   areaIds: z.array(z.string().uuid()).optional(),
+  paymentType: z.enum(["HOURLY", "MONTHLY"]).optional(),
+  employmentType: z.enum(["GPH", "SHTAT"]).optional(),
 });
 
 const bulkSchema = z.object({
   userIds: z.array(z.string().uuid()).min(1).max(500),
-  action: z.enum(["addToLocation", "addToArea", "setPosition", "setRate", "setRole"]),
+  action: z.enum([
+  "addToLocation", "addToArea", "setPosition", "setRate", "setRole",
+  "setPaymentType", "setEmploymentType",
+  ]),
   value: z.string().nullable(),
 });
 

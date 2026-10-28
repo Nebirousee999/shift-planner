@@ -69,6 +69,9 @@ export const dashboardService = {
           templateColor: shiftTemplates.color,
           templateStartTime: shiftTemplates.startTime,
           templateEndTime: shiftTemplates.endTime,
+          templateName: shiftTemplates.name,
+          isNoShow: scheduledShifts.isNoShow,
+          isUnknownAbsence: scheduledShifts.isUnknownAbsence,
         })
         .from(scheduledShifts)
         .innerJoin(scheduleWeeks, eq(scheduledShifts.weekId, scheduleWeeks.id))

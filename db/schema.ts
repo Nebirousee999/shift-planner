@@ -38,6 +38,7 @@ export const organizations = pgTable("organizations", {
   overtimeMultiplier1: numeric("overtime_multiplier_1").default("1.5").notNull(),
   overtimeMultiplier2: numeric("overtime_multiplier_2").default("2.0").notNull(),
   maxLocations: integer("max_locations").default(1).notNull(),
+  taxRate: numeric("tax_rate").default("13").notNull(),
   positionHeaderOpacity: integer("position_header_opacity").default(70).notNull(),
   positionRowOpacity: integer("position_row_opacity").default(20).notNull(),
 });
@@ -56,6 +57,11 @@ export const locations = pgTable("locations", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+
+export const paymentTypeEnum = pgEnum("payment_type", ["HOURLY", "MONTHLY"]);
+export const employmentTypeEnum = pgEnum("employment_type", ["GPH", "SHTAT"]);
+
+
 // ─── USERS ─────────────────────────────────────────────
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -69,6 +75,8 @@ export const users = pgTable("users", {
   role: roleEnum("role").default("EMPLOYEE").notNull(),
   position: varchar("position", { length: 255 }),
   hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }),
+  paymentType: paymentTypeEnum("payment_type").default("HOURLY").notNull(),
+  employmentType: employmentTypeEnum("employment_type").default("SHTAT").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -131,6 +139,8 @@ export const scheduledShifts = pgTable("scheduled_shifts", {
   latenessMinutes: integer("lateness_minutes").default(0).notNull(),
   earlyLeaveMinutes: integer("early_leave_minutes").default(0).notNull(),
   overtimeMinutes: integer("overtime_minutes").default(0).notNull(),
+  isUnknownAbsence: boolean("is_unknown_absence").default(false).notNull(),
+  isNoShow: boolean("is_no_show").default(false).notNull(),
 });
 
 // ─── AVAILABILITY ──────────────────────────────────────

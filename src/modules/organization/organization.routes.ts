@@ -14,6 +14,7 @@ const updateSchema = z.object({
   maxLocations: z.number().int().min(1).max(1000).optional(),
   positionHeaderOpacity: z.number().int().min(0).max(100).optional(),
   positionRowOpacity: z.number().int().min(0).max(100).optional(),
+  taxRate: z.string().optional(),
 });
 
 export async function organizationRoutes(app: FastifyInstance) {

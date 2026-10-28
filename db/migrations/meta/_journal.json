@@ -50,6 +50,20 @@
       "when": 1793173906203,
       "tag": "0006_lively_siren",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793214371630,
+      "tag": "0007_lush_shiva",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793219559774,
+      "tag": "0008_keen_maddog",
+      "breakpoints": true
     }
   ]
 }

@@ -97,6 +97,8 @@ export const shiftsApi = {
       latenessMinutes: number;
       earlyLeaveMinutes: number;
       overtimeMinutes: number;
+      isNoShow?: boolean;
+      isUnknownAbsence?: boolean;
     }>
   ): Promise<ShiftUpdateResult> => {
     const { data } = await api.patch<ShiftUpdateResult>(`/scheduled-shifts/${id}`, input);
