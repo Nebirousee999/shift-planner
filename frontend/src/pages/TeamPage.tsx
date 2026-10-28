@@ -1462,7 +1462,7 @@ function MatrixView({
                                 <input
                                   type="checkbox"
                                   checked={checked}
-                                  disabled={busy}
+                                  disabled={busyUserId !== null}
                                   onChange={() => onToggleArea(u, a)}
                                   className="!w-4 !h-4 !p-0 cursor-pointer disabled:opacity-50 disabled:cursor-wait"
                                   title={
