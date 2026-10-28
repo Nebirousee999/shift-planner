@@ -12,6 +12,8 @@ export type Organization = {
   overtimeMultiplier1?: string;
   overtimeMultiplier2?: string;
   maxLocations: number;
+  positionHeaderOpacity: number;
+  positionRowOpacity: number;
 };
 
 export const organizationApi = {
@@ -29,6 +31,8 @@ export const organizationApi = {
     overtimeMultiplier1?: string;
     overtimeMultiplier2?: string;
     maxLocations?: number;
+    positionHeaderOpacity?: number;
+    positionRowOpacity?: number;
   }): Promise<Organization> => {
     const { data } = await api.patch<Organization>("/organization", input);
     return data;

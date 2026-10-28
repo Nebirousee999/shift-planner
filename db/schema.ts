@@ -38,6 +38,8 @@ export const organizations = pgTable("organizations", {
   overtimeMultiplier1: numeric("overtime_multiplier_1").default("1.5").notNull(),
   overtimeMultiplier2: numeric("overtime_multiplier_2").default("2.0").notNull(),
   maxLocations: integer("max_locations").default(1).notNull(),
+  positionHeaderOpacity: integer("position_header_opacity").default(70).notNull(),
+  positionRowOpacity: integer("position_row_opacity").default(20).notNull(),
 });
 
 // ─── LOCATIONS ─────────────────────────────────────────
@@ -261,3 +263,42 @@ export const userMessengers = pgTable("user_messengers", {
   externalId: varchar("external_id", { length: 255 }).notNull(), // chat_id в TG или user_id в MAX
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// ─── POSITION TEMPLATES ────────────────────────────────
+export const positionTemplates = pgTable("position_templates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: uuid("org_id")
+    .references(() => organizations.id, { onDelete: "cascade" })
+    .notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  color: varchar("color", { length: 7 }).default("#3B82F6").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ─── AREAS (локации = помещения внутри точки) ──────────
+export const areas = pgTable("areas", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: uuid("org_id")
+    .references(() => organizations.id, { onDelete: "cascade" })
+    .notNull(),
+  locationId: uuid("location_id")
+    .references(() => locations.id, { onDelete: "cascade" })
+    .notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const userAreas = pgTable(
+  "user_areas",
+  {
+    userId: uuid("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    areaId: uuid("area_id")
+      .references(() => areas.id, { onDelete: "cascade" })
+      .notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.areaId] }),
+  })
+);

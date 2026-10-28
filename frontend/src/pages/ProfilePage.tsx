@@ -22,7 +22,7 @@ import { meApi, type MyProfile } from "../api/me";
 import { organizationApi, type Organization } from "../api/organization";
 import { useOrganization } from "../store/organization";
 import NavBar from "../components/NavBar";
-
+import { Palette } from "lucide-react";
 const passwordSchema = z
   .object({
     oldPassword: z.string().min(1, "Введите текущий пароль"),
@@ -76,6 +76,8 @@ export default function ProfilePage() {
     legalAddress: "",
     overtimeMultiplier1: "1.5",
     overtimeMultiplier2: "2.0",
+    positionHeaderOpacity: 70,
+    positionRowOpacity: 20,
   });
   const [orgEditing, setOrgEditing] = useState(false);
   const [orgSaving, setOrgSaving] = useState(false);
@@ -107,6 +109,8 @@ export default function ProfilePage() {
             legalAddress: o.legalAddress ?? "",
             overtimeMultiplier1: o.overtimeMultiplier1 ?? "1.5",
             overtimeMultiplier2: o.overtimeMultiplier2 ?? "2.0",
+            positionHeaderOpacity: o.positionHeaderOpacity ?? 70,
+            positionRowOpacity: o.positionRowOpacity ?? 20,
           });
           useOrganization.getState().set(o);
         }
@@ -145,6 +149,8 @@ export default function ProfilePage() {
         legalAddress: orgForm.legalAddress || null,
         overtimeMultiplier1: orgForm.overtimeMultiplier1,
         overtimeMultiplier2: orgForm.overtimeMultiplier2,
+        positionHeaderOpacity: orgForm.positionHeaderOpacity,
+        positionRowOpacity: orgForm.positionRowOpacity,
       });
       setOrg(updated);
       useOrganization.getState().set(updated);
@@ -632,6 +638,109 @@ export default function ProfilePage() {
                     </button>
                   </form>
                 </div>
+
+                {/* Внешний вид */}
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+                  <div className="flex items-start gap-3 mb-5">
+                    <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center">
+                      <Palette className="w-5 h-5 text-violet-600" />
+                    </div>
+                    <div>
+                      <h2 className="font-semibold text-slate-900">Внешний вид</h2>
+                      <p className="text-xs text-slate-500">
+                        Прозрачность цветовой подсветки должностей в списках
+                      </p>
+                    </div>
+                  </div>
+
+                  <form onSubmit={onSaveOrg} className="space-y-5">
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-sm font-medium text-slate-700">
+                          Заголовки групп должностей
+                        </label>
+                        <span className="text-sm font-bold text-slate-900">
+                          {orgForm.positionHeaderOpacity}%
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={5}
+                        value={orgForm.positionHeaderOpacity}
+                        onChange={(e) =>
+                          setOrgForm((f) => ({
+                            ...f,
+                            positionHeaderOpacity: Number(e.target.value),
+                          }))
+                        }
+                        className="w-full accent-brand-600"
+                      />
+                      <div
+                        className="mt-2 h-6 rounded"
+                        style={{
+                          backgroundColor: `#3B82F6${Math.round(
+                            (orgForm.positionHeaderOpacity / 100) * 255
+                          )
+                            .toString(16)
+                            .padStart(2, "0")}`,
+                        }}
+                      />
+                      <p className="text-xs text-slate-500 mt-1">
+                        Фон заголовка «Продавцы», «Повара» и т.п.
+                      </p>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-sm font-medium text-slate-700">
+                          Строки сотрудников
+                        </label>
+                        <span className="text-sm font-bold text-slate-900">
+                          {orgForm.positionRowOpacity}%
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={5}
+                        value={orgForm.positionRowOpacity}
+                        onChange={(e) =>
+                          setOrgForm((f) => ({
+                            ...f,
+                            positionRowOpacity: Number(e.target.value),
+                          }))
+                        }
+                        className="w-full accent-brand-600"
+                      />
+                      <div
+                        className="mt-2 h-6 rounded"
+                        style={{
+                          backgroundColor: `#3B82F6${Math.round(
+                            (orgForm.positionRowOpacity / 100) * 255
+                          )
+                            .toString(16)
+                            .padStart(2, "0")}`,
+                        }}
+                      />
+                      <p className="text-xs text-slate-500 mt-1">
+                        Фон строк с сотрудниками под заголовком должности.
+                      </p>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={orgSaving}
+                      className="inline-flex items-center gap-2 bg-brand-600 text-white px-5 py-2.5 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium shadow-sm hover:shadow transition-all"
+                    >
+                      <Save className="w-4 h-4" />
+                      {orgSaving ? "Сохранение..." : "Сохранить"}
+                    </button>
+                  </form>
+                </div>
+
 
               </div>
             )}

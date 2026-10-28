@@ -9,8 +9,6 @@ import {
   FileEdit,
   Lock,
   Users,
-  ChevronDown,
-  ChevronUp,
   Trash2,
   Copy,
   ClipboardPaste,
@@ -21,9 +19,13 @@ import { useUsers } from "../store/users";
 import { useVacations } from "../store/vacations";
 import { useSickLeaves } from "../store/sickLeaves";
 import { useLocations } from "../store/locations";
+import { useAreas } from "../store/areas";
+import { usePositions } from "../store/positions";
+import { useOrganization } from "../store/organization"; // 👈 ИЗМЕНЕНО
 import { shiftChangeRequestsApi } from "../api/shiftChangeRequests";
 import { confirmDialog, alertDialog } from "../store/dialogs";
 import NavBar from "../components/NavBar";
+import TeamSummary from "../components/TeamSummary";
 
 const MONTHS_RU = [
   "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
@@ -32,7 +34,9 @@ const MONTHS_RU = [
 const WEEKDAYS_RU = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 
 function pad2(n: number): string { return String(n).padStart(2, "0"); }
-function toDateStr(d: Date): string { return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`; }
+function toDateStr(d: Date): string {
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+}
 function getMonday(date: Date): Date {
   const d = new Date(date);
   const dow = d.getUTCDay();
@@ -73,26 +77,43 @@ const calcHours = (start: string, end: string) => {
   if (m <= 0) m += 24 * 60;
   return m / 60;
 };
-const formatMoney = (n: number) => new Intl.NumberFormat("ru-RU").format(n) + " ₽";
+const formatMoney = (n: number) =>
+  new Intl.NumberFormat("ru-RU").format(n) + " ₽";
 
-const ProgressBar = ({ current, max }: { current: number, max: number }) => {
-  const isOver = current > max;
-  const percent = Math.min((current / max) * 100, 100);
-  return (
-    <div className="w-full bg-slate-200 rounded-full h-1.5 mt-1.5 overflow-hidden">
-      <div className={`h-full transition-all duration-300 ${isOver ? "bg-rose-500" : "bg-blue-500"}`} style={{ width: `${percent}%` }} />
-    </div>
-  );
+type StatusMeta = {
+  label: string;
+  icon: React.ElementType;
+  badge: string;
+  bar: string;
 };
-
-type StatusMeta = { label: string; icon: React.ElementType; badge: string; bar: string; };
 const STATUS_META: Record<string, StatusMeta> = {
-  DRAFT: { label: "Черновик", icon: FileEdit, badge: "bg-slate-100 text-slate-700 ring-1 ring-slate-200", bar: "bg-slate-300" },
-  PUBLISHED: { label: "Опубликован", icon: CheckCircle2, badge: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200", bar: "bg-emerald-500" },
-  LOCKED: { label: "Заблокирован", icon: Lock, badge: "bg-red-50 text-red-700 ring-1 ring-red-200", bar: "bg-red-500" },
+  DRAFT: {
+    label: "Черновик",
+    icon: FileEdit,
+    badge: "bg-slate-100 text-slate-700 ring-1 ring-slate-200",
+    bar: "bg-slate-300",
+  },
+  PUBLISHED: {
+    label: "Опубликован",
+    icon: CheckCircle2,
+    badge: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
+    bar: "bg-emerald-500",
+  },
+  LOCKED: {
+    label: "Заблокирован",
+    icon: Lock,
+    badge: "bg-red-50 text-red-700 ring-1 ring-red-200",
+    bar: "bg-red-500",
+  },
 };
 
-function ShiftLines({ shifts, templateColorById }: { shifts: any[]; templateColorById: (id: string | null) => string; }) {
+function ShiftLines({
+  shifts,
+  templateColorById,
+}: {
+  shifts: any[];
+  templateColorById: (id: string | null) => string;
+}) {
   if (shifts.length === 0) return null;
   return (
     <div className="w-full mt-1 space-y-[3px]">
@@ -105,7 +126,15 @@ function ShiftLines({ shifts, templateColorById }: { shifts: any[]; templateColo
         const color = templateColorById(s.templateId);
         return (
           <div key={i} className="relative w-full h-[4px]">
-            <div className="absolute top-0 bottom-0 rounded-full" style={{ left: `${leftPct}%`, width: `${Math.max(widthPct, 2)}%`, backgroundColor: color }} title={`${s.startTime}–${s.endTime}`} />
+            <div
+              className="absolute top-0 bottom-0 rounded-full"
+              style={{
+                left: `${leftPct}%`,
+                width: `${Math.max(widthPct, 2)}%`,
+                backgroundColor: color,
+              }}
+              title={`${s.startTime}–${s.endTime}`}
+            />
           </div>
         );
       })}
@@ -115,12 +144,21 @@ function ShiftLines({ shifts, templateColorById }: { shifts: any[]; templateColo
 
 export default function WeeksPage() {
   const navigate = useNavigate();
-  const { weeks, loading, error, fetchWeeks, createWeek, removeWeek, addShift } = useWeeks();
+  const {
+    weeks, loading, error, fetchWeeks, createWeek, removeWeek, addShift,
+  } = useWeeks();
   const { items: templates, fetch: fetchTemplates } = useShiftTemplates();
-  const { items: users, fetch: fetchUsers } = useUsers();
+  const { items: users, fetch: fetchUsers, bulkUpdate } = useUsers();
   const { all: vacations, fetchAll: fetchVacations } = useVacations();
   const { all: sickLeaves, fetchAll: fetchSickLeaves } = useSickLeaves();
-  const { activeLocationId, fetch: fetchLocations } = useLocations();
+  const {
+    activeLocationId,
+    fetch: fetchLocations,
+  } = useLocations();
+  const { items: areas, fetch: fetchAreas } = useAreas();
+  const { items: positions, fetch: fetchPositions } = usePositions();
+  // 👇 ИЗМЕНЕНО: настройки прозрачности из организации
+  const org = useOrganization((s) => s.org);
 
   const today = new Date();
   const [year, setYear] = useState(today.getUTCFullYear());
@@ -130,18 +168,16 @@ export default function WeeksPage() {
   const [newDate, setNewDate] = useState(today.toISOString().slice(0, 10));
   const [creating, setCreating] = useState(false);
   const [pendingDates, setPendingDates] = useState<Set<string>>(new Set());
-  const [showSummary, setShowSummary] = useState(true);
 
-  const [clipboardWeek, setClipboardWeek] = useState<{ startDate: string; shifts: any[] } | null>(null);
+  const [clipboardWeek, setClipboardWeek] = useState<{
+    startDate: string;
+    shifts: any[];
+  } | null>(null);
 
   const todayStr = today.toISOString().slice(0, 10);
 
-  // Загружаем локации
-  useEffect(() => {
-    fetchLocations();
-  }, [fetchLocations]);
+  useEffect(() => { fetchLocations(); }, [fetchLocations]);
 
-  // Загружаем всё остальное, когда известна активная локация
   useEffect(() => {
     if (!activeLocationId) return;
     fetchWeeks(activeLocationId);
@@ -149,6 +185,8 @@ export default function WeeksPage() {
     fetchUsers();
     fetchVacations();
     fetchSickLeaves();
+    fetchAreas();
+    fetchPositions();
     Promise.all([
       shiftChangeRequestsApi.incoming().catch(() => []),
       shiftChangeRequestsApi.outgoing().catch(() => []),
@@ -161,9 +199,53 @@ export default function WeeksPage() {
       }
       setPendingDates(set);
     });
-  }, [activeLocationId, fetchWeeks, fetchTemplates, fetchUsers, fetchVacations, fetchSickLeaves]);
+  }, [
+    activeLocationId, fetchWeeks, fetchTemplates, fetchUsers,
+    fetchVacations, fetchSickLeaves, fetchAreas, fetchPositions,
+  ]);
 
-  const calendarWeeks = useMemo(() => buildMonthWeeks(year, month), [year, month]);
+  // ═════════════════════════════════════════════════════════
+  // СВОДКА: только активная точка
+  // ═════════════════════════════════════════════════════════
+  // 👇 ИЗМЕНЕНО: локации (помещения) только активной точки
+  const summaryAreas = useMemo(() => {
+    if (!activeLocationId) return areas;
+    return areas.filter((a) => a.locationId === activeLocationId);
+  }, [areas, activeLocationId]);
+
+  // 👇 ИЗМЕНЕНО: пользователи только активной точки
+  // + чистим их areaIds от локаций других точек (на всякий случай)
+  const summaryUsers = useMemo(() => {
+    if (!activeLocationId) return users;
+    const validAreaIds = new Set(summaryAreas.map((a) => a.id));
+    return users
+      .filter((u) => (u.locationIds ?? []).includes(activeLocationId))
+      .map((u) => ({
+        ...u,
+        areaIds: (u.areaIds ?? []).filter((id) => validAreaIds.has(id)),
+      }));
+  }, [users, summaryAreas, activeLocationId]);
+
+  // 👇 ИЗМЕНЕНО: должности с цветом для подсветки
+  const positionsForSummary = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; color: string }>();
+    positions.forEach((p) => map.set(p.name, { id: p.id, name: p.name, color: p.color }));
+    summaryUsers.forEach((u) => {
+      if (u.position && !map.has(u.position)) {
+        map.set(u.position, {
+          id: `tmp-${u.position}`,
+          name: u.position,
+          color: "#64748B",
+        });
+      }
+    });
+    return Array.from(map.values());
+  }, [positions, summaryUsers]);
+
+  const calendarWeeks = useMemo(
+    () => buildMonthWeeks(year, month),
+    [year, month]
+  );
   const weeksMap = useMemo(() => {
     const map = new Map<string, (typeof weeks)[number]>();
     for (const w of weeks) map.set(String(w.weekStartDate).slice(0, 10), w);
@@ -177,7 +259,8 @@ export default function WeeksPage() {
 
   const currentMonthStr = `${year}-${pad2(month + 1)}`;
 
-  const monthUserStats = users.map(u => {
+  // 👇 ИЗМЕНЕНО: месячная статистика только по summaryUsers
+  const monthUserStats = summaryUsers.map((u) => {
     const rate = u.hourlyRate ? Number(u.hourlyRate) : 0;
     let monthHours = 0;
     let monthShiftsCount = 0;
@@ -185,31 +268,57 @@ export default function WeeksPage() {
     for (const w of weeks) {
       if (!w.weekStartDate.startsWith(currentMonthStr)) continue;
       const shifts = w.shifts?.filter((s: any) => s.userId === u.id) || [];
-      monthHours += shifts.reduce((acc: number, s: any) => acc + calcHours(s.startTime, s.endTime), 0);
+      monthHours += shifts.reduce(
+        (acc: number, s: any) => acc + calcHours(s.startTime, s.endTime),
+        0
+      );
       monthShiftsCount += shifts.length;
     }
 
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const isVacation = vacations.some(v => v.userId === u.id && v.startDate <= todayStr && v.endDate >= todayStr);
-    const isSick = sickLeaves.some(s => s.userId === u.id && s.startDate <= todayStr && s.endDate >= todayStr);
+    const isVacation = vacations.some(
+      (v) => v.userId === u.id && v.startDate <= todayStr && v.endDate >= todayStr
+    );
+    const isSick = sickLeaves.some(
+      (s) => s.userId === u.id && s.startDate <= todayStr && s.endDate >= todayStr
+    );
     const status = isSick ? "Больничный" : isVacation ? "Отпуск" : "Свободен";
 
-    return { ...u, monthHours, monthShiftsCount, monthCost: monthHours * rate, status };
+    return {
+      ...u,
+      monthHours,
+      monthShiftsCount,
+      monthCost: monthHours * rate,
+      status,
+    };
   });
 
-  const totalMonthShifts = monthUserStats.reduce((acc, u) => acc + u.monthShiftsCount, 0);
-  const totalMonthCost = monthUserStats.reduce((acc, u) => acc + u.monthCost, 0);
+  const totalMonthShifts = monthUserStats.reduce(
+    (acc, u) => acc + u.monthShiftsCount,
+    0
+  );
+  const totalMonthCost = monthUserStats.reduce(
+    (acc, u) => acc + u.monthCost,
+    0
+  );
 
-  const prevMonth = () => { if (month === 0) { setMonth(11); setYear((y) => y - 1); } else setMonth((m) => m - 1); };
-  const nextMonth = () => { if (month === 11) { setMonth(0); setYear((y) => y + 1); } else setMonth((m) => m + 1); };
-  const goToday = () => { setYear(today.getUTCFullYear()); setMonth(today.getUTCMonth()); };
+  const prevMonth = () => {
+    if (month === 0) { setMonth(11); setYear((y) => y - 1); }
+    else setMonth((m) => m - 1);
+  };
+  const nextMonth = () => {
+    if (month === 11) { setMonth(0); setYear((y) => y + 1); }
+    else setMonth((m) => m + 1);
+  };
+  const goToday = () => {
+    setYear(today.getUTCFullYear());
+    setMonth(today.getUTCMonth());
+  };
 
   const ensureLocation = async (): Promise<boolean> => {
     if (!activeLocationId) {
-      await alertDialog(
-        "Сначала выберите или создайте точку в разделе «Точки»",
-        { title: "Нет активной точки", variant: "error" }
-      );
+      await alertDialog("Сначала выберите или создайте точку в разделе «Точки»", {
+        title: "Нет активной точки", variant: "error",
+      });
       return false;
     }
     return true;
@@ -227,9 +336,7 @@ export default function WeeksPage() {
       navigate(`/weeks/${week.id}`);
     } catch (e: any) {
       alert(e.response?.data?.error ?? "Ошибка создания");
-    } finally {
-      setCreating(false);
-    }
+    } finally { setCreating(false); }
   };
 
   const onWeekClick = async (weekStart: Date) => {
@@ -248,9 +355,7 @@ export default function WeeksPage() {
         navigate(`/weeks/${week.id}`);
       } catch (e: any) {
         alertDialog(e.response?.data?.error ?? "Ошибка создания");
-      } finally {
-        setCreating(false);
-      }
+      } finally { setCreating(false); }
     }
   };
 
@@ -295,7 +400,9 @@ export default function WeeksPage() {
 
       const origStart = new Date(clipboardWeek.startDate + "T00:00:00Z");
       const newStart = new Date(targetStr + "T00:00:00Z");
-      const diffDays = Math.round((newStart.getTime() - origStart.getTime()) / (1000 * 60 * 60 * 24));
+      const diffDays = Math.round(
+        (newStart.getTime() - origStart.getTime()) / (1000 * 60 * 60 * 24)
+      );
 
       let successCount = 0;
       for (const shift of clipboardWeek.shifts) {
@@ -333,85 +440,144 @@ export default function WeeksPage() {
       <NavBar />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+        {/* Заголовок */}
         <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
           <div>
             <h1 className="text-3xl font-bold text-slate-900">Недели</h1>
-            <p className="text-sm text-slate-500 mt-1">Нажмите на неделю — откроется график.</p>
+            <p className="text-sm text-slate-500 mt-1">
+              Нажмите на неделю — откроется график.
+            </p>
           </div>
-          <button onClick={() => setShowForm((v) => !v)} className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2.5 rounded-xl hover:bg-brand-700 text-sm font-medium shadow-sm hover:shadow transition-all">
-            {showForm ? <><X className="w-4 h-4" /> Отмена</> : <><Plus className="w-4 h-4" /> Новая неделя</>}
+          <button
+            onClick={() => setShowForm((v) => !v)}
+            className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2.5 rounded-xl hover:bg-brand-700 text-sm font-medium shadow-sm hover:shadow transition-all"
+          >
+            {showForm ? (
+              <><X className="w-4 h-4" /> Отмена</>
+            ) : (
+              <><Plus className="w-4 h-4" /> Новая неделя</>
+            )}
           </button>
         </div>
 
+        {/* Форма создания недели */}
         {showForm && (
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6 animate-fade-in">
-            <h3 className="font-semibold text-slate-900 mb-1">Создать новую неделю</h3>
-            <p className="text-sm text-slate-500 mb-4">Любая дата будет приведена к понедельнику</p>
+            <h3 className="font-semibold text-slate-900 mb-1">
+              Создать новую неделю
+            </h3>
+            <p className="text-sm text-slate-500 mb-4">
+              Любая дата будет приведена к понедельнику
+            </p>
             <div className="flex gap-3 items-end flex-wrap">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Дата недели</label>
-                <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} className="!w-48" />
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                  Дата недели
+                </label>
+                <input
+                  type="date"
+                  value={newDate}
+                  onChange={(e) => setNewDate(e.target.value)}
+                  className="!w-48"
+                />
               </div>
-              <button onClick={onCreate} disabled={creating} className="inline-flex items-center gap-2 bg-brand-600 text-white px-5 py-2.5 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium shadow-sm hover:shadow transition-all">
+              <button
+                onClick={onCreate}
+                disabled={creating}
+                className="inline-flex items-center gap-2 bg-brand-600 text-white px-5 py-2.5 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium shadow-sm hover:shadow transition-all"
+              >
                 {creating ? "Создание..." : "Создать"}
               </button>
-              <button type="button" onClick={() => setShowForm(false)} className="px-5 py-2.5 rounded-xl text-slate-600 hover:bg-slate-100 text-sm font-medium transition-colors">
+              <button
+                type="button"
+                onClick={() => setShowForm(false)}
+                className="px-5 py-2.5 rounded-xl text-slate-600 hover:bg-slate-100 text-sm font-medium transition-colors"
+              >
                 Отмена
               </button>
             </div>
           </div>
         )}
 
-        {/* МЕСЯЧНАЯ СВОДКА */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm mb-6 overflow-hidden">
-          <button onClick={() => setShowSummary(!showSummary)} className="w-full flex items-center justify-between p-3.5 bg-slate-50 hover:bg-slate-100 transition-colors">
-            <div className="flex items-center gap-4">
-              <span className="font-semibold text-slate-800 flex items-center gap-2"><Users className="w-4 h-4 text-slate-500" /> Сводка за месяц ({MONTHS_RU[month]} {year})</span>
-            </div>
-            {showSummary ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
-          </button>
+        {/* ═══════════════════════════════════════════════════ */}
+        {/* СВОДКА ЗА МЕСЯЦ — только активная точка             */}
+        {/* свёрнута по умолчанию, фильтры внутри,              */}
+        {/* цвета должностей из настроек                        */}
+        {/* ═══════════════════════════════════════════════════ */}
+        <div className="mb-6">
+          <div className="mb-2 flex items-center gap-2">
+            <Users className="w-4 h-4 text-slate-500" />
+            <span className="font-semibold text-slate-800 text-sm">
+              Сводка за месяц ({MONTHS_RU[month]} {year})
+            </span>
+            <span className="ml-auto text-xs text-slate-500">
+              {totalMonthShifts} смен · {formatMoney(totalMonthCost)}
+            </span>
+          </div>
+          <TeamSummary
+            users={summaryUsers}
+            areas={summaryAreas}
+            positions={positionsForSummary}
+            getStat={(userId) => {
+              const u = monthUserStats.find((x) => x.id === userId);
+              return {
+                hours: Math.round((u?.monthHours ?? 0) * 10) / 10,
+                shifts: u?.monthShiftsCount ?? 0,
+                cost: u?.monthCost ?? 0,
+              };
+            }}
+            statLabel="Месяц"
+            statMax={160}
+            // 👇 ИЗМЕНЕНО: прозрачности из настроек организации
+            headerOpacity={org?.positionHeaderOpacity ?? 70}
+            rowOpacity={org?.positionRowOpacity ?? 20}
 
-          {showSummary && (
-            <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {monthUserStats.map(u => (
-                <div key={u.id} className={`px-4 py-3 rounded-xl border flex flex-col shadow-sm transition-all ${u.status === 'Больничный' ? 'bg-rose-50 border-rose-200' : u.status === 'Отпуск' ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-200'}`}>
-                  <div className="flex justify-between items-start mb-2">
-                    <div className="flex flex-col truncate pr-2">
-                      <span className="font-semibold text-slate-900 text-sm truncate">{u.name}</span>
-                      <span className="text-slate-500 text-[11px] truncate">{u.position || "—"}</span>
-                    </div>
-                    <div className={`text-[10px] font-bold uppercase tracking-wider shrink-0 ${u.status === 'Свободен' ? 'text-emerald-600' : 'text-rose-600'}`}>{u.status}</div>
-                  </div>
-
-                  <div className="flex justify-between text-[11px] text-slate-500 font-medium mb-0.5">
-                    <span>Месяц ({Math.round(u.monthHours)} ч • {u.monthShiftsCount} см.)</span>
-                    <span className="text-slate-700">{formatMoney(u.monthCost)}</span>
-                  </div>
-                  <ProgressBar current={u.monthHours} max={160} />
-                </div>
-              ))}
-            </div>
-          )}
+          />
         </div>
 
-        {/* НАВИГАЦИЯ ПО МЕСЯЦАМ */}
+        {/* Навигация по месяцам + счётчики */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-3 mb-4 flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
-            <button onClick={prevMonth} className="p-2 rounded-lg hover:bg-slate-100 text-slate-600 transition-colors"><ChevronLeft className="w-4 h-4" /></button>
-            <div className="font-semibold text-slate-900 min-w-[160px] text-center">{MONTHS_RU[month]} {year}</div>
-            <button onClick={nextMonth} className="p-2 rounded-lg hover:bg-slate-100 text-slate-600 transition-colors"><ChevronRight className="w-4 h-4" /></button>
-            <button onClick={goToday} className="ml-2 text-xs px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 font-medium transition-colors">Сегодня</button>
+            <button
+              onClick={prevMonth}
+              className="p-2 rounded-lg hover:bg-slate-100 text-slate-600 transition-colors"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <div className="font-semibold text-slate-900 min-w-[160px] text-center">
+              {MONTHS_RU[month]} {year}
+            </div>
+            <button
+              onClick={nextMonth}
+              className="p-2 rounded-lg hover:bg-slate-100 text-slate-600 transition-colors"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            <button
+              onClick={goToday}
+              className="ml-2 text-xs px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 font-medium transition-colors"
+            >
+              Сегодня
+            </button>
           </div>
 
           <div className="flex items-center gap-4 pr-2">
             <div className="flex flex-col items-end">
-              <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wide">Смен за месяц</span>
-              <span className="text-lg font-bold text-slate-900 leading-tight">{totalMonthShifts}</span>
+              <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wide">
+                Смен за месяц
+              </span>
+              <span className="text-lg font-bold text-slate-900 leading-tight">
+                {totalMonthShifts}
+              </span>
             </div>
             <div className="w-px h-8 bg-slate-200" />
             <div className="flex flex-col items-end">
-              <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wide">Затраты за месяц</span>
-              <span className="text-lg font-bold text-emerald-600 leading-tight">{formatMoney(totalMonthCost)}</span>
+              <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wide">
+                Затраты за месяц
+              </span>
+              <span className="text-lg font-bold text-emerald-600 leading-tight">
+                {formatMoney(totalMonthCost)}
+              </span>
             </div>
           </div>
         </div>
@@ -419,11 +585,19 @@ export default function WeeksPage() {
         {loading && <p className="text-slate-500 text-sm">Загрузка...</p>}
         {error && <p className="text-red-500 text-sm">{error}</p>}
 
+        {/* Календарь */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="flex bg-slate-50 border-b border-slate-200">
             <div className="flex-1 grid grid-cols-7">
               {WEEKDAYS_RU.map((d, i) => (
-                <div key={d} className={`py-3 text-center text-xs font-medium uppercase tracking-wide ${i >= 5 ? "text-slate-400" : "text-slate-600"}`}>{d}</div>
+                <div
+                  key={d}
+                  className={`py-3 text-center text-xs font-medium uppercase tracking-wide ${
+                    i >= 5 ? "text-slate-400" : "text-slate-600"
+                  }`}
+                >
+                  {d}
+                </div>
               ))}
             </div>
             <div className="w-36 shrink-0 border-l border-slate-200 bg-slate-100/50" />
@@ -446,13 +620,21 @@ export default function WeeksPage() {
 
             const weekShifts = existing?.shifts || [];
             const weekCost = weekShifts.reduce((acc, s: any) => {
-              const u = users.find(x => x.id === s.userId);
-              return acc + (calcHours(s.startTime, s.endTime) * (u?.hourlyRate ? Number(u.hourlyRate) : 0));
+              const u = users.find((x) => x.id === s.userId);
+              return acc + calcHours(s.startTime, s.endTime) * (u?.hourlyRate ? Number(u.hourlyRate) : 0);
             }, 0);
 
             return (
-              <div key={key} onClick={() => onWeekClick(weekStart)} className={`flex w-full border-b border-slate-100 last:border-0 relative text-left transition-colors group cursor-pointer ${hasToday ? "bg-blue-50/60" : "hover:bg-slate-50/70"}`}>
-                {meta && <div className={`absolute left-0 top-0 bottom-0 w-1 ${meta.bar}`} />}
+              <div
+                key={key}
+                onClick={() => onWeekClick(weekStart)}
+                className={`flex w-full border-b border-slate-100 last:border-0 relative text-left transition-colors group cursor-pointer ${
+                  hasToday ? "bg-blue-50/60" : "hover:bg-slate-50/70"
+                }`}
+              >
+                {meta && (
+                  <div className={`absolute left-0 top-0 bottom-0 w-1 ${meta.bar}`} />
+                )}
 
                 <div className="flex-1 grid grid-cols-7">
                   {week.map((d, i) => {
@@ -464,21 +646,44 @@ export default function WeeksPage() {
                     const hasPendingRequest = pendingDates.has(dateStr);
 
                     const dayCost = dayShifts.reduce((acc, s) => {
-                      const u = users.find(x => x.id === s.userId);
-                      return acc + (calcHours(s.startTime, s.endTime) * (u?.hourlyRate ? Number(u.hourlyRate) : 0));
+                      const u = users.find((x) => x.id === s.userId);
+                      return acc + calcHours(s.startTime, s.endTime) * (u?.hourlyRate ? Number(u.hourlyRate) : 0);
                     }, 0);
 
                     return (
-                      <div key={dateStr} className={`relative pt-2 px-1.5 pb-2 flex flex-col border-r border-slate-100 last:border-0 min-h-[85px] ${isToday ? 'bg-blue-100/60' : isWeekend ? "bg-slate-50/40" : ""}`}>
-                        {hasPendingRequest && <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-amber-500 ring-2 ring-white z-10" title="Есть запрос" />}
+                      <div
+                        key={dateStr}
+                        className={`relative pt-2 px-1.5 pb-2 flex flex-col border-r border-slate-100 last:border-0 min-h-[85px] ${
+                          isToday ? "bg-blue-100/60" : isWeekend ? "bg-slate-50/40" : ""
+                        }`}
+                      >
+                        {hasPendingRequest && (
+                          <span
+                            className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-amber-500 ring-2 ring-white z-10"
+                            title="Есть запрос"
+                          />
+                        )}
                         <div className="flex items-center justify-center">
-                          <div className={`text-base font-semibold ${isToday ? "w-7 h-7 rounded-full bg-brand-600 text-white flex items-center justify-center text-sm shadow-sm" : isOtherMonth ? "text-slate-300" : isWeekend ? "text-slate-400" : "text-slate-900"}`}>{d.getUTCDate()}</div>
+                          <div
+                            className={`text-base font-semibold ${
+                              isToday
+                                ? "w-7 h-7 rounded-full bg-brand-600 text-white flex items-center justify-center text-sm shadow-sm"
+                                : isOtherMonth
+                                ? "text-slate-300"
+                                : isWeekend
+                                ? "text-slate-400"
+                                : "text-slate-900"
+                            }`}
+                          >
+                            {d.getUTCDate()}
+                          </div>
                         </div>
                         <ShiftLines shifts={dayShifts} templateColorById={templateColorById} />
 
                         {dayShifts.length > 0 && (
                           <div className="mt-auto pt-1 text-center text-[10px] text-slate-600 leading-tight font-medium">
-                            {dayShifts.length} см. • {new Intl.NumberFormat("ru-RU").format(dayCost)} ₽
+                            {dayShifts.length} см. •{" "}
+                            {new Intl.NumberFormat("ru-RU").format(dayCost)} ₽
                           </div>
                         )}
                       </div>
@@ -486,11 +691,14 @@ export default function WeeksPage() {
                   })}
                 </div>
 
+                {/* Правая колонка: статус + копировать/вставить */}
                 <div className="w-36 shrink-0 border-l border-slate-200 bg-slate-50/80 flex flex-col justify-between items-center px-2 py-2 text-center">
                   <div className="flex items-center justify-center gap-1 w-full mt-1">
                     {meta && StatusIcon ? (
                       <>
-                        <span className={`inline-flex items-center justify-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium shadow-sm ${meta.badge}`}>
+                        <span
+                          className={`inline-flex items-center justify-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium shadow-sm ${meta.badge}`}
+                        >
                           <StatusIcon className="w-3 h-3" />
                           {meta.label}
                         </span>
@@ -542,7 +750,9 @@ export default function WeeksPage() {
 
                 {!existing && !hasToday && (
                   <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                    <span className="text-xs text-slate-500 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full border border-slate-200 shadow-sm">+ Создать неделю</span>
+                    <span className="text-xs text-slate-500 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full border border-slate-200 shadow-sm">
+                      + Создать неделю
+                    </span>
                   </div>
                 )}
               </div>
@@ -550,12 +760,23 @@ export default function WeeksPage() {
           })}
         </div>
 
+        {/* Легенда */}
         <div className="flex items-center gap-4 mt-4 px-1 text-xs text-slate-500 flex-wrap">
-          <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-slate-300" /> Черновик</div>
-          <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-emerald-500" /> Опубликован</div>
-          <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-red-500" /> Заблокирован</div>
-          <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" /> Запрос</div>
-          <div className="flex items-center gap-1.5 ml-4"><div className="w-8 h-1 rounded-full bg-brand-500" /> Полоска = смена</div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-sm bg-slate-300" /> Черновик
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-sm bg-emerald-500" /> Опубликован
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-sm bg-red-500" /> Заблокирован
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" /> Запрос
+          </div>
+          <div className="flex items-center gap-1.5 ml-4">
+            <div className="w-8 h-1 rounded-full bg-brand-500" /> Полоска = смена
+          </div>
         </div>
       </main>
     </div>

@@ -22,6 +22,34 @@
       "when": 1792737844636,
       "tag": "0002_nasty_rocket_racer",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793165405133,
+      "tag": "0003_same_steve_rogers",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793167661017,
+      "tag": "0004_robust_retro_girl",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793171507523,
+      "tag": "0005_sleepy_random",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793173906203,
+      "tag": "0006_lively_siren",
+      "breakpoints": true
     }
   ]
 }

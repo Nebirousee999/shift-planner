@@ -27,6 +27,9 @@ import { locationsRoutes } from "./modules/locations/locations.routes.js";
 import { demoRoutes } from "./modules/demo/demo.routes.js";
 import { paymentsRoutes } from "./modules/payments/payments.routes.js";
 import { webhooksRoutes } from "./modules/webhooks/webhooks.routes.js";
+import { positionsRoutes } from "./modules/positions/positions.routes.js";
+import { areasRoutes } from "./modules/areas/areas.routes.js";
+
 
 const app = Fastify({ logger: true });
 
@@ -66,6 +69,9 @@ await app.register(locationsRoutes, { prefix: "/api/locations" });
 await app.register(demoRoutes, { prefix: "/api/demo" });
 await app.register(paymentsRoutes, { prefix: "/api/payments" });
 await app.register(webhooksRoutes, { prefix: "/api/webhooks" });
+await app.register(positionsRoutes, { prefix: "/api/positions" });
+await app.register(areasRoutes, { prefix: "/api/areas" });
+
 
 const port = Number(process.env.PORT ?? 3001);
 await app.listen({ port, host: "0.0.0.0" });

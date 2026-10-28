@@ -1,0 +1,2 @@
+ALTER TABLE "organizations" ADD COLUMN "position_header_opacity" integer DEFAULT 70 NOT NULL;--> statement-breakpoint
+ALTER TABLE "organizations" ADD COLUMN "position_row_opacity" integer DEFAULT 20 NOT NULL;

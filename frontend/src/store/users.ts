@@ -88,4 +88,11 @@ export const useUsers = create<State>((set) => ({
     set({ items });
     return result;
   },
+
+  bulkUpdate: async (userIds, payload) => {
+    await usersApi.bulkUpdate(userIds, payload);
+    const items = await usersApi.list();
+    set({ items });
+  },
+
 }));

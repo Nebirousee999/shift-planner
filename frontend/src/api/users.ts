@@ -9,7 +9,16 @@ export type TeamUser = {
   position: string | null;
   hourlyRate: string | null;
   createdAt: string;
+  locationIds: string[];
+  areaIds: string[];
 };
+
+export type BulkActionPayload =
+  | { action: "addToLocation"; value: string }
+  | { action: "addToArea"; value: string }
+  | { action: "setPosition"; value: string | null }
+  | { action: "setRate"; value: string | null }
+  | { action: "setRole"; value: "OWNER" | "MANAGER" | "EMPLOYEE" };
 
 export const usersApi = {
   list: async (): Promise<TeamUser[]> => {
@@ -25,6 +34,8 @@ export const usersApi = {
     position?: string;
     hourlyRate?: string;
     phone?: string;
+    locationIds?: string[];
+    areaIds?: string[];
   }): Promise<{ user: TeamUser; tempPassword?: string }> => {
     const { data } = await api.post("/users", input);
     return data;
@@ -38,6 +49,8 @@ export const usersApi = {
       role: "OWNER" | "MANAGER" | "EMPLOYEE";
       position: string | null;
       hourlyRate: string | null;
+      locationIds: string[];
+      areaIds: string[];
     }>
   ): Promise<TeamUser> => {
     const { data } = await api.patch<TeamUser>(`/users/${id}`, input);
@@ -46,6 +59,17 @@ export const usersApi = {
 
   remove: async (id: string): Promise<void> => {
     await api.delete(`/users/${id}`);
+  },
+
+  bulkUpdate: async (
+    userIds: string[],
+    payload: BulkActionPayload
+  ): Promise<{ updated: number; skipped?: number }> => {
+    const { data } = await api.post<{ updated: number }>("/users/bulk", {
+      userIds,
+      ...payload,
+    });
+    return data;
   },
 
   // ─── Импорт из Excel ────────────────────────────────
@@ -90,15 +114,12 @@ export const usersApi = {
     );
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(
-        typeof err.error === "string" ? err.error : "Ошибка импорта"
-      );
+      throw new Error(typeof err.error === "string" ? err.error : "Ошибка импорта");
     }
     return res.json();
   },
 };
 
-// ─── Хелпер: файл → base64 ──────────────────────────
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

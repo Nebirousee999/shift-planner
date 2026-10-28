@@ -21,6 +21,8 @@ export const organizationService = {
     timeTrackingEnabled?: boolean;
     overtimeMultiplier1?: string; // 👈
     overtimeMultiplier2?: string; // 👈
+    positionHeaderOpacity?: number;
+    positionRowOpacity?: number;
   }) {
     const [updated] = await db
       .update(organizations)
@@ -34,6 +36,8 @@ export const organizationService = {
         // 👇 Добавляем сохранение коэффициентов
         ...(input.overtimeMultiplier1 !== undefined && { overtimeMultiplier1: input.overtimeMultiplier1 }),
         ...(input.overtimeMultiplier2 !== undefined && { overtimeMultiplier2: input.overtimeMultiplier2 }),
+        ...(input.positionHeaderOpacity !== undefined && { positionHeaderOpacity: input.positionHeaderOpacity }),
+        ...(input.positionRowOpacity !== undefined && { positionRowOpacity: input.positionRowOpacity }),
       })
       .where(eq(organizations.id, input.orgId))
       .returning();

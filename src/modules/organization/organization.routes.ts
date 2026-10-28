@@ -12,6 +12,8 @@ const updateSchema = z.object({
   overtimeMultiplier1: z.string().optional(),
   overtimeMultiplier2: z.string().optional(),
   maxLocations: z.number().int().min(1).max(1000).optional(),
+  positionHeaderOpacity: z.number().int().min(0).max(100).optional(),
+  positionRowOpacity: z.number().int().min(0).max(100).optional(),
 });
 
 export async function organizationRoutes(app: FastifyInstance) {
