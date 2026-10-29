@@ -7,7 +7,7 @@ export type MyProfile = {
   email: string;
   phone: string | null;
   role: "OWNER" | "MANAGER" | "EMPLOYEE";
-  position: string | null;       // ← НОВОЕ
+  position: string | null;
   hourlyRate: string | null;
   createdAt: string;
 };
@@ -25,6 +25,43 @@ export type MyShift = {
   weekStatus: "DRAFT" | "PUBLISHED" | "LOCKED" | null;
 };
 
+export type Colleague = {
+  id: string;
+  name: string;
+  email: string;
+  role: "OWNER" | "MANAGER" | "EMPLOYEE";
+  position: string | null;
+};
+
+// ─── Мессенджеры и уведомления ─────────────────────
+export type MessengerProvider = "telegram" | "max";
+
+export type NotificationSettings = {
+  newSchedule: boolean;
+  shiftChanged: boolean;
+  shiftCreated: boolean;
+  shiftChangeApproval: boolean;
+  swapRequest: boolean;
+  vacationReviewed: boolean;
+  sickLeave: boolean;
+  timeOffReviewed: boolean;
+  remindHour: boolean;
+  remindFiveMin: boolean;
+};
+
+export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+  newSchedule: true,
+  shiftChanged: true,
+  shiftCreated: true,
+  shiftChangeApproval: true,
+  swapRequest: true,
+  vacationReviewed: true,
+  sickLeave: true,
+  timeOffReviewed: true,
+  remindHour: true,
+  remindFiveMin: false,
+};
+
 export const meApi = {
   profile: async (): Promise<MyProfile> => {
     const { data } = await api.get<MyProfile>("/me");
@@ -39,17 +76,25 @@ export const meApi = {
     const { data } = await api.get<MyShift[]>(`/me/shifts${qs ? "?" + qs : ""}`);
     return data;
   },
+
   colleagues: async (): Promise<Colleague[]> => {
     const { data } = await api.get<Colleague[]>("/me/colleagues");
     return data;
   },
 
-};
+  bindMessenger: async (input: {
+    provider: MessengerProvider;
+    externalId: string;
+  }): Promise<{ success: boolean }> => {
+    const { data } = await api.post<{ success: boolean }>(
+      "/me/messengers/bind",
+      input
+    );
+    return data;
+  },
 
-export type Colleague = {
-  id: string;
-  name: string;
-  email: string;
-  role: "OWNER" | "MANAGER" | "EMPLOYEE";
-  position: string | null;       // ← НОВОЕ
+  testMessenger: async (): Promise<{ success: boolean }> => {
+    const { data } = await api.get<{ success: boolean }>("/me/test-messenger");
+    return data;
+  },
 };
