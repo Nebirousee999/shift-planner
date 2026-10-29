@@ -41,6 +41,8 @@ export const organizations = pgTable("organizations", {
   taxRate: numeric("tax_rate").default("13").notNull(),
   positionHeaderOpacity: integer("position_header_opacity").default(70).notNull(),
   positionRowOpacity: integer("position_row_opacity").default(20).notNull(),
+  requireShiftApproval: boolean("require_shift_approval").default(true).notNull(),
+  disciplineEditWindowDays: integer("discipline_edit_window_days").default(3).notNull(),
 });
 
 // ─── LOCATIONS ─────────────────────────────────────────
@@ -237,14 +239,25 @@ export const shiftChangeRequests = pgTable("shift_change_requests", {
 
 // ─── SICK LEAVES ───────────────────────────────────────
 export const sickLeaves = pgTable("sick_leaves", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  orgId: uuid("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: uuid("org_id")
+    .references(() => organizations.id, { onDelete: "cascade" })
+    .notNull(),
+  userId: uuid("user_id")
+    .references(() => users.id, { onDelete: "cascade" })
+    .notNull(),
   startDate: date("start_date").notNull(),
   endDate: date("end_date").notNull(),
   comment: varchar("comment", { length: 255 }),
-  status: varchar("status", { length: 20 }).notNull().default("APPROVED"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  status: varchar("status", { length: 20 }).default("APPROVED").notNull(),
+
+  // ── Timestamps (with timezone!) ───────────────────────
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }),   // null = ещё не редактировали
+
+  // ── Кто создал / редактировал ────────────────────────
+  createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  updatedById: uuid("updated_by_id").references(() => users.id, { onDelete: "set null" }),
 });
 
 // ─── PAYMENTS (платежи ЮKassa) ─────────────────────────

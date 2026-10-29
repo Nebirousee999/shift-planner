@@ -16,7 +16,7 @@ import type { TeamUser } from "../api/users";
 import type { Area } from "../api/areas";
 import { alertDialog, confirmDialog } from "../store/dialogs";
 import { withAlpha } from "../lib/colors";
-
+import { useDragScroll } from "../hooks/useDragScroll";
 const ROLE_LABELS: Record<string, string> = {
   OWNER: "Владелец",
   MANAGER: "Менеджер",
@@ -126,6 +126,12 @@ export default function TeamPage() {
     setSelected(new Set());
     setBulkAction("");
     setBulkValue("");
+    // 👇 сбрасываем фильтры, чтобы в матрице не было «скрытой» фильтрации
+    setSearch("");
+    setFilterLocation("");
+    setFilterArea("");
+    setFilterPosition("");
+    setFilterRole("");
     if (mode === "matrix") setEditMode(false);
     if (mode === "groups") {
       setMatrixEditMode(false);
@@ -143,10 +149,10 @@ export default function TeamPage() {
     }
   };
 
+  // Локации текущей выбранной точки (без чужого контекста)
   const filterAreasAvailable = useMemo(() => {
-    const src = filterLocation
-      ? areas.filter((a) => a.locationId === filterLocation)
-      : areas;
+    if (!filterLocation) return [];
+    const src = areas.filter((a) => a.locationId === filterLocation);
     const seen = new Set<string>();
     return src.filter((a) => {
       const key = a.name.toLowerCase().trim();
@@ -156,25 +162,65 @@ export default function TeamPage() {
     });
   }, [areas, filterLocation]);
 
+
+
+  // 👇 Должности, доступные для выбранной точки/локации
+  const availablePositions = useMemo(() => {
+    if (!filterLocation && !filterArea) return positions;
+
+    const namesInFilter = new Set<string>();
+    for (const u of items) {
+      if (!u.position) continue;
+      if (filterArea) {
+        if (!(u.areaIds ?? []).includes(filterArea)) continue;
+      } else if (filterLocation) {
+        if (!(u.locationIds ?? []).includes(filterLocation)) continue;
+      }
+      namesInFilter.add(u.position);
+    }
+    return positions.filter((p) => namesInFilter.has(p.name));
+  }, [positions, items, filterLocation, filterArea]);
+
+  // 👇 Если выбранная должность исчезла из доступных — сбросить
+  useEffect(() => {
+    if (filterPosition && !availablePositions.some((p) => p.name === filterPosition)) {
+      setFilterPosition("");
+    }
+  }, [availablePositions, filterPosition]);
+
+
+
+
+  // Все локации, сгруппированные по точкам (для dropdown, когда точка не выбрана)
+  const filterAreasGrouped = useMemo(() => {
+    const map = new Map<string, { id: string; name: string }[]>();
+    for (const loc of locations) {
+      const list = areas
+        .filter((a) => a.locationId === loc.id)
+        .reduce<{ id: string; name: string }[]>((acc, a) => {
+          const key = a.name.toLowerCase().trim();
+          if (acc.some((x) => x.name.toLowerCase().trim() === key)) return acc;
+          acc.push({ id: a.id, name: a.name });
+          return acc;
+        }, []);
+      if (list.length > 0) map.set(loc.id, list);
+    }
+    return map;
+  }, [areas, locations]);
+
   // 👇 При выборе локации — автовыбор её точки (если не выбрана или другая)
+  // Выбор локации — всегда сбрасываем локацию (она могла быть из другой точки)
+  const handleFilterLocationChange = (locId: string) => {
+    setFilterLocation(locId);
+    setFilterArea(""); // 👈 всегда сбрасываем — самые предсказуемые ожидания
+  };
+
+  // Выбор локации (помещения) — автовыбор точки
   const handleFilterAreaChange = (areaId: string) => {
     setFilterArea(areaId);
     if (!areaId) return;
     const area = areas.find((a) => a.id === areaId);
-    if (area && area.locationId !== filterLocation) {
-      setFilterLocation(area.locationId);
-    }
-  };
-
-  // 👇 При смене точки — если локация не из неё, сбросить
-  const handleFilterLocationChange = (locId: string) => {
-    setFilterLocation(locId);
-    if (filterArea) {
-      const area = areas.find((a) => a.id === filterArea);
-      if (!area || area.locationId !== locId) {
-        setFilterArea("");
-      }
-    }
+    if (area) setFilterLocation(area.locationId);
   };
 
 
@@ -235,8 +281,14 @@ export default function TeamPage() {
     for (const a of areas) areaLocMap.set(a.id, a.locationId);
 
     for (const u of filtered) {
-      const locIds: (string | null)[] =
-        u.locationIds && u.locationIds.length > 0 ? u.locationIds : [null];
+      // 👇 Если выбрана точка — показываем сотрудника ТОЛЬКО в её группе,
+      // даже если он привязан к другим точкам.
+      let locIds: (string | null)[] = [];
+      if (filterLocation) {
+        locIds = [filterLocation];
+      } else {
+        locIds = u.locationIds && u.locationIds.length > 0 ? u.locationIds : [null];
+      }
 
       for (const locId of locIds) {
         const lKey = locId ?? "__noLoc__";
@@ -261,7 +313,7 @@ export default function TeamPage() {
       }
     }
     return map;
-  }, [filtered, areas]);
+  }, [filtered, areas, filterLocation]);
 
   const locationName = (id: string | null): string =>
     id ? locations.find((l) => l.id === id)?.name ?? "—" : "Без точки";
@@ -658,61 +710,91 @@ export default function TeamPage() {
           </div>
         )}
 
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 mb-4 flex flex-wrap gap-3 items-center">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Поиск по имени, email, должности..." className="!pl-9" />
-          </div>
-          <select
-            value={filterLocation}
-            onChange={(e) => handleFilterLocationChange(e.target.value)}
-            className="!w-auto"
-          >
-            <option value="">Все точки</option>
-            {locations.map((l) => (
-              <option key={l.id} value={l.id}>{l.name}</option>
-            ))}
-          </select>
-          <select
-            value={filterArea}
-            onChange={(e) => handleFilterAreaChange(e.target.value)}
-            className="!w-auto"
-          >
-            <option value="">Все локации</option>
-            {filterAreasAvailable.map((a) => (
-              <option key={a.id} value={a.id}>{a.name}</option>
-            ))}
-          </select>
-          <select value={filterPosition} onChange={(e) => setFilterPosition(e.target.value)} className="!w-auto">
-            <option value="">Все должности</option>
-            {positions.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
-          </select>
-          <select value={filterRole} onChange={(e) => setFilterRole(e.target.value)} className="!w-auto">
-            <option value="">Все роли</option>
-            <option value="OWNER">Владелец</option>
-            <option value="MANAGER">Менеджер</option>
-            <option value="EMPLOYEE">Сотрудник</option>
-          </select>
-          {anyFilter && (
-            <button
-              onClick={() => {
-                setSearch("");
-                setFilterLocation("");
-                setFilterArea("");
-                setFilterPosition("");
-                setFilterRole("");
-              }}
-              className="text-xs text-slate-500 hover:text-slate-900 inline-flex items-center gap-1"
+        {viewMode === "groups" && (
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 mb-4 flex flex-wrap gap-3 items-center">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Поиск по имени, email, должности..."
+                className="!pl-9"
+              />
+            </div>
+            <select
+              value={filterLocation}
+              onChange={(e) => handleFilterLocationChange(e.target.value)}
+              className="!w-auto"
             >
-              <X className="w-3.5 h-3.5" /> Сбросить
-            </button>
-          )}
-          {viewMode === "groups" && editMode && (
-            <button onClick={() => selectAll(filtered)} className="ml-auto text-xs text-brand-600 hover:text-brand-700 font-medium px-2 py-1 rounded hover:bg-brand-50">
-              Выделить всех ({filtered.length})
-            </button>
-          )}
-        </div>
+              <option value="">Все точки</option>
+              {locations.map((l) => (
+                <option key={l.id} value={l.id}>{l.name}</option>
+              ))}
+            </select>
+            <select
+              value={filterArea}
+              onChange={(e) => handleFilterAreaChange(e.target.value)}
+              className="!w-auto"
+              disabled={!filterLocation}
+              title={!filterLocation ? "Сначала выберите точку" : ""}
+            >
+              <option value="">
+                {filterLocation ? "Все локации" : "— Сначала выберите точку —"}
+              </option>
+              {filterLocation
+                ? filterAreasAvailable.map((a) => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))
+                : null}
+            </select>
+            <select
+              value={filterPosition}
+              onChange={(e) => setFilterPosition(e.target.value)}
+              className="!w-auto"
+              disabled={!filterLocation && !filterArea}
+              title={!filterLocation && !filterArea ? "Сначала выберите точку или локацию" : ""}
+            >
+              <option value="">
+                {filterLocation || filterArea ? "Все должности" : "— Выберите точку —"}
+              </option>
+              {availablePositions.map((p) => (
+                <option key={p.id} value={p.name}>{p.name}</option>
+              ))}
+            </select>
+            <select
+              value={filterRole}
+              onChange={(e) => setFilterRole(e.target.value)}
+              className="!w-auto"
+            >
+              <option value="">Все роли</option>
+              <option value="OWNER">Владелец</option>
+              <option value="MANAGER">Менеджер</option>
+              <option value="EMPLOYEE">Сотрудник</option>
+            </select>
+            {anyFilter && (
+              <button
+                onClick={() => {
+                  setSearch("");
+                  setFilterLocation("");
+                  setFilterArea("");
+                  setFilterPosition("");
+                  setFilterRole("");
+                }}
+                className="text-xs text-slate-500 hover:text-slate-900 inline-flex items-center gap-1"
+              >
+                <X className="w-3.5 h-3.5" /> Сбросить
+              </button>
+            )}
+            {editMode && (
+              <button
+                onClick={() => selectAll(filtered)}
+                className="ml-auto text-xs text-brand-600 hover:text-brand-700 font-medium px-2 py-1 rounded hover:bg-brand-50"
+              >
+                Выделить всех ({filtered.length})
+              </button>
+            )}
+          </div>
+        )}
 
         {viewMode === "groups" && editMode && (
           <div className="sticky top-[100px] z-20 bg-white border-2 border-brand-300 rounded-2xl p-3 mb-4 flex items-center gap-3 flex-wrap shadow-lg">
@@ -982,6 +1064,7 @@ function MatrixView({
   onCancelEdit: () => void;
   onApply: () => void;
 }) {
+  const dragScroll = useDragScroll<HTMLDivElement>();
   const locationsWithAreas = useMemo(
     () => locations.filter((l) => areas.some((a) => a.locationId === l.id)),
     [locations, areas]
@@ -1059,7 +1142,15 @@ function MatrixView({
         </div>
       )}
 
-      <div className="overflow-auto max-h-[calc(100vh-220px)]">
+      <div
+        ref={dragScroll.ref}
+        onMouseDown={dragScroll.onMouseDown}
+        onMouseLeave={dragScroll.onMouseLeave}
+        onMouseUp={dragScroll.onMouseUp}
+        onMouseMove={dragScroll.onMouseMove}
+        className="overflow-auto max-h-[55vh]"
+        style={dragScroll.style}
+      >
         <table className="w-full border-separate border-spacing-0 text-xs">
           <thead className="sticky top-0 z-30">
             <tr>

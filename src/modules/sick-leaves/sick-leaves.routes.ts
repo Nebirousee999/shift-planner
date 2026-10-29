@@ -19,10 +19,35 @@ export async function sickLeavesRoutes(app: FastifyInstance) {
       endDate: z.string().regex(dateRegex),
       comment: z.string().max(255).optional(),
     }).safeParse(req.body);
-    
+
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
-    const { orgId } = req.user!;
-    return sickLeavesService.create({ orgId, ...parsed.data });
+
+    const { orgId, sub: requesterId } = req.user!;
+    return sickLeavesService.create({
+      orgId,
+      createdById: requesterId,
+      ...parsed.data,
+    });
+  });
+
+  app.patch<{ Params: { id: string } }>("/:id", async (req, reply) => {
+    const parsed = z.object({
+      startDate: z.string().regex(dateRegex).optional(),
+      endDate: z.string().regex(dateRegex).optional(),
+      comment: z.string().max(255).nullable().optional(),
+    }).safeParse(req.body);
+
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+
+    const { orgId, sub: requesterId } = req.user!;
+    const updated = await sickLeavesService.update({
+      id: req.params.id,
+      orgId,
+      updatedById: requesterId,
+      ...parsed.data,
+    });
+    if (!updated) return reply.code(404).send({ error: "Больничный не найден" });
+    return updated;
   });
 
   app.delete<{ Params: { id: string } }>("/:id", async (req, reply) => {

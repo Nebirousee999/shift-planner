@@ -9,7 +9,6 @@ import {
 import { messengerService } from "../../lib/messenger.service.js";
 
 export const shiftChangeRequestsService = {
-  // Все запросы организации (для менеджера)
   async list(orgId: string) {
     const rows = await db
       .select()
@@ -36,7 +35,6 @@ export const shiftChangeRequestsService = {
     }));
   },
 
-  // Входящие запросы ко мне (я должен согласовать)
   async incoming(userId: string) {
     const rows = await db
       .select()
@@ -58,7 +56,6 @@ export const shiftChangeRequestsService = {
     }));
   },
 
-  // Исходящие запросы от меня
   async outgoing(userId: string) {
     return db
       .select()
@@ -89,6 +86,11 @@ export const shiftChangeRequestsService = {
     if (req.targetUserId !== userId) throw new Error("NOT_FOR_YOU");
     if (req.status !== "PENDING") throw new Error("NOT_PENDING");
 
+    const nowStr = new Date().toLocaleString("ru-RU");
+    const createdStr = req.createdAt
+      ? new Date(req.createdAt).toLocaleString("ru-RU")
+      : "—";
+
     // ─── CREATE — создаём новую смену ───
     if (req.kind === "CREATE") {
       if (!req.weekId) throw new Error("NO_WEEK");
@@ -115,13 +117,18 @@ export const shiftChangeRequestsService = {
         .where(eq(shiftChangeRequests.id, id))
         .returning();
 
-      // Отправка уведомления для CREATE
+      // Уведомление сотруднику
       if (req.newUserId) {
         await messengerService.sendToUser(
           req.newUserId,
-          `<b>Новая смена</b>\n\nВам назначена смена на ${req.newShiftDate} (${req.newStartTime}–${req.newEndTime}).`
+          `<b>Новая смена</b>\n\nВам назначена смена на ${req.newShiftDate} (${req.newStartTime}–${req.newEndTime}).\n\nСоздано: ${createdStr}\nСогласовано: ${nowStr}`
         );
       }
+      // Уведомление инициатору
+      await messengerService.sendToUser(
+        req.requestedBy,
+        `<b>Смена согласована</b>\n\nСотрудник согласовал назначение смены на ${req.newShiftDate}.\n\nСоздано: ${createdStr}\nСогласовано: ${nowStr}`
+      );
 
       return updated;
     }
@@ -145,13 +152,18 @@ export const shiftChangeRequestsService = {
       .where(eq(shiftChangeRequests.id, id))
       .returning();
 
-    // Отправка уведомления для UPDATE (до return!)
+    // Уведомление сотруднику (чью смену меняли)
     if (req.newUserId) {
       await messengerService.sendToUser(
         req.newUserId,
-        `<b>Смена изменена</b>\n\nВаша смена перенесена на ${req.newShiftDate} (${req.newStartTime}–${req.newEndTime}).`
+        `<b>Смена изменена</b>\n\nВаша смена перенесена на ${req.newShiftDate} (${req.newStartTime}–${req.newEndTime}).\n\nСоздано: ${createdStr}\nСогласовано: ${nowStr}`
       );
     }
+    // Уведомление инициатору (менеджеру)
+    await messengerService.sendToUser(
+      req.requestedBy,
+      `<b>Изменение согласовано</b>\n\nСотрудник согласовал изменение смены на ${req.newShiftDate}.\n\nСоздано: ${createdStr}\nСогласовано: ${nowStr}`
+    );
 
     return updated;
   },
@@ -170,6 +182,17 @@ export const shiftChangeRequestsService = {
       .set({ status: "REJECTED", reviewedAt: new Date() })
       .where(eq(shiftChangeRequests.id, id))
       .returning();
+
+    const nowStr = new Date().toLocaleString("ru-RU");
+    const createdStr = req.createdAt
+      ? new Date(req.createdAt).toLocaleString("ru-RU")
+      : "—";
+
+    await messengerService.sendToUser(
+      req.requestedBy,
+      `<b>Изменение отклонено</b>\n\nСотрудник отклонил изменение смены на ${req.newShiftDate}.\n\nСоздано: ${createdStr}\nОтклонено: ${nowStr}`
+    );
+
     return updated;
   },
 

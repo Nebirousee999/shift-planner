@@ -90,11 +90,18 @@ export default function TeamSummary({
   const grouped = useMemo(() => {
     const byArea = new Map<string, Map<string, SummaryUser[]>>();
     const validAreaIds = new Set(areas.map((a) => a.id));
+    
     for (const u of filtered) {
-      const userAreaIds = (u.areaIds ?? []).filter((id) => validAreaIds.has(id));
-      const areaIds: (string | null)[] =
-        userAreaIds.length > 0 ? userAreaIds : [null];
-      for (const areaId of areaIds) {
+      // 👇 Если выбрана локация — показываем сотрудника ТОЛЬКО в её группе
+      let activeAreas: (string | null)[] = [];
+      if (fArea) {
+        activeAreas = [fArea];
+      } else {
+        const userAreaIds = (u.areaIds ?? []).filter((id) => validAreaIds.has(id));
+        activeAreas = userAreaIds.length > 0 ? userAreaIds : [null];
+      }
+
+      for (const areaId of activeAreas) {
         const areaKey = areaId ?? "__noArea__";
         if (!byArea.has(areaKey)) byArea.set(areaKey, new Map());
         const posMap = byArea.get(areaKey)!;
@@ -104,7 +111,7 @@ export default function TeamSummary({
       }
     }
     return byArea;
-  }, [filtered, areas]);
+  }, [filtered, areas, fArea]);
 
   const areaName = (id: string | null) =>
     id ? uniqueAreas.find((a) => a.id === id)?.name ?? "—" : "Без локации";

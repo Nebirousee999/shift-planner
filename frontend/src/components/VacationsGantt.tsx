@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { Vacation } from "../api/vacations";
+import { useDragScroll } from "../hooks/useDragScroll";
 
 const MONTHS_RU = [
   "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
@@ -133,6 +134,8 @@ type Props = {
     payload: { startDate: string; endDate: string }
   ) => Promise<void>;
   onBarClick?: (v: Vacation) => void;
+  /** Текст тултипа на полосе. Если не передан — стандартный. */
+  barTooltip?: (v: Vacation) => string;
 };
 
 export default function VacationsGantt({
@@ -141,7 +144,9 @@ export default function VacationsGantt({
   canEdit = () => false,
   onUpdate,
   onBarClick,
+  barTooltip,
 }: Props) {
+  const dragScroll = useDragScroll<HTMLDivElement>();
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
@@ -190,7 +195,6 @@ export default function VacationsGantt({
       setDragPreview(null);
       if (!ds) return;
 
-      // клик без движения — открыть по клику
       if (!ds.moved) {
         const vac = vacations.find((v) => v.id === ds.vacationId);
         if (vac && onBarClick) onBarClick(vac);
@@ -273,6 +277,7 @@ export default function VacationsGantt({
     });
   }, [users, vacations, days]);
 
+  // busyDays подсвечивает «день с отпуском/больничным» (общая колонка)
   const busyDays = useMemo(() => {
     const set = new Set<number>();
     for (const row of rows) {
@@ -284,6 +289,11 @@ export default function VacationsGantt({
   }, [rows]);
 
   const anyEditable = vacations.some((v) => canEdit(v));
+
+  const defaultTooltip = (v: Vacation): string =>
+    `${formatDateRU(v.startDate)} — ${formatDateRU(v.endDate)}${
+      v.comment ? ` · ${v.comment}` : ""
+    }`;
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -314,16 +324,25 @@ export default function VacationsGantt({
         </div>
       </div>
 
-      <div className={`overflow-x-auto ${dragPreview ? "select-none" : ""}`}>
+      {/* ═══════════ СЕТКА ═══════════ */}
+      <div
+        ref={dragScroll.ref}
+        onMouseDown={dragScroll.onMouseDown}
+        onMouseLeave={dragScroll.onMouseLeave}
+        onMouseUp={dragScroll.onMouseUp}
+        onMouseMove={dragScroll.onMouseMove}
+        className={`overflow-auto max-h-[50vh] ${dragPreview ? "select-none" : ""}`}
+        style={dragScroll.style}
+      >
         <div
-          className="min-w-fit"
-          style={{ width: USER_COL_WIDTH + days.length * CELL_WIDTH }}
+          className="relative"
+          style={{ minWidth: USER_COL_WIDTH + days.length * CELL_WIDTH }}
         >
-          {/* Шапка */}
-          <div className="flex border-b border-slate-200 bg-slate-50 sticky top-0 z-10">
+          {/* ─── Шапка: угол + дни ─── */}
+          <div className="flex sticky top-0 z-30 bg-white">
             <div
-              className="shrink-0 px-4 py-3 font-medium text-xs uppercase tracking-wide text-slate-600 border-r border-slate-200 flex items-center"
-              style={{ width: USER_COL_WIDTH }}
+              className="sticky left-0 z-40 bg-white border-r border-b border-slate-300 px-2 py-2 font-semibold text-xs text-slate-700 flex items-center"
+              style={{ width: USER_COL_WIDTH, minWidth: USER_COL_WIDTH }}
             >
               Сотрудник
             </div>
@@ -331,178 +350,149 @@ export default function VacationsGantt({
               const dow = dayOfWeek(d);
               const isWeekend = dow >= 5;
               const isToday = d === todayStr;
-              const hasVacation = busyDays.has(i);
               return (
                 <div
                   key={d}
-                  className={`shrink-0 flex flex-col items-center justify-center border-r border-slate-200 transition-colors ${
+                  className={`border-r border-b border-slate-300 text-center py-1 ${
                     isToday
-                      ? "bg-brand-100"
-                      : hasVacation
-                      ? "bg-amber-50"
+                      ? "bg-brand-100 text-brand-700"
                       : isWeekend
-                      ? "bg-slate-100/70"
-                      : ""
+                        ? "bg-slate-100 text-rose-600"
+                        : "bg-white text-slate-600"
                   }`}
-                  style={{ width: CELL_WIDTH, height: 48 }}
+                  style={{ width: CELL_WIDTH, minWidth: CELL_WIDTH }}
                 >
-                  <div
-                    className={`text-[10px] uppercase tracking-wide ${
-                      isWeekend ? "text-slate-400" : "text-slate-500"
-                    }`}
-                  >
+                  <div className="text-[9px] opacity-70 leading-none">
                     {WEEKDAYS_SHORT[dow]}
                   </div>
                   <div
-                    className={`text-sm font-semibold ${
-                      isToday
-                        ? "text-brand-700"
-                        : isWeekend
-                        ? "text-slate-400"
-                        : "text-slate-700"
-                    }`}
+                    className={`text-[11px] leading-tight ${isToday ? "font-bold" : "font-semibold"}`}
                   >
-                    {parseInt(d.slice(8), 10)}
+                    {i + 1}
                   </div>
                 </div>
               );
             })}
           </div>
 
-          {/* Строки */}
-          {rows.map(({ user: u, blocks }) => (
+          {/* ─── Строки сотрудников ─── */}
+          {rows.map(({ user, blocks }) => (
             <div
-              key={u.id}
-              className="flex border-b border-slate-100 last:border-0 hover:bg-slate-50/30 transition-colors"
+              key={user.id}
+              className="flex hover:bg-slate-50/40"
               style={{ height: ROW_HEIGHT }}
             >
               <div
-                className="shrink-0 px-4 flex items-center gap-2.5 border-r border-slate-200 bg-white"
-                style={{ width: USER_COL_WIDTH }}
+                className="sticky left-0 z-20 bg-white border-r border-b border-slate-200 px-2 flex items-center gap-2"
+                style={{
+                  width: USER_COL_WIDTH,
+                  minWidth: USER_COL_WIDTH,
+                }}
               >
                 <div
-                  className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold shrink-0 ${avatarColor(
-                    u.id
-                  )}`}
+                  className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-semibold shrink-0 ${avatarColor(user.id)}`}
                 >
-                  {initials(u.name)}
+                  {initials(user.name)}
                 </div>
-                <div className="min-w-0">
-                  <div className="text-sm font-medium text-slate-900 truncate">
-                    {u.name}
-                  </div>
-                </div>
+                <span className="text-xs font-medium text-slate-900 truncate">
+                  {user.name}
+                </span>
               </div>
 
               <div
-                className="relative"
-                style={{ width: days.length * CELL_WIDTH }}
+                className="relative flex"
+                style={{ minWidth: days.length * CELL_WIDTH }}
               >
                 {days.map((d, i) => {
                   const dow = dayOfWeek(d);
                   const isWeekend = dow >= 5;
                   const isToday = d === todayStr;
+                  const hasVacation = busyDays.has(i);
                   return (
                     <div
                       key={d}
-                      className={`absolute inset-y-0 border-r border-slate-100 ${
+                      className={`border-r border-b border-slate-200 ${
                         isToday
-                          ? "bg-brand-50/60"
-                          : isWeekend
-                          ? "bg-slate-50"
-                          : ""
+                          ? "bg-brand-50"
+                          : hasVacation
+                            ? "bg-amber-50/60"
+                            : isWeekend
+                              ? "bg-slate-50"
+                              : ""
                       }`}
-                      style={{ left: i * CELL_WIDTH, width: CELL_WIDTH }}
+                      style={{ width: CELL_WIDTH, minWidth: CELL_WIDTH }}
                     />
                   );
                 })}
 
-                {blocks.map((b, idx) => {
-                  const isDragging = dragPreview?.id === b.vacation.id;
-                  const effStart = isDragging
-                    ? dragPreview!.start
-                    : b.vacation.startDate;
-                  const effEnd = isDragging
-                    ? dragPreview!.end
-                    : b.vacation.endDate;
-                  const effBlock = blockFromRange(
-                    b.vacation,
-                    effStart,
-                    effEnd,
-                    days
-                  );
-                  if (!effBlock) return null;
-
+                {blocks.map((b) => {
+                  const preview =
+                    dragPreview?.id === b.vacation.id ? dragPreview : null;
+                  const previewBlock = preview
+                    ? blockFromRange(b.vacation, preview.start, preview.end, days)
+                    : null;
+                  const rendered = previewBlock ?? b;
                   const editable = canEdit(b.vacation);
-                  const isPending = b.vacation.status === "PENDING";
 
                   return (
                     <div
-                      key={b.vacation.id + "-" + idx}
+                      key={b.vacation.id}
                       onMouseDown={(e) =>
-                        onBarMouseDown(e, b.vacation, "move")
+                        editable && onBarMouseDown(e, b.vacation, "move")
                       }
-                      className={`absolute rounded-md text-white text-[11px] font-medium flex items-center justify-center transition-shadow shadow-sm group ${barColor(
-                        u.id
-                      )} ${
-                        editable
-                          ? "cursor-grab active:cursor-grabbing hover:ring-2 hover:ring-offset-1 hover:ring-slate-400"
-                          : onBarClick
-                          ? "cursor-pointer hover:ring-2 hover:ring-offset-1 hover:ring-slate-300"
-                          : "cursor-default"
-                      } ${
-                        isDragging
-                          ? "ring-2 ring-offset-1 ring-slate-900 shadow-lg opacity-90"
-                          : ""
-                      } ${
-                        isPending
-                          ? "opacity-60 ring-2 ring-offset-1 ring-amber-400"
-                          : ""
+                      onClick={() => {
+                        if (!editable && onBarClick) onBarClick(b.vacation);
+                      }}
+                      className={`absolute top-1/2 -translate-y-1/2 h-7 rounded-md shadow-sm text-white text-[11px] font-medium flex items-center px-2 select-none overflow-hidden ${barColor(b.vacation.id)} ${
+                        editable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
                       }`}
                       style={{
-                        left: effBlock.startIndex * CELL_WIDTH + 2,
-                        width: effBlock.daysCount * CELL_WIDTH - 4,
-                        top: 8,
-                        height: ROW_HEIGHT - 16,
+                        left: rendered.startIndex * CELL_WIDTH + 2,
+                        width: rendered.daysCount * CELL_WIDTH - 4,
                       }}
-                      title={`${formatDateRU(effStart)} — ${formatDateRU(
-                        effEnd
-                      )}${
-                        b.vacation.comment ? "\n" + b.vacation.comment : ""
-                      }${isPending ? "\n(на согласовании)" : ""}`}
+                      title={
+                        barTooltip
+                          ? barTooltip(b.vacation)
+                          : defaultTooltip(b.vacation)
+                      }
                     >
-                      {effBlock.daysCount >= 4 && (
-                        <span className="truncate px-3 pointer-events-none">
-                          {isPending ? "⏳ " : ""}
-                          {b.vacation.comment || "Отпуск"}
-                        </span>
-                      )}
-
                       {editable && (
                         <>
-                          <div
-                            onMouseDown={(e) =>
-                              onBarMouseDown(e, b.vacation, "resize-start")
-                            }
-                            className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/30 rounded-l-md"
+                          <span
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              onBarMouseDown(e, b.vacation, "resize-start");
+                            }}
+                            className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize bg-black/10 hover:bg-black/25"
                           />
-                          <div
-                            onMouseDown={(e) =>
-                              onBarMouseDown(e, b.vacation, "resize-end")
-                            }
-                            className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/30 rounded-r-md"
+                          <span
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              onBarMouseDown(e, b.vacation, "resize-end");
+                            }}
+                            className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize bg-black/10 hover:bg-black/25"
                           />
                         </>
                       )}
+                      <span className="truncate">
+                        {formatDateRU(rendered.vacation.startDate)}
+                      </span>
                     </div>
                   );
                 })}
               </div>
             </div>
           ))}
+
+          {rows.length === 0 && (
+            <div className="p-8 text-center text-sm text-slate-500">
+              Нет сотрудников для отображения
+            </div>
+          )}
         </div>
       </div>
 
+      {/* ═══════════ Легенда ═══════════ */}
       <div className="flex items-center gap-4 px-4 py-3 border-t border-slate-200 bg-slate-50 text-xs text-slate-500 flex-wrap">
         <div className="flex items-center gap-1.5">
           <div className="w-3 h-3 rounded-sm bg-brand-100" />

@@ -64,6 +64,27 @@
       "when": 1793219559774,
       "tag": "0008_keen_maddog",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793253579998,
+      "tag": "0009_great_eternity",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793255645834,
+      "tag": "0010_daily_tusk",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793256235364,
+      "tag": "0011_simple_mastermind",
+      "breakpoints": true
     }
   ]
 }

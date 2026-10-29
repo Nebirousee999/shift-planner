@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "../../../db/client.js";
-import { organizations } from "../../../db/schema.js";
+import { organizations, users } from "../../../db/schema.js";
+import { messengerService } from "../../lib/messenger.service.js";
 
 export const organizationService = {
   async get(orgId: string) {
@@ -19,12 +20,19 @@ export const organizationService = {
     inn?: string | null;
     legalAddress?: string | null;
     timeTrackingEnabled?: boolean;
-    overtimeMultiplier1?: string; // 👈
-    overtimeMultiplier2?: string; // 👈
+    overtimeMultiplier1?: string;
+    overtimeMultiplier2?: string;
+    taxRate?: string;
     positionHeaderOpacity?: number;
     positionRowOpacity?: number;
-    taxRate?: string;
+    requireShiftApproval?: boolean;
+    disciplineEditWindowDays?: number;
   }) {
+    const [before] = await db
+      .select()
+      .from(organizations)
+      .where(eq(organizations.id, input.orgId));
+
     const [updated] = await db
       .update(organizations)
       .set({
@@ -34,15 +42,37 @@ export const organizationService = {
         ...(input.inn !== undefined && { inn: input.inn }),
         ...(input.legalAddress !== undefined && { legalAddress: input.legalAddress }),
         ...(input.timeTrackingEnabled !== undefined && { timeTrackingEnabled: input.timeTrackingEnabled }),
-        // 👇 Добавляем сохранение коэффициентов
         ...(input.overtimeMultiplier1 !== undefined && { overtimeMultiplier1: input.overtimeMultiplier1 }),
         ...(input.overtimeMultiplier2 !== undefined && { overtimeMultiplier2: input.overtimeMultiplier2 }),
+        ...(input.taxRate !== undefined && { taxRate: input.taxRate }),
         ...(input.positionHeaderOpacity !== undefined && { positionHeaderOpacity: input.positionHeaderOpacity }),
         ...(input.positionRowOpacity !== undefined && { positionRowOpacity: input.positionRowOpacity }),
-        ...(input.taxRate !== undefined && { taxRate: input.taxRate }),
+        ...(input.requireShiftApproval !== undefined && { requireShiftApproval: input.requireShiftApproval }),
+        ...(input.disciplineEditWindowDays !== undefined && { disciplineEditWindowDays: input.disciplineEditWindowDays }),
       })
       .where(eq(organizations.id, input.orgId))
       .returning();
+
+    // 👇 Если изменилось окно редактирования дисциплины — уведомляем сотрудников
+    if (
+      input.disciplineEditWindowDays !== undefined &&
+      before &&
+      before.disciplineEditWindowDays !== input.disciplineEditWindowDays
+    ) {
+      const orgUsers = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.orgId, input.orgId));
+
+      const nowStr = new Date().toLocaleString("ru-RU");
+      for (const u of orgUsers) {
+        await messengerService.sendToUser(
+          u.id,
+          `<b>Изменение правил</b>\n\nРуководитель изменил срок, в течение которого можно вносить дисциплинарные изменения (опоздания, прогулы и т.д.).\nНовый срок: <b>${input.disciplineEditWindowDays} дн.</b>\n\nСоздано: ${nowStr}\n\nНажмите «ОК», чтобы подтвердить.`
+        );
+      }
+    }
+
     return updated;
-  }
+  },
 };

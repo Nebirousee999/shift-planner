@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import {
-  ChevronLeft, ChevronRight, Download, Loader2, CalendarDays, Clock, AlertTriangle,
+  ChevronLeft, ChevronRight, Download, Loader2, CalendarDays, AlertTriangle,
 } from "lucide-react";
 import { timesheetApi, type TimesheetResponse, type TimesheetCellStatus } from "../api/timesheet";
 import { exportApi } from "../api/export";
 import NavBar from "../components/NavBar";
+import { useDragScroll } from "../hooks/useDragScroll";
 
 const MONTHS_RU = [
   "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
@@ -24,6 +25,12 @@ const STATUS_META: Record<Exclude<TimesheetCellStatus, null>, { label: string; b
 
 const fmtMoney = (n: number) => new Intl.NumberFormat("ru-RU").format(n) + " ₽";
 
+// Фиксированные ширины для правых sticky-столбцов
+const LEFT_COL_W = 160;
+const COL_HOURS_W = 70;
+const COL_GROSS_W = 120;
+const COL_NET_W = 120;
+
 export default function TimesheetPage() {
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
@@ -32,6 +39,8 @@ export default function TimesheetPage() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [search, setSearch] = useState("");
+
+  const dragScroll = useDragScroll<HTMLDivElement>();
 
   useEffect(() => {
     setLoading(true);
@@ -59,8 +68,8 @@ export default function TimesheetPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <NavBar />
-      <main className="max-w-[1700px] mx-auto px-2 sm:px-4 py-8">
-        <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
+      <main className="max-w-[1800px] mx-auto px-2 sm:px-4 py-6">
+        <div className="mb-4 flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-3xl font-bold text-slate-900">Табель</h1>
             <p className="text-sm text-slate-500 mt-1">Электронный табель за месяц</p>
@@ -72,7 +81,6 @@ export default function TimesheetPage() {
           </button>
         </div>
 
-        {/* Предупреждение, если учёт выключен */}
         {data && !data.timeTrackingOn && (
           <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3 mb-4 flex items-start gap-2 text-xs text-blue-800">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -108,7 +116,7 @@ export default function TimesheetPage() {
               <div><span className="text-slate-500">Явок:</span> <b className="text-slate-900">{data.totals.attendance}</b></div>
               <div><span className="text-slate-500">Часов:</span> <b className="text-slate-900">{data.totals.hours}</b></div>
               <div><span className="text-slate-500">Начислено:</span> <b className="text-slate-900">{fmtMoney(data.totals.gross)}</b></div>
-              <div><span className="text-slate-500">НДФЛ ({data.taxRate}%):</span> <b className="text-rose-600">{fmtMoney(data.totals.tax)}</b></div>
+              <div><span className="text-slate-500">НДФЛ {data.taxRate}%:</span> <b className="text-rose-600">{fmtMoney(data.totals.tax)}</b></div>
               <div><span className="text-slate-500">К выплате:</span> <b className="text-emerald-600">{fmtMoney(data.totals.net)}</b></div>
             </div>
           )}
@@ -118,37 +126,75 @@ export default function TimesheetPage() {
 
         {data && (
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="overflow-auto max-h-[calc(100vh-260px)]">
-              <table className="border-separate border-spacing-0 text-sm">
+            {/* 👇 drag-scroll обёртка с ограничением высоты */}
+            <div
+              ref={dragScroll.ref}
+              onMouseDown={dragScroll.onMouseDown}
+              onMouseLeave={dragScroll.onMouseLeave}
+              onMouseUp={dragScroll.onMouseUp}
+              onMouseMove={dragScroll.onMouseMove}
+              className="overflow-auto max-h-[55vh]"
+              style={dragScroll.style}
+            >
+              <table className="w-full border-separate border-spacing-0 text-sm">
                 <thead className="sticky top-0 z-20">
                   <tr className="bg-slate-100">
-                    <th className="sticky left-0 z-30 bg-slate-100 border-r border-b border-slate-300 px-3 py-3 text-left font-semibold text-slate-900 min-w-[240px]">
+                    {/* Левый sticky столбец */}
+                    <th
+                      className="sticky left-0 top-0 z-40 bg-slate-100 border-r border-b border-slate-300 px-2 py-2 text-left font-semibold text-slate-900"
+                      style={{ width: LEFT_COL_W, minWidth: LEFT_COL_W, maxWidth: LEFT_COL_W }}
+                    >
                       Сотрудник
                     </th>
-                    <th className="sticky left-[240px] z-30 bg-slate-100 border-r border-b border-slate-300 px-3 py-3 text-left font-semibold text-slate-900 min-w-[170px]">
-                      Должность / тип
-                    </th>
+
+                    {/* Дни */}
                     {Array.from({ length: data.daysInMonth }, (_, i) => i + 1).map((d) => {
                       const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
                       const dow = new Date(dateStr + "T00:00:00Z").getUTCDay();
                       const isWeekend = dow === 0 || dow === 6;
                       return (
                         <th key={d}
-                          className={`border-r border-b border-slate-300 px-1 py-1.5 text-center min-w-[44px] ${
+                          className={`border-r border-b border-slate-300 px-0.5 py-1.5 text-center min-w-[40px] ${
                             isWeekend ? "bg-slate-200 text-rose-600" : "text-slate-700"
                           }`}>
-                          <div className="text-[10px] font-normal opacity-70">{WEEKDAYS_SHORT[dow]}</div>
-                          <div className="text-sm font-bold">{d}</div>
+                          <div className="text-[9px] font-normal opacity-70">{WEEKDAYS_SHORT[dow]}</div>
+                          <div className="text-xs font-bold">{d}</div>
                         </th>
                       );
                     })}
-                    <th className="border-l-2 border-b border-slate-300 px-3 py-3 text-center font-bold text-slate-900 bg-slate-100 min-w-[80px]">
+
+                    {/* Правые sticky столбцы */}
+                    <th
+                      className="sticky bg-slate-100 border-l-2 border-b border-slate-300 px-1 py-2 text-center font-bold text-slate-900 text-xs"
+                      style={{
+                        right: COL_GROSS_W + COL_NET_W,
+                        width: COL_HOURS_W,
+                        minWidth: COL_HOURS_W,
+                        maxWidth: COL_HOURS_W,
+                      }}
+                    >
                       Часы
                     </th>
-                    <th className="border-b border-slate-300 px-3 py-3 text-center font-bold text-slate-900 bg-slate-100 min-w-[120px]">
+                    <th
+                      className="sticky bg-slate-100 border-b border-slate-300 px-1 py-2 text-center font-bold text-slate-900 text-xs"
+                      style={{
+                        right: COL_NET_W,
+                        width: COL_GROSS_W,
+                        minWidth: COL_GROSS_W,
+                        maxWidth: COL_GROSS_W,
+                      }}
+                    >
                       Начислено
                     </th>
-                    <th className="border-b border-slate-300 px-3 py-3 text-center font-bold text-slate-900 bg-slate-100 min-w-[120px]">
+                    <th
+                      className="sticky bg-slate-100 border-b border-slate-300 px-1 py-2 text-center font-bold text-slate-900 text-xs"
+                      style={{
+                        right: 0,
+                        width: COL_NET_W,
+                        minWidth: COL_NET_W,
+                        maxWidth: COL_NET_W,
+                      }}
+                    >
                       К выплате
                     </th>
                   </tr>
@@ -156,35 +202,38 @@ export default function TimesheetPage() {
                 <tbody>
                   {filteredUsers.map((u) => (
                     <tr key={u.id} className="hover:bg-slate-50/60">
-                      <td className="sticky left-0 z-10 bg-white border-r border-b border-slate-200 px-3 py-2">
-                        <div className="font-medium text-slate-900 text-sm truncate">{u.name}</div>
-                        {u.employmentType === "GPH" && (
-                          <div className="text-[10px] text-violet-700 font-semibold uppercase">ГПХ</div>
-                        )}
-                      </td>
-                      <td className="sticky left-[240px] z-10 bg-white border-r border-b border-slate-200 px-3 py-2">
-                        <div className="text-xs text-slate-700 truncate">{u.position || "—"}</div>
-                        <div className="text-[11px] text-slate-500">
-                          {u.paymentType === "HOURLY" ? "Почасовой" : "Оклад"} · {u.employmentType === "GPH" ? "ГПХ" : "Штат"}
+                      {/* Левый sticky столбец */}
+                      <td
+                        className="sticky left-0 z-10 bg-white border-r border-b border-slate-200 px-2 py-1.5 align-top"
+                        style={{ width: LEFT_COL_W, minWidth: LEFT_COL_W, maxWidth: LEFT_COL_W }}
+                      >
+                        <div className="font-medium text-slate-900 text-xs truncate" title={u.name}>
+                          {u.name}
+                        </div>
+                        <div className="text-[10px] text-slate-500 truncate mt-0.5">
+                          {u.position || "—"} · {u.paymentType === "HOURLY" ? "почас" : "оклад"}
+                          {u.employmentType === "GPH" && " · ГПХ"}
                         </div>
                       </td>
+
+                      {/* Дни */}
                       {u.days.map((day) => {
                         const s = day.cell.status;
                         const meta = s ? STATUS_META[s] : null;
                         return (
                           <td key={day.date}
-                            className={`border-r border-b border-slate-200 p-1 text-center ${
-                              day.isWeekend && !meta ? "bg-slate-50" : ""
+                            className={`border-r border-b border-slate-200 p-0.5 text-center ${
+                              day.isWeekend && !meta ? "bg-slate-50" : "bg-white"
                             }`}>
                             {meta ? (
                               <div
-                                className={`inline-flex items-center justify-center w-9 h-9 rounded ${meta.bg} ${meta.text} text-xs font-bold`}
+                                className={`inline-flex items-center justify-center w-8 h-8 rounded ${meta.bg} ${meta.text} text-[11px] font-bold`}
                                 title={`${meta.title}${day.cell.hours ? ` · ${day.cell.hours} ч` : ""}${day.cell.templateName ? ` · ${day.cell.templateName}` : ""}`}>
                                 {meta.label}
                               </div>
                             ) : day.cell.templateName ? (
-                              <div className="text-[10px] text-slate-400 truncate" title={day.cell.templateName}>
-                                {day.cell.templateName}
+                              <div className="text-[9px] text-slate-400 truncate max-w-[36px]" title={day.cell.templateName}>
+                                {day.cell.templateName.slice(0, 4)}
                               </div>
                             ) : (
                               <span className="text-slate-300 text-xs">—</span>
@@ -192,31 +241,89 @@ export default function TimesheetPage() {
                           </td>
                         );
                       })}
-                      <td className="border-l-2 border-b border-slate-200 px-3 py-2 text-center font-bold text-slate-900 bg-slate-50/50">
+
+                      {/* Правые sticky столбцы — bg-white (непрозрачные) */}
+                      <td
+                        className="sticky bg-white border-l-2 border-b border-slate-200 px-1 py-1.5 text-center font-bold text-slate-900 text-xs"
+                        style={{
+                          right: COL_GROSS_W + COL_NET_W,
+                          width: COL_HOURS_W,
+                          minWidth: COL_HOURS_W,
+                          maxWidth: COL_HOURS_W,
+                        }}
+                      >
                         {u.totalHours}
                       </td>
-                      <td className="border-b border-slate-200 px-3 py-2 text-right font-semibold text-slate-700 bg-slate-50/50 whitespace-nowrap">
+                      <td
+                        className="sticky bg-white border-b border-slate-200 px-1 py-1.5 text-right font-semibold text-slate-700 text-xs whitespace-nowrap"
+                        style={{
+                          right: COL_NET_W,
+                          width: COL_GROSS_W,
+                          minWidth: COL_GROSS_W,
+                          maxWidth: COL_GROSS_W,
+                        }}
+                      >
                         {fmtMoney(u.totalPayGross)}
                       </td>
-                      <td className="border-b border-slate-200 px-3 py-2 text-right font-bold text-emerald-600 bg-slate-50/50 whitespace-nowrap">
+                      <td
+                        className="sticky bg-white border-b border-slate-200 px-1 py-1.5 text-right font-bold text-emerald-600 text-xs whitespace-nowrap"
+                        style={{
+                          right: 0,
+                          width: COL_NET_W,
+                          minWidth: COL_NET_W,
+                          maxWidth: COL_NET_W,
+                        }}
+                      >
                         {fmtMoney(u.totalPayNet)}
                       </td>
                     </tr>
                   ))}
+
+                  {/* Итоговая строка */}
                   <tr className="bg-slate-100 font-bold">
-                    <td colSpan={2} className="sticky left-0 z-10 bg-slate-100 border-r border-slate-300 px-3 py-3 text-slate-900 text-sm">
-                      ИТОГО · {filteredUsers.length} сотр.
+                    <td
+                      className="sticky left-0 z-10 bg-slate-100 border-r border-slate-300 px-2 py-2 text-slate-900 text-xs"
+                      style={{ width: LEFT_COL_W, minWidth: LEFT_COL_W, maxWidth: LEFT_COL_W }}
+                    >
+                      ИТОГО · {filteredUsers.length}
                     </td>
-                    <td colSpan={data.daysInMonth} className="border-r border-slate-300 px-3 py-3 text-right pr-4 text-slate-500 text-xs font-normal">
+                    <td
+                      colSpan={data.daysInMonth}
+                      className="border-r border-slate-300 px-2 py-2 text-right pr-4 text-slate-500 text-[10px] font-normal"
+                    >
                       Явок: {data.totals.attendance} · НДФЛ {data.taxRate}%: {fmtMoney(data.totals.tax)}
                     </td>
-                    <td className="border-l-2 border-slate-300 px-3 py-3 text-center text-slate-900">
+                    <td
+                      className="sticky bg-slate-100 border-l-2 border-slate-300 px-1 py-2 text-center text-slate-900 text-xs"
+                      style={{
+                        right: COL_GROSS_W + COL_NET_W,
+                        width: COL_HOURS_W,
+                        minWidth: COL_HOURS_W,
+                        maxWidth: COL_HOURS_W,
+                      }}
+                    >
                       {data.totals.hours}
                     </td>
-                    <td className="border-slate-300 px-3 py-3 text-right text-slate-900 whitespace-nowrap">
+                    <td
+                      className="sticky bg-slate-100 border-slate-300 px-1 py-2 text-right text-slate-900 text-xs whitespace-nowrap"
+                      style={{
+                        right: COL_NET_W,
+                        width: COL_GROSS_W,
+                        minWidth: COL_GROSS_W,
+                        maxWidth: COL_GROSS_W,
+                      }}
+                    >
                       {fmtMoney(data.totals.gross)}
                     </td>
-                    <td className="border-slate-300 px-3 py-3 text-right text-emerald-700 whitespace-nowrap">
+                    <td
+                      className="sticky bg-slate-100 border-slate-300 px-1 py-2 text-right text-emerald-700 text-xs whitespace-nowrap"
+                      style={{
+                        right: 0,
+                        width: COL_NET_W,
+                        minWidth: COL_NET_W,
+                        maxWidth: COL_NET_W,
+                      }}
+                    >
                       {fmtMoney(data.totals.net)}
                     </td>
                   </tr>
@@ -231,7 +338,7 @@ export default function TimesheetPage() {
           <span className="font-semibold text-slate-700">Обозначения:</span>
           {Object.entries(STATUS_META).map(([k, m]) => (
             <div key={k} className="flex items-center gap-1.5">
-              <div className={`w-6 h-6 rounded ${m.bg} ${m.text} flex items-center justify-center text-[10px] font-bold`}>
+              <div className={`w-5 h-5 rounded ${m.bg} ${m.text} flex items-center justify-center text-[10px] font-bold`}>
                 {m.label}
               </div>
               {m.title}
@@ -249,7 +356,7 @@ export default function TimesheetPage() {
               <li><b>ВВ (Выходной)</b> — для окладника в выходной (оплачивается окладом).</li>
               <li><b>Б (Больничный)</b> — есть запись больничного.</li>
               <li><b>ОТ (Отпуск)</b> — есть одобренный отпуск.</li>
-              <li><b>НН (Неявка)</b> — причина отсутствия неизвестна (или смена прошла, но отметок нет при включённом учёте).</li>
+              <li><b>НН (Неявка)</b> — причина отсутствия неизвестна.</li>
               <li><b>ПР (Прогул)</b> — отмечено в дисциплине.</li>
             </ul>
           </div>

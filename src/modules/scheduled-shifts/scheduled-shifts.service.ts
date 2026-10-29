@@ -6,6 +6,7 @@ import {
   shiftTemplates,
   users,
   shiftChangeRequests,
+  organizations,
 } from "../../../db/schema.js";
 import { isWithinWeek, toDateStr, shiftsOverlap } from "../../lib/time.js";
 import { messengerService } from "../../lib/messenger.service.js";
@@ -245,9 +246,10 @@ export const scheduledShiftsService = {
       })
       .returning();
 
+    const nowStr = new Date().toLocaleString("ru-RU");
     await messengerService.sendToUser(
       targetUserId,
-      `<b>Новая смена</b>\n\nРуководитель предлагает вам смену на ${input.shiftDate} (${input.startTime}–${input.endTime}).\nЗайдите в приложение, чтобы подтвердить.`
+      `<b>Новая смена</b>\n\nРуководитель предлагает вам смену на ${input.shiftDate} (${input.startTime}–${input.endTime}).\n\nСоздано: ${nowStr}\n\nЗайдите в приложение, чтобы подтвердить.`
     );
 
     return { kind: "requested", request };
@@ -302,7 +304,31 @@ export const scheduledShiftsService = {
       input.startTime === undefined &&
       input.endTime === undefined;
 
-    if (week.status === "DRAFT" || isOnlyDiscipline) {
+    // 👇 Проверка окна редактирования дисциплины
+    if (isOnlyDiscipline) {
+      const [org] = await db
+        .select({ disciplineEditWindowDays: organizations.disciplineEditWindowDays })
+        .from(organizations)
+        .where(eq(organizations.id, input.orgId));
+      const windowDays = org?.disciplineEditWindowDays ?? 3;
+      const shiftDate = new Date(String(shift.shiftDate).slice(0, 10) + "T00:00:00Z");
+      const now = new Date();
+      const diffDays = Math.ceil((now.getTime() - shiftDate.getTime()) / (1000 * 3600 * 24));
+      
+      // Если разница больше окна (и не отрицательная, т.е. смена в прошлом)
+      if (diffDays > windowDays && diffDays >= 0) {
+        throw new Error("DISCIPLINE_WINDOW_CLOSED");
+      }
+    }
+
+    // 👇 Получаем настройку согласования
+    const [orgSettings] = await db
+      .select({ requireShiftApproval: organizations.requireShiftApproval })
+      .from(organizations)
+      .where(eq(organizations.id, input.orgId));
+    const requireApproval = orgSettings?.requireShiftApproval ?? true;
+
+    if (week.status === "DRAFT" || isOnlyDiscipline || !requireApproval) {
       const [updated] = await db
         .update(scheduledShifts)
         .set({
@@ -319,6 +345,19 @@ export const scheduledShiftsService = {
         })
         .where(eq(scheduledShifts.id, input.id))
         .returning();
+
+      // 👇 Если согласование выключено, неделя опубликована и меняется не дисциплина — уведомляем
+      if (week.status === "PUBLISHED" && !requireApproval && shift.userId && !isOnlyDiscipline) {
+        const nowStr = new Date().toLocaleString("ru-RU");
+        const oldStr = `${String(shift.shiftDate).slice(0,10)} ${shift.startTime}–${shift.endTime}`;
+        const newStr = `${input.shiftDate ?? String(shift.shiftDate).slice(0,10)} ${input.startTime ?? shift.startTime}–${input.endTime ?? shift.endTime}`;
+        
+        await messengerService.sendToUser(
+          shift.userId,
+          `<b>Смена изменена</b>\n\nРуководитель изменил вашу смену.\nБыло: ${oldStr}\nСтало: ${newStr}\n\nСоздано: ${nowStr}\n\nНажмите «ОК», чтобы подтвердить.`
+        );
+      }
+
       return { kind: "applied", shift: updated };
     }
 
@@ -361,11 +400,6 @@ export const scheduledShiftsService = {
             endTime: newEnd,
             ...(input.userId !== undefined && { userId: input.userId }),
             ...(input.templateId !== undefined && { templateId: input.templateId }),
-            ...(input.latenessMinutes !== undefined && { latenessMinutes: input.latenessMinutes }),
-            ...(input.earlyLeaveMinutes !== undefined && { earlyLeaveMinutes: input.earlyLeaveMinutes }),
-            ...(input.overtimeMinutes !== undefined && { overtimeMinutes: input.overtimeMinutes }),
-            ...(input.isNoShow !== undefined && { isNoShow: input.isNoShow }),
-            ...(input.isUnknownAbsence !== undefined && { isUnknownAbsence: input.isUnknownAbsence }),
           })
           .where(eq(scheduledShifts.id, input.id))
           .returning();
@@ -383,11 +417,6 @@ export const scheduledShiftsService = {
           endTime: newEnd,
           ...(input.userId !== undefined && { userId: input.userId }),
           ...(input.templateId !== undefined && { templateId: input.templateId }),
-          ...(input.latenessMinutes !== undefined && { latenessMinutes: input.latenessMinutes }),
-          ...(input.earlyLeaveMinutes !== undefined && { earlyLeaveMinutes: input.earlyLeaveMinutes }),
-          ...(input.overtimeMinutes !== undefined && { overtimeMinutes: input.overtimeMinutes }),
-          ...(input.isNoShow !== undefined && { isNoShow: input.isNoShow }),
-          ...(input.isUnknownAbsence !== undefined && { isUnknownAbsence: input.isUnknownAbsence }),
         })
         .where(eq(scheduledShifts.id, input.id))
         .returning();

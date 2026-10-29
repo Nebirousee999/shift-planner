@@ -11,7 +11,7 @@ import { meApi, type MyProfile } from "../api/me";
 import { organizationApi, type Organization } from "../api/organization";
 import { useOrganization } from "../store/organization";
 import NavBar from "../components/NavBar";
-
+import { Check } from "lucide-react"
 const passwordSchema = z
   .object({
     oldPassword: z.string().min(1, "Введите текущий пароль"),
@@ -68,6 +68,8 @@ export default function ProfilePage() {
     taxRate: "13",
     positionHeaderOpacity: 70,
     positionRowOpacity: 20,
+    requireShiftApproval: true,
+    disciplineEditWindowDays: 3,
   });
   const [orgEditing, setOrgEditing] = useState(false);
   const [orgSaving, setOrgSaving] = useState(false);
@@ -102,6 +104,8 @@ export default function ProfilePage() {
             taxRate: (o as any).taxRate ?? "13",
             positionHeaderOpacity: (o as any).positionHeaderOpacity ?? 70,
             positionRowOpacity: (o as any).positionRowOpacity ?? 20,
+            requireShiftApproval: o.requireShiftApproval ?? true,
+            disciplineEditWindowDays: o.disciplineEditWindowDays ?? 3,
           });
           useOrganization.getState().set(o);
         }
@@ -143,6 +147,8 @@ export default function ProfilePage() {
         taxRate: orgForm.taxRate,
         positionHeaderOpacity: orgForm.positionHeaderOpacity,
         positionRowOpacity: orgForm.positionRowOpacity,
+        requireShiftApproval: orgForm.requireShiftApproval,
+        disciplineEditWindowDays: orgForm.disciplineEditWindowDays,
       } as any);
       setOrg(updated);
       useOrganization.getState().set(updated);
@@ -429,6 +435,71 @@ export default function ProfilePage() {
                     </div>
                   </label>
                 </div>
+
+
+                {/* Согласование */}
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+                  <div className="flex items-start gap-3 mb-5">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
+                      <Check className="w-5 h-5 text-emerald-600" />
+                    </div>
+                    <div>
+                      <h2 className="font-semibold text-slate-900">Согласование</h2>
+                      <p className="text-xs text-slate-500">Правила подтверждения изменений</p>
+                    </div>
+                  </div>
+
+                  <form onSubmit={onSaveOrg} className="space-y-5">
+                    <label className={`flex items-start gap-3 p-4 rounded-xl border-2 transition-all cursor-pointer ${
+                      orgForm.requireShiftApproval
+                        ? "border-emerald-200 bg-emerald-50/30"
+                        : "border-slate-200 hover:border-slate-300"
+                    }`}>
+                      <input
+                        type="checkbox"
+                        checked={orgForm.requireShiftApproval}
+                        onChange={(e) => setOrgForm((f) => ({ ...f, requireShiftApproval: e.target.checked }))}
+                        className="!w-4 !h-4 mt-1 !p-0 accent-emerald-600"
+                      />
+                      <div className="flex-1">
+                        <div className="font-medium text-slate-900 text-sm">
+                          Согласовывать изменения смен с сотрудником
+                        </div>
+                        <div className="text-xs text-slate-500 mt-1">
+                          Если включено (по умолчанию): при изменении опубликованного графика сотрудник должен
+                          согласовать изменение. Если выключено: сотрудник получает только уведомление с кнопкой «ОК».
+                        </div>
+                      </div>
+                    </label>
+
+                    <div className="max-w-xs">
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                        Сколько дней можно менять дисциплину
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="90"
+                        value={orgForm.disciplineEditWindowDays}
+                        onChange={(e) => setOrgForm((f) => ({ ...f, disciplineEditWindowDays: Number(e.target.value) }))}
+                        className="w-full"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">
+                        Через N дней после смены менять опоздания/прогулы запрещено. При изменении параметра сотрудники получат уведомление.
+                      </p>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={orgSaving}
+                      className="inline-flex items-center gap-2 bg-brand-600 text-white px-5 py-2.5 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium shadow-sm hover:shadow transition-all"
+                    >
+                      <Save className="w-4 h-4" />
+                      {orgSaving ? "Сохранение..." : "Сохранить"}
+                    </button>
+                  </form>
+                </div>
+
 
                 {/* Переработки */}
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">

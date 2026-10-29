@@ -1,0 +1,2 @@
+ALTER TABLE "organizations" ADD COLUMN "require_shift_approval" boolean DEFAULT true NOT NULL;--> statement-breakpoint
+ALTER TABLE "organizations" ADD COLUMN "discipline_edit_window_days" integer DEFAULT 3 NOT NULL;
