@@ -16,9 +16,11 @@ import {
   AlertCircle,
   Pencil,
   Bell,
+  CalendarX2 // <--- ИМПОРТ
 } from "lucide-react";
 import { meApi, type MyShift, type Colleague } from "../api/me";
 import type { Vacation } from "../api/vacations";
+import { timeOffApi } from "../api/timeOff"; // <--- ИМПОРТ
 import {
   shiftChangeRequestsApi,
   type ShiftChangeRequest,
@@ -29,7 +31,7 @@ import { useVacations } from "../store/vacations";
 import { useAuth } from "../store/auth";
 import { useNotifications } from "../store/notifications";
 import { useOrganization } from "../store/organization";
-import { alertDialog } from "../store/dialogs";
+import { alertDialog, confirmDialog } from "../store/dialogs";
 import NavBar from "../components/NavBar";
 import VacationsGantt from "../components/VacationsGantt";
 import { weekDates, dayLabel, shortDate } from "../lib/dates";
@@ -214,6 +216,22 @@ export default function MySchedulePage() {
     }
   };
 
+  // ─── Отгул ──────────────────────────────────────────
+  const onRequestTimeOff = async (shift: MyShift) => {
+    const ok = await confirmDialog(`Запросить отгул на ${shift.shiftDate}?`, {
+      title: "Отгул",
+      confirmLabel: "Запросить",
+      variant: "default",
+    });
+    if (!ok) return;
+    try {
+      await timeOffApi.create({ shiftId: shift.id, date: shift.shiftDate });
+      await alertDialog("Запрос на отгул отправлен руководителю", { variant: "success" });
+    } catch (e: any) {
+      await alertDialog(e.response?.data?.error ?? "Ошибка", { variant: "error" });
+    }
+  };
+
   const onAccept = async (id: string) => {
     try {
       await accept(id);
@@ -272,7 +290,6 @@ export default function MySchedulePage() {
   const onSubmitEditShift = async () => {
     if (!editShift) return;
 
-    // ─── Проверка времени ───
     const timeCheck = validateShiftTimes(editForm.startTime, editForm.endTime);
     if (!timeCheck.ok) {
       await alertDialog(timeCheck.message ?? "Неверное время смены", {
@@ -284,7 +301,6 @@ export default function MySchedulePage() {
 
     setEditBusy(true);
     try {
-      // Динамический импорт, чтобы не тащить api всегда
       const { shiftsApi } = await import("../api/weeks");
       const result = await shiftsApi.update(editShift.id, {
         shiftDate: editForm.shiftDate,
@@ -318,7 +334,6 @@ export default function MySchedulePage() {
   const onApproveShiftChange = async (id: string) => {
     try {
       await shiftChangeRequestsApi.approve(id);
-      // ⚡ мгновенно сбрасываем бейджи в NavBar
       useNotifications.getState().refresh();
       await loadAll();
     } catch (e: any) {
@@ -435,12 +450,6 @@ export default function MySchedulePage() {
     }
   };
 
-  // Группируем смены по неделям
-// ─── Виртуальные смены (pending) ────────────────────
-// ─── Виртуальные смены (pending) ────────────────────
-
-// ⚡ Сначала объявляем то, что используется ниже
-
 const incomingActive = incoming.filter((r) => r.status === "PENDING");
 const outgoingActive = outgoing.filter((r) => r.status === "PENDING");
 type VirtualShift = {
@@ -456,7 +465,6 @@ type VirtualShift = {
 
 const virtualShifts: VirtualShift[] = [];
 
-// 1) CREATE от менеджера — мне назначили смену, надо согласовать
 for (const r of incomingShiftRequests) {
   if (r.status === "PENDING" && r.kind === "CREATE") {
     virtualShifts.push({
@@ -472,7 +480,6 @@ for (const r of incomingShiftRequests) {
   }
 }
 
-// 2) SWAP incoming — кто-то предложил мне обмен сменой
 for (const r of incomingActive) {
   if (r.shiftDate && r.startTime && r.endTime) {
     virtualShifts.push({
@@ -488,7 +495,6 @@ for (const r of incomingActive) {
   }
 }
 
-// ─── Группируем реальные смены ──────────────────────
 function weekStartOf(dateStr: string): string {
   const d = new Date(dateStr + "T00:00:00Z");
   const dow = d.getUTCDay();
@@ -499,7 +505,6 @@ function weekStartOf(dateStr: string): string {
 
 const groups = new Map<string, MyShift[]>();
 for (const s of shifts) {
-  // Черновики сотруднику не показываем — они ещё не опубликованы
   if (s.weekStatus === "DRAFT") continue;
   const dateStr = String(s.shiftDate).slice(0, 10);
   const ws = weekStartOf(dateStr);
@@ -507,7 +512,6 @@ for (const s of shifts) {
   groups.get(ws)!.push(s);
 }
 
-// ─── Группируем виртуальные ─────────────────────────
 const virtualGroups = new Map<string, VirtualShift[]>();
 for (const v of virtualShifts) {
   const ws = weekStartOf(v.date);
@@ -515,12 +519,12 @@ for (const v of virtualShifts) {
   virtualGroups.get(ws)!.push(v);
 }
 
-// ─── Общий список недель ────────────────────────────
 const allWeekKeys = new Set<string>([
   ...groups.keys(),
   ...virtualGroups.keys(),
 ]);
 const sortedWeeks = Array.from(allWeekKeys).sort();
+
   const pendingIncomingByShift = useMemo(() => {
     const m = new Map<string, ShiftChangeRequest>();
     for (const r of incomingShiftRequests) {
@@ -537,7 +541,6 @@ const sortedWeeks = Array.from(allWeekKeys).sort();
     return m;
   }, [outgoingShiftRequests]);
   const otherColleagues = colleagues.filter((c) => c.id !== user?.id);
-
 
   const today = new Date().toISOString().slice(0, 10);
   const upcomingVacations = myVacations.filter((v) => v.endDate >= today);
@@ -938,7 +941,6 @@ const sortedWeeks = Array.from(allWeekKeys).sort();
                                       : "bg-blue-50/40 border-blue-500"
                                   }`}
                                 >
-                                  {/* Время: старое → новое */}
                                   <div className="flex items-center gap-1.5 font-medium text-slate-900 flex-wrap">
                                     <Clock className="w-3 h-3 text-blue-600 shrink-0" />
                                     {timeChanged ? (
@@ -958,14 +960,12 @@ const sortedWeeks = Array.from(allWeekKeys).sort();
                                     )}
                                   </div>
 
-                                  {/* Шаблон */}
                                   {s.templateName && (
                                     <div className="text-slate-500 truncate mt-0.5">
                                       {s.templateName}
                                     </div>
                                   )}
 
-                                  {/* Дата: старая → новая */}
                                   {dateChanged && (
                                     <div className="flex items-center gap-1 mt-1 text-[10px] flex-wrap">
                                       <CalendarDays className="w-2.5 h-2.5 text-slate-400 shrink-0" />
@@ -979,7 +979,6 @@ const sortedWeeks = Array.from(allWeekKeys).sort();
                                     </div>
                                   )}
 
-                                  {/* Плашка статуса */}
                                   {pendingInc && (
                                     <div className="mt-1.5 flex items-center gap-1 text-[10px] font-semibold text-amber-800 bg-amber-100 rounded px-1.5 py-1 leading-tight">
                                       <Bell className="w-3 h-3 shrink-0" />
@@ -993,9 +992,9 @@ const sortedWeeks = Array.from(allWeekKeys).sort();
                                     </div>
                                   )}
 
-                                  {/* Кнопки: обмен / изменить */}
+                                  {/* Кнопки: обмен / изменить / отгул */}
                                   {isPublished && !hasOutgoing && !hasAnyPending && (
-                                    <div className="flex flex-wrap gap-2 mt-1.5">
+                                    <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-slate-100">
                                       <button
                                         onClick={() => openSwapModal(s)}
                                         className="inline-flex items-center gap-1 text-[10px] font-medium text-brand-600 hover:text-brand-700"
@@ -1009,6 +1008,13 @@ const sortedWeeks = Array.from(allWeekKeys).sort();
                                       >
                                         <Pencil className="w-3 h-3" />
                                         Изменить
+                                      </button>
+                                      <button
+                                        onClick={() => onRequestTimeOff(s)}
+                                        className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-600 hover:text-amber-700 ml-auto"
+                                      >
+                                        <CalendarX2 className="w-3 h-3" />
+                                        Отгул
                                       </button>
                                     </div>
                                   )}
@@ -1027,7 +1033,7 @@ const sortedWeeks = Array.from(allWeekKeys).sort();
                                 </div>
                               );
                             })}
-                            {/* Виртуальные смены — ждут действия */}
+                            
                             {dayVirtual.map((v) => (
                               <div
                                 key={v.id}
@@ -1037,7 +1043,6 @@ const sortedWeeks = Array.from(allWeekKeys).sort();
                                     : "bg-orange-50/60 border-orange-500 ring-orange-300/50"
                                 }`}
                               >
-                                {/* Время */}
                                 <div className="flex items-center gap-1.5 font-medium text-slate-900">
                                   <Clock
                                     className={`w-3 h-3 shrink-0 ${
@@ -1049,7 +1054,6 @@ const sortedWeeks = Array.from(allWeekKeys).sort();
                                   </span>
                                 </div>
 
-                                {/* Метка статуса */}
                                 {v.kind === "CREATE" && (
                                   <div className="mt-1.5 flex items-center gap-1 text-[10px] font-semibold text-amber-800 bg-amber-100 rounded px-1.5 py-1 leading-tight">
                                     <Bell className="w-3 h-3 shrink-0" />

@@ -7,6 +7,7 @@ import {
   users,
   shiftChangeRequests,
   organizations,
+  actionLogs, // <--- ДОБАВЛЕНО
 } from "../../../db/schema.js";
 import { isWithinWeek, toDateStr, shiftsOverlap } from "../../lib/time.js";
 import { messengerService } from "../../lib/messenger.service.js";
@@ -196,6 +197,17 @@ export const scheduledShiftsService = {
 
     if (week.status === "DRAFT") {
       const [shift] = await db.insert(scheduledShifts).values(values).returning();
+      
+      if (input.userId) {
+        const [u] = await db.select({ name: users.name }).from(users).where(eq(users.id, input.userId));
+        await db.insert(actionLogs).values({
+          orgId: input.orgId,
+          userId: input.requesterId,
+          actionType: "SHIFT_CREATE",
+          description: `Создана смена для ${u?.name} на ${input.shiftDate} (${input.startTime}–${input.endTime})`,
+        });
+      }
+
       return { kind: "applied", shift };
     }
 
@@ -315,7 +327,6 @@ export const scheduledShiftsService = {
       const now = new Date();
       const diffDays = Math.ceil((now.getTime() - shiftDate.getTime()) / (1000 * 3600 * 24));
       
-      // Если разница больше окна (и не отрицательная, т.е. смена в прошлом)
       if (diffDays > windowDays && diffDays >= 0) {
         throw new Error("DISCIPLINE_WINDOW_CLOSED");
       }
@@ -345,6 +356,24 @@ export const scheduledShiftsService = {
         })
         .where(eq(scheduledShifts.id, input.id))
         .returning();
+
+      // 👇 Логируем изменения
+      const [requester] = await db.select({ name: users.name }).from(users).where(eq(users.id, input.requesterId));
+      if (isOnlyDiscipline) {
+        await db.insert(actionLogs).values({
+          orgId: input.orgId,
+          userId: input.requesterId,
+          actionType: "DISCIPLINE",
+          description: `${requester?.name} изменил(а) дисциплину для смены ${String(shift.shiftDate).slice(0, 10)}`,
+        });
+      } else {
+        await db.insert(actionLogs).values({
+          orgId: input.orgId,
+          userId: input.requesterId,
+          actionType: "SHIFT_UPDATE",
+          description: `${requester?.name} изменил(а) смену ${String(shift.shiftDate).slice(0, 10)}`,
+        });
+      }
 
       // 👇 Если согласование выключено, неделя опубликована и меняется не дисциплина — уведомляем
       if (week.status === "PUBLISHED" && !requireApproval && shift.userId && !isOnlyDiscipline) {

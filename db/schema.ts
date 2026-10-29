@@ -325,3 +325,27 @@ export const userAreas = pgTable(
     pk: primaryKey({ columns: [t.userId, t.areaId] }),
   })
 );
+
+// ─── ОТГУЛЫ ──────────────────────────────────────────
+export const timeOffRequests = pgTable("time_off_requests", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: uuid("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  shiftId: uuid("shift_id").references(() => scheduledShifts.id, { onDelete: "cascade" }).notNull(),
+  date: date("date").notNull(),
+  comment: varchar("comment", { length: 255 }),
+  status: varchar("status", { length: 20 }).default("PENDING").notNull(), // PENDING | APPROVED | REJECTED
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  reviewedBy: uuid("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+});
+
+// ─── ИСТОРИЯ ДЕЙСТВИЙ ────────────────────────────────
+export const actionLogs = pgTable("action_logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: uuid("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  actionType: varchar("action_type", { length: 50 }).notNull(), // PUBLISH, DISCIPLINE, VACATION, SICK_LEAVE, TIME_OFF, SWAP, SHIFT_CHANGE
+  description: text("description").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});

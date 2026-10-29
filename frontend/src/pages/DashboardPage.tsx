@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   Users, Clock, CalendarDays, ChevronRight, ChevronLeft, AlertCircle,
   Timer, ArrowRightLeft, UserCircle, CalendarX2, Activity, Wallet, Banknote,
-  FileEdit, AlertTriangle, X,
+  FileEdit, AlertTriangle, X, Check
 } from "lucide-react";
 import { dashboardApi, type DashboardSummary } from "../api/dashboard";
 import { meApi, type MyProfile } from "../api/me";
@@ -13,6 +13,7 @@ import { useWeeks } from "../store/weeks";
 import { useNotifications } from "../store/notifications";
 import { useLocations } from "../store/locations";
 import { useShiftTemplates } from "../store/shiftTemplates";
+import { useTimeOff } from "../store/timeOff"; // <--- ДОБАВЛЕНО
 import NavBar from "../components/NavBar";
 import { shortDate, dayLabel, weekDates } from "../lib/dates";
 
@@ -30,8 +31,7 @@ const calcHours = (start: string, end: string) => {
   return m / 60;
 };
 
-const formatMoney = (n: number) =>
-  new Intl.NumberFormat("ru-RU").format(n) + " ₽";
+const formatMoney = (n: number) => new Intl.NumberFormat("ru-RU").format(n) + " ₽";
 
 const addDays = (dateStr: string, n: number): string => {
   const d = new Date(dateStr + "T00:00:00Z");
@@ -77,6 +77,9 @@ export default function DashboardPage() {
   } = useNotifications();
   const { activeLocationId, fetch: fetchLocations } = useLocations();
   const { items: templates, fetch: fetchTemplates } = useShiftTemplates();
+  
+  // Отгулы
+  const { items: timeOffs, fetch: fetchTimeOffs, approve: approveTimeOff, reject: rejectTimeOff } = useTimeOff();
 
   const [data, setData] = useState<DashboardSummary | null>(null);
   const [profile, setProfile] = useState<MyProfile | null>(null);
@@ -94,7 +97,10 @@ export default function DashboardPage() {
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => { fetchLocations(); fetchTemplates(); }, [fetchLocations, fetchTemplates]);
+  useEffect(() => { 
+    fetchLocations(); 
+    fetchTemplates(); 
+  }, [fetchLocations, fetchTemplates]);
 
   useEffect(() => {
     if (!activeLocationId) return;
@@ -102,6 +108,7 @@ export default function DashboardPage() {
     Promise.all([
       dashboardApi.summary(activeLocationId),
       meApi.profile().catch(() => null),
+      fetchTimeOffs() // <--- ЗАГРУЖАЕМ ОТГУЛЫ
     ])
       .then(([dash, prof]) => { setData(dash); setProfile(prof); })
       .catch(() => alert("Ошибка загрузки дашборда"))
@@ -109,7 +116,7 @@ export default function DashboardPage() {
 
     fetchWeeks(activeLocationId);
     refreshNotifs();
-  }, [activeLocationId, fetchWeeks, refreshNotifs]);
+  }, [activeLocationId, fetchWeeks, refreshNotifs, fetchTimeOffs]);
 
   const currentTimePercent =
     ((now.getHours() * 60 + now.getMinutes()) / (24 * 60)) * 100;
@@ -124,7 +131,7 @@ export default function DashboardPage() {
   useEffect(() => {
     if (dates.length === 0) return;
     if (!dates.includes(selectedDate)) setSelectedDate(todayDate);
-  }, [dates.join(","), selectedDate, todayDate]); // eslint-disable-line
+  }, [dates.join(","), selectedDate, todayDate]);
 
   const handleGoToToday = () =>
     navigate(
@@ -189,11 +196,6 @@ export default function DashboardPage() {
     data?.weekTimeEntries?.filter((te) => te.userId === user?.id) || []
   );
 
-  /**
-   * Статус смены:
-   * - корректно обрабатывает «ровно 12:00» и ночные смены (endM <= startM)
-   * - если смена ещё не началась — возвращает "future", а НЕ "past"
-   */
   const getShiftStatus = (shift: any): "past" | "active" | "future" => {
     if (selectedDate < todayDate) return "past";
     if (selectedDate > todayDate) return "future";
@@ -204,9 +206,8 @@ export default function DashboardPage() {
     const isOvernight = endM < startM;
 
     if (isOvernight) {
-      // Смена начинается вечером и уходит за полночь
       if (nowM >= startM) return "active";
-      if (nowM < endM) return "active"; // утреннее «хвостовое» окно (маловероятно при текущей дате)
+      if (nowM < endM) return "active";
       return "future";
     }
 
@@ -268,7 +269,6 @@ export default function DashboardPage() {
       </div>
     );
 
-  // hovered banner
   let hoveredOvertime = 0;
   if (hoveredShift && hoveredShift.templateStartTime && hoveredShift.templateEndTime) {
     const sStart = timeToMins(hoveredShift.startTime);
@@ -299,11 +299,43 @@ export default function DashboardPage() {
       hoveredOvertime >= 60 ? formatHours(hoveredOvertime / 60) : `${hoveredOvertime} мин`;
   }
 
+  // Фильтруем запросы на отгул для текущего дня
+  const todayTimeOffs = timeOffs.filter(t => t.status === "PENDING" && t.date === selectedDate);
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       <NavBar />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 flex flex-col gap-6">
+        
+        {/* БЛОК ЗАПРОСОВ НА ОТГУЛ */}
+        {!isEmployee && todayTimeOffs.length > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-col gap-2 animate-fade-in">
+            <h3 className="font-semibold text-amber-900 flex items-center gap-2">
+              <CalendarX2 className="w-4 h-4" /> Запросы на отгул на {shortDate(selectedDate)}
+            </h3>
+            {todayTimeOffs.map(t => (
+              <div key={t.id} className="flex items-center justify-between bg-white p-3 rounded-xl shadow-sm border border-amber-100">
+                <div className="text-sm font-medium text-slate-900">{t.userName} <span className="text-slate-500 font-normal ml-1">— {t.comment || "без причины"}</span></div>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={async () => { await approveTimeOff(t.id); fetchTimeOffs(); if(activeLocationId) dashboardApi.summary(activeLocationId).then(setData); }} 
+                    className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-emerald-700"
+                  >
+                    <Check className="w-3.5 h-3.5 inline mr-1" /> Одобрить
+                  </button>
+                  <button 
+                    onClick={async () => { await rejectTimeOff(t.id); fetchTimeOffs(); }} 
+                    className="bg-rose-100 text-rose-700 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-rose-200"
+                  >
+                    <X className="w-3.5 h-3.5 inline mr-1" /> Отклонить
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Верхняя панель — неделя */}
         {data?.currentWeek ? (
           <button
@@ -574,9 +606,8 @@ export default function DashboardPage() {
                         if (sEnd > tEnd) overtimeEndPct = ((sEnd - tEnd) / (24 * 60)) * 100;
                       }
 
-                      // Цвет полоски
                       const barColor = isAbsent
-                        ? "#dc2626" // 👈 ПР/НН — целиком красная
+                        ? "#dc2626"
                         : isEnded
                         ? "#cbd5e1"
                         : shift.templateColor || "#3b82f6";
@@ -588,12 +619,15 @@ export default function DashboardPage() {
                           onMouseLeave={() => setHoveredShift(null)}
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (!isEmployee && selectedDate === todayDate) setDisciplineShift(shift);
+                            // ИСПРАВЛЕНИЕ: теперь можно кликать по прошлым дням
+                            if (!isEmployee && selectedDate <= todayDate) {
+                              setDisciplineShift(shift);
+                            }
                           }}
                           className={`flex items-center relative transition-colors ${
                             isEmployee
                               ? "h-12"
-                              : `h-14 ${selectedDate === todayDate ? "cursor-pointer hover:bg-slate-50/80 hover:ring-2 hover:ring-amber-400 hover:z-30" : ""}`
+                              : `h-14 ${selectedDate <= todayDate ? "cursor-pointer hover:bg-slate-50/80 hover:ring-2 hover:ring-amber-400 hover:z-30" : ""}`
                           }`}
                         >
                           <div className="w-40 shrink-0 pr-2 flex items-center gap-2 relative z-30 pointer-events-none">
@@ -703,9 +737,9 @@ export default function DashboardPage() {
               <StatCard
                 icon={AlertCircle}
                 label="Запросы"
-                value={vacationsPending + shiftChangesIncoming}
+                value={vacationsPending + shiftChangesIncoming + timeOffs.filter(t => t.status === "PENDING").length}
                 onClick={() => navigate("/vacations")}
-                alert={vacationsPending + shiftChangesIncoming > 0}
+                alert={vacationsPending + shiftChangesIncoming + timeOffs.filter(t => t.status === "PENDING").length > 0}
               />
               <StatCard icon={FileEdit} label="Ред. смены" value={shiftChangesIncoming} onClick={() => navigate("/weeks")} />
               <div className="col-span-2 grid grid-cols-2 gap-3">
