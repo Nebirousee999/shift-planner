@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import {
-  ChevronLeft, ChevronRight, BarChart3, Clock, Wallet, TrendingUp, TrendingDown,
-  Minus, AlertTriangle, Banknote, CalendarDays, Briefcase, Loader2, ShieldAlert,
-  Users, Target, Flame, History, X // <--- ДОБАВЛЕНА ИКОНКА X
+  ChevronLeft, ChevronRight, Clock, Wallet, TrendingUp, TrendingDown,
+  Minus, AlertTriangle, Banknote, Loader2, ShieldAlert,
+  Target, Flame, History, X,
 } from "lucide-react";
 import { analyticsApi } from "../api/analytics";
 import { historyApi } from "../api/history";
@@ -36,7 +36,7 @@ export default function AnalyticsPage() {
 
   const locationId = scope === "active" ? activeLocationId ?? undefined : undefined;
 
-  // Состояния для истории
+  // История
   const [historyData, setHistoryData] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [hFrom, setHFrom] = useState("");
@@ -50,24 +50,19 @@ export default function AnalyticsPage() {
     setLoading(true);
     analyticsApi.summary(from, to, locationId)
       .then(setData)
-      .catch((e) => alert("Ошибка загрузки"))
+      .catch(() => alert("Ошибка загрузки"))
       .finally(() => setLoading(false));
   }, [year, month, locationId]);
 
-  const loadHistory = async () => {
-    setHistoryLoading(true);
-    try {
-      const res = await historyApi.list({ from: hFrom, to: hTo, type: hType });
-      setHistoryData(res);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setHistoryLoading(false);
-    }
-  };
-
   useEffect(() => {
-    if (tab === "history") loadHistory();
+    if (tab !== "history") return;
+    let cancelled = false;
+    setHistoryLoading(true);
+    historyApi.list({ from: hFrom, to: hTo, type: hType })
+      .then((res) => { if (!cancelled) setHistoryData(res); })
+      .catch((e) => { if (!cancelled) console.error(e); })
+      .finally(() => { if (!cancelled) setHistoryLoading(false); });
+    return () => { cancelled = true; };
   }, [tab, hFrom, hTo, hType]);
 
   const prevMonth = () => { if (month === 0) { setMonth(11); setYear(y => y - 1); } else setMonth(m => m - 1); };
@@ -86,20 +81,17 @@ export default function AnalyticsPage() {
     <div className="min-h-screen bg-slate-50">
       <NavBar />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-        
+
         {/* Шапка с вкладками */}
         <div className="flex items-center gap-6 border-b border-slate-200 mb-6 overflow-x-auto pb-1">
           <button onClick={() => setTab("overview")} className={`pb-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === "overview" ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-900"}`}>Сводка и ФОТ</button>
-          
-          {/* ВКЛАДКА ИСТОРИИ ПЕРЕМЕЩЕНА СЮДА */}
           <button onClick={() => setTab("history")} className={`pb-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === "history" ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-900"}`}>История действий</button>
-          
           <button onClick={() => setTab("workload")} className={`pb-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === "workload" ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-900"}`}>Нагрузка персонала</button>
           <button onClick={() => setTab("discipline")} className={`pb-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === "discipline" ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-900"}`}>Дисциплина</button>
           <button onClick={() => setTab("details")} className={`pb-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === "details" ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-900"}`}>Детализация</button>
         </div>
 
-        {/* Панель фильтров (Скрываем в истории) */}
+        {/* Панель месяца/точки (скрыта в истории) */}
         {tab !== "history" && (
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-3 mb-6 flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-2 flex-wrap">
@@ -121,7 +113,7 @@ export default function AnalyticsPage() {
           </div>
         )}
 
-        {/* ═══ ВКЛАДКА 1: СВОДКА (ФОТ) ═══ */}
+        {/* ═══ СВОДКА ═══ */}
         {tab === "overview" && (
           <div className="space-y-6 animate-fade-in">
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
@@ -166,7 +158,7 @@ export default function AnalyticsPage() {
           </div>
         )}
 
-        {/* ═══ ВКЛАДКА 2: ИСТОРИЯ ДЕЙСТВИЙ ═══ */}
+        {/* ═══ ИСТОРИЯ ═══ */}
         {tab === "history" && (
           <div className="space-y-4 animate-fade-in">
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap gap-4 items-center">
@@ -202,7 +194,11 @@ export default function AnalyticsPage() {
                 <History className="w-4 h-4 text-slate-500" /> Лента событий
               </div>
               <div className="divide-y divide-slate-100 max-h-[70vh] overflow-y-auto">
-                {historyLoading ? <div className="p-8 text-center text-slate-500 flex justify-center items-center gap-2"><Loader2 className="w-4 h-4 animate-spin"/> Загрузка...</div> : historyData.length === 0 ? <div className="p-8 text-center text-slate-500">Нет событий за выбранный период</div> : historyData.map((h: any) => (
+                {historyLoading ? (
+                  <div className="p-8 text-center text-slate-500 flex justify-center items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Загрузка...</div>
+                ) : historyData.length === 0 ? (
+                  <div className="p-8 text-center text-slate-500">Нет событий за выбранный период</div>
+                ) : historyData.map((h: any) => (
                   <div key={h.id} className="p-4 hover:bg-slate-50 flex items-start gap-4">
                     <div className="w-2 h-2 mt-1.5 rounded-full bg-brand-500 shrink-0" />
                     <div className="flex-1 min-w-0">
@@ -217,7 +213,7 @@ export default function AnalyticsPage() {
           </div>
         )}
 
-        {/* ═══ ВКЛАДКА 3: НАГРУЗКА ═══ */}
+        {/* ═══ НАГРУЗКА ═══ */}
         {tab === "workload" && (
           <div className="space-y-6 animate-fade-in">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -275,7 +271,7 @@ export default function AnalyticsPage() {
           </div>
         )}
 
-        {/* ═══ ВКЛАДКА 4: ДИСЦИПЛИНА ═══ */}
+        {/* ═══ ДИСЦИПЛИНА ═══ */}
         {tab === "discipline" && (
           <div className="space-y-6 animate-fade-in">
             <div className="grid grid-cols-3 gap-4">
@@ -320,30 +316,30 @@ export default function AnalyticsPage() {
           </div>
         )}
 
-        {/* ═══ ВКЛАДКА 5: ДЕТАЛИЗАЦИЯ ═══ */}
+        {/* ═══ ДЕТАЛИЗАЦИЯ ═══ */}
         {tab === "details" && (
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-fade-in">
-             <div className="p-4 border-b border-slate-100 font-semibold text-slate-900">Детализация по сотрудникам</div>
-             <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 border-b text-left text-xs uppercase text-slate-500">
-                    <tr><th className="px-5 py-3">Сотрудник</th><th className="px-5 py-3">Ставка/Оклад</th><th className="px-5 py-3">Смен / План ч</th><th className="px-5 py-3">Факт ч</th><th className="px-5 py-3">План ФОТ</th><th className="px-5 py-3">Факт ФОТ</th><th className="px-5 py-3">Переработка</th></tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {data.users.map((u: any) => (
-                      <tr key={u.userId} className="hover:bg-slate-50">
-                        <td className="px-5 py-3 font-medium">{u.name} <div className="text-xs text-slate-400">{ROLE_LABELS[u.role]}</div></td>
-                        <td className="px-5 py-3">{u.hourlyRate ? `${u.hourlyRate} ₽` : "—"} <span className="text-[10px] text-slate-400 block">{u.paymentType === "MONTHLY" ? "оклад" : "час"}</span></td>
-                        <td className="px-5 py-3">{u.shiftsCount} / {u.plannedHours}</td>
-                        <td className="px-5 py-3 text-emerald-600 font-medium">{u.actualHours}</td>
-                        <td className="px-5 py-3">{formatMoney(u.plannedPayroll)}</td>
-                        <td className="px-5 py-3 font-bold">{formatMoney(u.actualPayroll)}</td>
-                        <td className="px-5 py-3 text-amber-600">{u.overtimeCost > 0 ? formatMoney(u.overtimeCost) : "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-             </div>
+            <div className="p-4 border-b border-slate-100 font-semibold text-slate-900">Детализация по сотрудникам</div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 border-b text-left text-xs uppercase text-slate-500">
+                  <tr><th className="px-5 py-3">Сотрудник</th><th className="px-5 py-3">Ставка/Оклад</th><th className="px-5 py-3">Смен / План ч</th><th className="px-5 py-3">Факт ч</th><th className="px-5 py-3">План ФОТ</th><th className="px-5 py-3">Факт ФОТ</th><th className="px-5 py-3">Переработка</th></tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {data.users.map((u: any) => (
+                    <tr key={u.userId} className="hover:bg-slate-50">
+                      <td className="px-5 py-3 font-medium">{u.name} <div className="text-xs text-slate-400">{ROLE_LABELS[u.role]}</div></td>
+                      <td className="px-5 py-3">{u.hourlyRate ? `${u.hourlyRate} ₽` : "—"} <span className="text-[10px] text-slate-400 block">{u.paymentType === "MONTHLY" ? "оклад" : "час"}</span></td>
+                      <td className="px-5 py-3">{u.shiftsCount} / {u.plannedHours}</td>
+                      <td className="px-5 py-3 text-emerald-600 font-medium">{u.actualHours}</td>
+                      <td className="px-5 py-3">{formatMoney(u.plannedPayroll)}</td>
+                      <td className="px-5 py-3 font-bold">{formatMoney(u.actualPayroll)}</td>
+                      <td className="px-5 py-3 text-amber-600">{u.overtimeCost > 0 ? formatMoney(u.overtimeCost) : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </main>
