@@ -15,6 +15,7 @@ import {
   HelpCircle,
   AlertCircle,
   MapPin,
+  History, // <--- Добавлена иконка
 } from "lucide-react";
 import { useAuth } from "../store/auth";
 import { useNotifications } from "../store/notifications";
@@ -58,7 +59,10 @@ const CATEGORIES: TabCategory[] = [
   {
     id: "analytics",
     label: "Аналитика",
-    links: [{ path: "/analytics", label: "Статистика", icon: BarChart3 }],
+    links: [
+      { path: "/analytics", label: "Статистика", icon: BarChart3 },
+      { path: "/history", label: "История действий", icon: History }, // <--- Новый пункт
+    ],
   },
   {
     id: "documents",

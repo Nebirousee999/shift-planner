@@ -9,13 +9,14 @@ import {
 } from "../../../db/schema.js";
 
 export const dashboardService = {
-  async summary(orgId: string, locationId?: string) {
+  async summary(orgId: string, locationId?: string, date?: string) {
     const todayDate = new Date().toISOString().slice(0, 10);
+    const targetDate = date || todayDate; // <--- Используем переданную дату
 
     const weekConditions = [
       eq(scheduleWeeks.orgId, orgId),
-      lte(scheduleWeeks.weekStartDate, todayDate),
-      gte(sql`${scheduleWeeks.weekStartDate} + interval '6 days'`, todayDate),
+      lte(scheduleWeeks.weekStartDate, targetDate),
+      gte(sql`${scheduleWeeks.weekStartDate} + interval '6 days'`, targetDate),
     ];
     if (locationId) weekConditions.push(eq(scheduleWeeks.locationId, locationId));
 

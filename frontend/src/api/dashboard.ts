@@ -49,9 +49,9 @@ export type DashboardSummary = {
 };
 
 export const dashboardApi = {
-  summary: async (locationId?: string): Promise<DashboardSummary> => {
+  summary: async (locationId?: string, date?: string): Promise<DashboardSummary> => {
     const { data } = await api.get<DashboardSummary>("/dashboard", {
-      params: locationId ? { locationId } : {},
+      params: { locationId, date },
     });
     return data;
   },

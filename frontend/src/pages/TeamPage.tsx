@@ -17,6 +17,7 @@ import type { Area } from "../api/areas";
 import { alertDialog, confirmDialog } from "../store/dialogs";
 import { withAlpha } from "../lib/colors";
 import { useDragScroll } from "../hooks/useDragScroll";
+
 const ROLE_LABELS: Record<string, string> = {
   OWNER: "Владелец",
   MANAGER: "Менеджер",
@@ -49,8 +50,6 @@ function getAvatarColor(id: string): string {
 
 type BulkAction =
   | ""
-  | "addToLocation"
-  | "addToArea"
   | "setPosition"
   | "setRate"
   | "setRole"
@@ -77,15 +76,17 @@ export default function TeamPage() {
   const headerOpacity = org?.positionHeaderOpacity ?? 70;
   const rowOpacity = org?.positionRowOpacity ?? 20;
 
-  const [viewMode, setViewMode] = useState<ViewMode>("groups");
-  const [editMode, setEditMode] = useState(false);
+  // По умолчанию матрица
+  const [viewMode, setViewMode] = useState<ViewMode>("matrix");
 
+  // Фильтры
   const [search, setSearch] = useState("");
   const [filterLocation, setFilterLocation] = useState("");
   const [filterArea, setFilterArea] = useState("");
   const [filterPosition, setFilterPosition] = useState("");
   const [filterRole, setFilterRole] = useState("");
 
+  // Выделение (работает только в матрице)
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkAction, setBulkAction] = useState<BulkAction>("");
   const [bulkValue, setBulkValue] = useState("");
@@ -93,9 +94,11 @@ export default function TeamPage() {
 
   const [editingUser, setEditingUser] = useState<TeamUser | null>(null);
 
+  // Импорт Excel
   const [importing, setImporting] = useState(false);
   const [batchFile, setBatchFile] = useState<File | null>(null);
 
+  // Создание
   const [showForm, setShowForm] = useState(false);
   const [createForm, setCreateForm] = useState({
     name: "",
@@ -109,6 +112,7 @@ export default function TeamPage() {
   });
   const [creating, setCreating] = useState(false);
 
+  // Матрица
   const [matrixEditMode, setMatrixEditMode] = useState(false);
   const [pendingChanges, setPendingChanges] = useState<Map<string, PendingUserChange>>(new Map());
   const [matrixSaving, setMatrixSaving] = useState(false);
@@ -120,109 +124,77 @@ export default function TeamPage() {
     fetchPositions();
   }, [fetch, fetchLocations, fetchAreas, fetchPositions]);
 
-  const switchViewMode = (mode: ViewMode) => {
-    if (mode === viewMode) return;
-    setViewMode(mode);
+  const toggleViewMode = () => {
+    setViewMode((v) => (v === "matrix" ? "groups" : "matrix"));
     setSelected(new Set());
     setBulkAction("");
     setBulkValue("");
-    // 👇 сбрасываем фильтры, чтобы в матрице не было «скрытой» фильтрации
+    setMatrixEditMode(false);
+    setPendingChanges(new Map());
     setSearch("");
     setFilterLocation("");
     setFilterArea("");
     setFilterPosition("");
     setFilterRole("");
-    if (mode === "matrix") setEditMode(false);
-    if (mode === "groups") {
-      setMatrixEditMode(false);
-      setPendingChanges(new Map());
-    }
   };
 
-  const toggleEdit = () => {
-    const next = !editMode;
-    setEditMode(next);
-    if (!next) {
-      setSelected(new Set());
-      setBulkAction("");
-      setBulkValue("");
+  // ─── Логика фильтров (каскадная) ─────────────────
+
+  // 1. Доступные локации (зависят от точки и выбранной должности)
+  const availableAreaNames = useMemo(() => {
+    let sourceAreas = areas;
+    
+    if (filterLocation) {
+      sourceAreas = sourceAreas.filter((a) => a.locationId === filterLocation);
     }
-  };
-
-  // Локации текущей выбранной точки (без чужого контекста)
-  const filterAreasAvailable = useMemo(() => {
-    if (!filterLocation) return [];
-    const src = areas.filter((a) => a.locationId === filterLocation);
-    const seen = new Set<string>();
-    return src.filter((a) => {
-      const key = a.name.toLowerCase().trim();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }, [areas, filterLocation]);
-
-
-
-  // 👇 Должности, доступные для выбранной точки/локации
-  const availablePositions = useMemo(() => {
-    if (!filterLocation && !filterArea) return positions;
-
-    const namesInFilter = new Set<string>();
-    for (const u of items) {
-      if (!u.position) continue;
-      if (filterArea) {
-        if (!(u.areaIds ?? []).includes(filterArea)) continue;
-      } else if (filterLocation) {
-        if (!(u.locationIds ?? []).includes(filterLocation)) continue;
-      }
-      namesInFilter.add(u.position);
+    
+    if (filterPosition) {
+      // Если выбрана должность, показываем только те локации, где есть сотрудники с этой должностью
+      const validAreaIds = new Set<string>();
+      items.forEach((u) => {
+        if (u.position === filterPosition) {
+          (u.areaIds ?? []).forEach((id) => validAreaIds.add(id));
+        }
+      });
+      sourceAreas = sourceAreas.filter((a) => validAreaIds.has(a.id));
     }
-    return positions.filter((p) => namesInFilter.has(p.name));
-  }, [positions, items, filterLocation, filterArea]);
 
-  // 👇 Если выбранная должность исчезла из доступных — сбросить
+    const names = new Set(sourceAreas.map((a) => a.name.trim()));
+    return Array.from(names).sort();
+  }, [areas, filterLocation, filterPosition, items]);
+
+  // 2. Доступные должности (зависят от точки и выбранной локации)
+  const availablePositionsList = useMemo(() => {
+    let sourceUsers = items;
+    
+    if (filterLocation) {
+      sourceUsers = sourceUsers.filter((u) => (u.locationIds ?? []).includes(filterLocation));
+    }
+    
+    if (filterArea) {
+      sourceUsers = sourceUsers.filter((u) =>
+        (u.areaIds ?? []).some((id) => areas.find((a) => a.id === id)?.name === filterArea)
+      );
+    }
+
+    const names = new Set(sourceUsers.map((u) => u.position).filter(Boolean) as string[]);
+    return Array.from(names).sort();
+  }, [items, areas, filterLocation, filterArea]);
+
+  // 3. Сброс фильтров, если они стали недоступны
   useEffect(() => {
-    if (filterPosition && !availablePositions.some((p) => p.name === filterPosition)) {
+    if (filterArea && !availableAreaNames.includes(filterArea)) {
+      setFilterArea("");
+    }
+    if (filterPosition && !availablePositionsList.includes(filterPosition)) {
       setFilterPosition("");
     }
-  }, [availablePositions, filterPosition]);
+  }, [availableAreaNames, availablePositionsList, filterArea, filterPosition]);
 
-
-
-
-  // Все локации, сгруппированные по точкам (для dropdown, когда точка не выбрана)
-  const filterAreasGrouped = useMemo(() => {
-    const map = new Map<string, { id: string; name: string }[]>();
-    for (const loc of locations) {
-      const list = areas
-        .filter((a) => a.locationId === loc.id)
-        .reduce<{ id: string; name: string }[]>((acc, a) => {
-          const key = a.name.toLowerCase().trim();
-          if (acc.some((x) => x.name.toLowerCase().trim() === key)) return acc;
-          acc.push({ id: a.id, name: a.name });
-          return acc;
-        }, []);
-      if (list.length > 0) map.set(loc.id, list);
-    }
-    return map;
-  }, [areas, locations]);
-
-  // 👇 При выборе локации — автовыбор её точки (если не выбрана или другая)
-  // Выбор локации — всегда сбрасываем локацию (она могла быть из другой точки)
   const handleFilterLocationChange = (locId: string) => {
     setFilterLocation(locId);
-    setFilterArea(""); // 👈 всегда сбрасываем — самые предсказуемые ожидания
+    setFilterArea(""); // Сбрасываем локацию при смене точки
   };
-
-  // Выбор локации (помещения) — автовыбор точки
-  const handleFilterAreaChange = (areaId: string) => {
-    setFilterArea(areaId);
-    if (!areaId) return;
-    const area = areas.find((a) => a.id === areaId);
-    if (area) setFilterLocation(area.locationId);
-  };
-
 
   const filtered = useMemo(() => {
     return items.filter((u) => {
@@ -235,41 +207,19 @@ export default function TeamPage() {
         if (!match) return false;
       }
       if (filterLocation && !(u.locationIds ?? []).includes(filterLocation)) return false;
-      if (filterArea && !(u.areaIds ?? []).includes(filterArea)) return false;
+      
+      if (filterArea) {
+        const hasArea = (u.areaIds ?? []).some(
+          (id) => areas.find((a) => a.id === id)?.name === filterArea
+        );
+        if (!hasArea) return false;
+      }
+      
       if (filterPosition && (u.position ?? "") !== filterPosition) return false;
       if (filterRole && u.role !== filterRole) return false;
       return true;
     });
-  }, [items, search, filterLocation, filterArea, filterPosition, filterRole]);
-
-  const commonLocationIds = useMemo(() => {
-    if (selected.size === 0) return null;
-    let common: Set<string> | null = null;
-    for (const id of selected) {
-      const u = items.find((x) => x.id === id);
-      if (!u) continue;
-      const pts = new Set(u.locationIds ?? []);
-      if (common === null) common = new Set(pts);
-      else {
-        for (const p of Array.from(common)) {
-          if (!pts.has(p)) common.delete(p);
-        }
-      }
-    }
-    return common ?? new Set<string>();
-  }, [selected, items]);
-
-  const bulkAreas = useMemo(() => {
-    if (!commonLocationIds || commonLocationIds.size === 0) return [];
-    const src = areas.filter((a) => commonLocationIds.has(a.locationId));
-    const seen = new Set<string>();
-    return src.filter((a) => {
-      const key = a.name.toLowerCase().trim();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }, [areas, commonLocationIds]);
+  }, [items, search, filterLocation, filterArea, filterPosition, filterRole, areas]);
 
   const grouped = useMemo(() => {
     type PosGroup = Map<string, TeamUser[]>;
@@ -281,8 +231,6 @@ export default function TeamPage() {
     for (const a of areas) areaLocMap.set(a.id, a.locationId);
 
     for (const u of filtered) {
-      // 👇 Если выбрана точка — показываем сотрудника ТОЛЬКО в её группе,
-      // даже если он привязан к другим точкам.
       let locIds: (string | null)[] = [];
       if (filterLocation) {
         locIds = [filterLocation];
@@ -295,12 +243,25 @@ export default function TeamPage() {
         if (!map.has(lKey)) map.set(lKey, { locationId: locId, areas: new Map() });
         const lG = map.get(lKey)!;
 
-        const userAreaIds = (u.areaIds ?? []).filter((id) => {
-          const aLoc = areaLocMap.get(id);
-          return locId === null || aLoc === locId;
-        });
+        let areaIds: (string | null)[] = [];
+        if (filterArea) {
+          const matchingId = (u.areaIds ?? []).find(
+            (id) => areas.find((a) => a.id === id)?.name === filterArea
+          );
+          if (matchingId) {
+            areaIds = [matchingId];
+          } else {
+            const fallbackArea = areas.find((a) => a.name === filterArea);
+            areaIds = fallbackArea ? [fallbackArea.id] : [];
+          }
+        } else {
+          const userAreaIds = (u.areaIds ?? []).filter((id) => {
+            const aLoc = areaLocMap.get(id);
+            return locId === null || aLoc === locId;
+          });
+          areaIds = userAreaIds.length > 0 ? userAreaIds : [null];
+        }
 
-        const areaIds: (string | null)[] = userAreaIds.length > 0 ? userAreaIds : [null];
         for (const aId of areaIds) {
           const aKey = aId ?? "__noArea__";
           if (!lG.areas.has(aKey)) lG.areas.set(aKey, { areaId: aId, positions: new Map() });
@@ -313,27 +274,15 @@ export default function TeamPage() {
       }
     }
     return map;
-  }, [filtered, areas, filterLocation]);
+  }, [filtered, areas, filterLocation, filterArea]);
 
   const locationName = (id: string | null): string =>
     id ? locations.find((l) => l.id === id)?.name ?? "—" : "Без точки";
   const areaName = (id: string | null): string =>
     id ? areas.find((a) => a.id === id)?.name ?? "—" : "Без локации";
 
-  const tryToggle = (id: string) => {
-    const u = items.find((x) => x.id === id);
-    if (!u) return;
-    const isRemoving = selected.has(id);
-
-    if (!isRemoving && selected.size > 0 && commonLocationIds && commonLocationIds.size > 0) {
-      const userPts = u.locationIds ?? [];
-      const hasCommon = userPts.some((p) => commonLocationIds.has(p));
-      if (userPts.length > 0 && !hasCommon) {
-        alertDialog("Нельзя выделять сотрудников из разных точек", { variant: "error" });
-        return;
-      }
-    }
-
+  // ─── Логика Матрицы ──────────────────────────────
+  const toggleSelect = (id: string) => {
     setSelected((prev) => {
       const n = new Set(prev);
       n.has(id) ? n.delete(id) : n.add(id);
@@ -341,27 +290,25 @@ export default function TeamPage() {
     });
   };
 
-  const selectAll = (list: TeamUser[]) => {
-    if (selected.size > 0 && commonLocationIds && commonLocationIds.size > 0) {
-      const conflicting = list.some((u) => {
-        const pts = u.locationIds ?? [];
-        return pts.length > 0 && !pts.some((p) => commonLocationIds.has(p));
-      });
-      if (conflicting) {
-        alertDialog("Нельзя выделять сотрудников из разных точек", { variant: "error" });
-        return;
-      }
+  const toggleSelectAll = () => {
+    if (selected.size === filtered.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(filtered.map((u) => u.id)));
     }
-    setSelected((prev) => {
-      const n = new Set(prev);
-      const allIn = list.every((u) => n.has(u.id));
-      list.forEach((u) => (allIn ? n.delete(u.id) : n.add(u.id)));
-      return n;
-    });
   };
 
-  const isAllSelected = (list: TeamUser[]) =>
-    list.length > 0 && list.every((u) => selected.has(u.id));
+  const toggleSelectPosition = (users: TeamUser[]) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const allSelected = users.every((u) => next.has(u.id));
+      users.forEach((u) => {
+        if (allSelected) next.delete(u.id);
+        else next.add(u.id);
+      });
+      return next;
+    });
+  };
 
   const handleMatrixToggle = (user: TeamUser, area: Area) => {
     if (!matrixEditMode) return;
@@ -390,7 +337,7 @@ export default function TeamPage() {
   };
 
   const onMatrixApply = async () => {
-    if (pendingChanges.size === 0) {
+    if (pendingChanges.size === 0 && selected.size === 0) {
       setMatrixEditMode(false);
       return;
     }
@@ -421,6 +368,7 @@ export default function TeamPage() {
     setMatrixSaving(false);
     setPendingChanges(new Map());
     setMatrixEditMode(false);
+    setSelected(new Set());
 
     if (errors.length > 0) {
       await alertDialog(
@@ -433,8 +381,10 @@ export default function TeamPage() {
   const onMatrixCancel = () => {
     setPendingChanges(new Map());
     setMatrixEditMode(false);
+    setSelected(new Set());
   };
 
+  // ─── Создание и Удаление ─────────────────────────
   const onCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!createForm.name.trim() || !createForm.email.trim()) return;
@@ -489,6 +439,7 @@ export default function TeamPage() {
     }
   };
 
+  // ─── Excel ───────────────────────────────────────
   const onDownloadTemplate = async () => {
     try {
       await downloadExcelTemplate();
@@ -533,6 +484,7 @@ export default function TeamPage() {
     }
   };
 
+  // ─── Массовые действия ───────────────────────────
   const onBulkApply = async () => {
     if (!bulkAction || !bulkValue || selected.size === 0) return;
     if (bulkAction === "setRole" && !["OWNER", "MANAGER", "EMPLOYEE"].includes(bulkValue)) return;
@@ -541,23 +493,52 @@ export default function TeamPage() {
 
     setBulkBusy(true);
     try {
-      const res = await bulkUpdate(Array.from(selected), {
+      await bulkUpdate(Array.from(selected), {
         action: bulkAction, value: bulkValue,
       } as any);
-      const skipped = (res as any).skipped ?? 0;
-      if (bulkAction === "addToArea" && skipped > 0) {
-        await alertDialog(`Обновлено: ${res.updated}. Пропущено: ${skipped}.`, { title: "Готово", variant: "success" });
-      }
       setSelected(new Set());
       setBulkAction("");
       setBulkValue("");
-      await fetchAreas();
     } catch (e: any) {
       await alertDialog(e.response?.data?.error ?? "Ошибка", { variant: "error" });
     } finally {
       setBulkBusy(false);
     }
   };
+
+  // ─── Видимые столбцы для матрицы ─────────────────
+  const visibleLocations = useMemo(() => {
+    if (filterLocation) return locations.filter((l) => l.id === filterLocation);
+    if (filterArea) {
+      const locIds = new Set(areas.filter(a => a.name === filterArea).map(a => a.locationId));
+      return locations.filter(l => locIds.has(l.id));
+    }
+    if (filterPosition) {
+      const locIds = new Set<string>();
+      items.forEach(u => {
+        if (u.position === filterPosition) {
+          (u.locationIds ?? []).forEach(id => locIds.add(id));
+        }
+      });
+      return locations.filter(l => locIds.has(l.id));
+    }
+    return locations;
+  }, [locations, areas, filterArea, filterLocation, filterPosition, items]);
+
+  const visibleAreas = useMemo(() => {
+    if (filterArea) return areas.filter((a) => a.name === filterArea);
+    if (filterLocation) return areas.filter((a) => a.locationId === filterLocation);
+    if (filterPosition) {
+      const areaIds = new Set<string>();
+      items.forEach(u => {
+        if (u.position === filterPosition) {
+          (u.areaIds ?? []).forEach(id => areaIds.add(id));
+        }
+      });
+      return areas.filter(a => areaIds.has(a.id));
+    }
+    return areas;
+  }, [areas, filterArea, filterLocation, filterPosition, items]);
 
   const anyFilter = !!(search || filterLocation || filterArea || filterPosition || filterRole);
 
@@ -566,6 +547,7 @@ export default function TeamPage() {
       <NavBar />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+        {/* Шапка */}
         <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
           <div>
             <h1 className="text-3xl font-bold text-slate-900">Сотрудники</h1>
@@ -573,45 +555,28 @@ export default function TeamPage() {
           </div>
 
           <div className="flex gap-2 flex-wrap items-center">
-            <div className="inline-flex items-center gap-1 p-1 bg-white border border-slate-200 rounded-xl shadow-sm">
-              <button
-                onClick={() => switchViewMode("groups")}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  viewMode === "groups" ? "bg-brand-600 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                <LayoutList className="w-3.5 h-3.5" /> Группы
-              </button>
-              <button
-                onClick={() => switchViewMode("matrix")}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  viewMode === "matrix" ? "bg-brand-600 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                <LayoutGrid className="w-3.5 h-3.5" /> Матрица
-              </button>
-            </div>
-
-            {viewMode === "groups" && (
-              <button
-                onClick={toggleEdit}
-                className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium shadow-sm transition-all ${
-                  editMode ? "bg-emerald-600 text-white hover:bg-emerald-700" : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                {editMode ? <><Check className="w-4 h-4" /> Готово</> : <><Pencil className="w-4 h-4" /> Редактировать</>}
-              </button>
-            )}
+            <button
+              onClick={toggleViewMode}
+              className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium shadow-sm transition-all border ${
+                viewMode === "groups"
+                  ? "bg-brand-600 text-white border-brand-600"
+                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              <LayoutList className="w-4 h-4" />
+              Группы
+            </button>
 
             <button
               onClick={() => setShowForm((v) => !v)}
               className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2.5 rounded-xl hover:bg-brand-700 text-sm font-medium shadow-sm hover:shadow transition-all"
             >
-              {showForm ? <><X className="w-4 h-4" /> Отмена</> : <><UserPlus className="w-4 h-4" /> Добавить сотрудника</>}
+              {showForm ? <><X className="w-4 h-4" /> Отмена</> : <><UserPlus className="w-4 h-4" /> Добавить</>}
             </button>
           </div>
         </div>
 
+        {/* Импорт из Excel */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 mb-4">
           <div className="flex items-center gap-3 flex-wrap">
             <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
@@ -644,6 +609,7 @@ export default function TeamPage() {
           </div>
         </div>
 
+        {/* Форма создания */}
         {showForm && (
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-4 animate-fade-in">
             <h3 className="font-semibold text-slate-900 mb-4">Новый сотрудник</h3>
@@ -697,7 +663,7 @@ export default function TeamPage() {
                   <input value={createForm.phone} onChange={(e) => setCreateForm((f) => ({ ...f, phone: e.target.value }))} placeholder="+7 999 123-45-67" />
                 </div>
               </div>
-              <p className="text-xs text-slate-500">После создания точки и локации назначаются в карточке сотрудника.</p>
+              <p className="text-xs text-slate-500">После создания точки и локации назначаются в матрице или карточке сотрудника.</p>
               <div className="flex gap-3 pt-2">
                 <button type="submit" disabled={creating} className="inline-flex items-center gap-2 bg-brand-600 text-white px-5 py-2.5 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium shadow-sm transition-all">
                   {creating ? "Сохранение..." : "Сохранить"}
@@ -710,311 +676,251 @@ export default function TeamPage() {
           </div>
         )}
 
+        {/* ФИЛЬТРЫ (общие для обеих вкладок) */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 mb-4 flex flex-wrap gap-3 items-center">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Поиск по имени, email, должности..."
+              className="!pl-9"
+            />
+          </div>
+          
+          {/* Выбор точки */}
+          <select value={filterLocation} onChange={(e) => handleFilterLocationChange(e.target.value)} className="!w-auto">
+            <option value="">Все точки</option>
+            {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+          </select>
+          
+          {/* Выбор локации (плоский список) */}
+          <select value={filterArea} onChange={(e) => setFilterArea(e.target.value)} className="!w-auto">
+            <option value="">Все локации</option>
+            {availableAreaNames.map((name) => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+          
+          {/* Выбор должности */}
+          <select value={filterPosition} onChange={(e) => setFilterPosition(e.target.value)} className="!w-auto">
+            <option value="">Все должности</option>
+            {availablePositionsList.map((pos) => (
+              <option key={pos} value={pos}>{pos}</option>
+            ))}
+          </select>
+          
+          {/* Выбор роли */}
+          <select value={filterRole} onChange={(e) => setFilterRole(e.target.value)} className="!w-auto">
+            <option value="">Все роли</option>
+            <option value="OWNER">Владелец</option>
+            <option value="MANAGER">Менеджер</option>
+            <option value="EMPLOYEE">Сотрудник</option>
+          </select>
+          
+          {anyFilter && (
+            <button
+              onClick={() => { setSearch(""); setFilterLocation(""); setFilterArea(""); setFilterPosition(""); setFilterRole(""); }}
+              className="text-xs text-slate-500 hover:text-slate-900 inline-flex items-center gap-1"
+            >
+              <X className="w-3.5 h-3.5" /> Сбросить
+            </button>
+          )}
+        </div>
+
+        {/* ═══════════════════════════════════════════════════ */}
+        {/* РЕЖИМ: ГРУППЫ                                     */}
+        {/* ═══════════════════════════════════════════════════ */}
         {viewMode === "groups" && (
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 mb-4 flex flex-wrap gap-3 items-center">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Поиск по имени, email, должности..."
-                className="!pl-9"
-              />
-            </div>
-            <select
-              value={filterLocation}
-              onChange={(e) => handleFilterLocationChange(e.target.value)}
-              className="!w-auto"
-            >
-              <option value="">Все точки</option>
-              {locations.map((l) => (
-                <option key={l.id} value={l.id}>{l.name}</option>
-              ))}
-            </select>
-            <select
-              value={filterArea}
-              onChange={(e) => handleFilterAreaChange(e.target.value)}
-              className="!w-auto"
-              disabled={!filterLocation}
-              title={!filterLocation ? "Сначала выберите точку" : ""}
-            >
-              <option value="">
-                {filterLocation ? "Все локации" : "— Сначала выберите точку —"}
-              </option>
-              {filterLocation
-                ? filterAreasAvailable.map((a) => (
-                    <option key={a.id} value={a.id}>{a.name}</option>
-                  ))
-                : null}
-            </select>
-            <select
-              value={filterPosition}
-              onChange={(e) => setFilterPosition(e.target.value)}
-              className="!w-auto"
-              disabled={!filterLocation && !filterArea}
-              title={!filterLocation && !filterArea ? "Сначала выберите точку или локацию" : ""}
-            >
-              <option value="">
-                {filterLocation || filterArea ? "Все должности" : "— Выберите точку —"}
-              </option>
-              {availablePositions.map((p) => (
-                <option key={p.id} value={p.name}>{p.name}</option>
-              ))}
-            </select>
-            <select
-              value={filterRole}
-              onChange={(e) => setFilterRole(e.target.value)}
-              className="!w-auto"
-            >
-              <option value="">Все роли</option>
-              <option value="OWNER">Владелец</option>
-              <option value="MANAGER">Менеджер</option>
-              <option value="EMPLOYEE">Сотрудник</option>
-            </select>
-            {anyFilter && (
-              <button
-                onClick={() => {
-                  setSearch("");
-                  setFilterLocation("");
-                  setFilterArea("");
-                  setFilterPosition("");
-                  setFilterRole("");
-                }}
-                className="text-xs text-slate-500 hover:text-slate-900 inline-flex items-center gap-1"
-              >
-                <X className="w-3.5 h-3.5" /> Сбросить
-              </button>
-            )}
-            {editMode && (
-              <button
-                onClick={() => selectAll(filtered)}
-                className="ml-auto text-xs text-brand-600 hover:text-brand-700 font-medium px-2 py-1 rounded hover:bg-brand-50"
-              >
-                Выделить всех ({filtered.length})
-              </button>
-            )}
-          </div>
-        )}
-
-        {viewMode === "groups" && editMode && (
-          <div className="sticky top-[100px] z-20 bg-white border-2 border-brand-300 rounded-2xl p-3 mb-4 flex items-center gap-3 flex-wrap shadow-lg">
-            <span className="text-sm font-medium text-brand-900">Выбрано: <b>{selected.size}</b></span>
-            <select value={bulkAction} onChange={(e) => { setBulkAction(e.target.value as BulkAction); setBulkValue(""); }} className="!w-auto">
-              <option value="">— Действие —</option>
-              <option value="addToLocation">Добавить в точку</option>
-              <option value="addToArea">Добавить в локацию</option>
-              <option value="setPosition">Установить должность</option>
-              <option value="setRate">Изменить ставку/оклад</option>
-              <option value="setPaymentType">Изменить форму оплаты</option>
-              <option value="setEmploymentType">Изменить трудоустройство</option>
-              <option value="setRole">Изменить роль</option>
-            </select>
-
-            {bulkAction === "addToLocation" && (
-              <select value={bulkValue} onChange={(e) => setBulkValue(e.target.value)} className="!w-auto">
-                <option value="">— Точка —</option>
-                {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
+          <>
+            {!loading && filtered.length === 0 && items.length > 0 && (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center">
+                <Search className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                <p className="text-sm text-slate-500">Нет сотрудников по фильтру</p>
+              </div>
             )}
 
-            {bulkAction === "addToArea" && (
-              <select value={bulkValue} onChange={(e) => setBulkValue(e.target.value)} className="!w-auto" disabled={bulkAreas.length === 0}>
-                <option value="">{bulkAreas.length === 0 ? "— Нет локаций в общих точках —" : "— Локация —"}</option>
-                {bulkAreas.map((a) => {
-                  const sameNameCount = bulkAreas.filter((x) => x.name.toLowerCase().trim() === a.name.toLowerCase().trim()).length;
-                  const loc = locations.find((l) => l.id === a.locationId);
-                  return <option key={a.id} value={a.id}>{sameNameCount > 1 && loc ? `${a.name} · ${loc.name}` : a.name}</option>;
-                })}
-              </select>
+            {!loading && items.length === 0 && (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center">
+                <UsersIcon className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                <h3 className="font-semibold text-slate-900 mb-1">Пока нет сотрудников</h3>
+                <p className="text-sm text-slate-500 mb-6 max-w-sm mx-auto">Добавьте вручную или загрузите Excel со всеми сразу</p>
+                <button onClick={() => setShowForm(true)} className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2.5 rounded-xl hover:bg-brand-700 text-sm font-medium shadow-sm">
+                  <UserPlus className="w-4 h-4" /> Добавить сотрудника
+                </button>
+              </div>
             )}
 
-            {bulkAction === "setPosition" && (
-              <>
-                <input list="bulk-positions" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)} placeholder="Название должности" className="!w-48" />
-                <datalist id="bulk-positions">{positions.map((p) => <option key={p.id} value={p.name} />)}</datalist>
-              </>
-            )}
+            {filtered.length > 0 && (
+              <div className="space-y-3">
+                {Array.from(grouped.entries()).map(([lKey, lGroup]) => {
+                  const allInLoc = Array.from(lGroup.areas.values()).flatMap((aG) => Array.from(aG.positions.values()).flat());
+                  return (
+                    <details key={lKey} open className="bg-white rounded-2xl border-2 border-slate-400 shadow-sm overflow-hidden">
+                      <summary className="cursor-pointer px-4 py-3 bg-slate-100 hover:bg-slate-200 border-b-2 border-slate-400 flex items-center gap-2">
+                        <ChevronDown className="w-4 h-4 text-slate-600" />
+                        <MapPin className="w-4 h-4 text-slate-700" />
+                        <span className="font-bold text-slate-900 text-sm">{locationName(lGroup.locationId)}</span>
+                        <span className="text-xs text-slate-600 bg-white px-2 py-0.5 rounded-full ring-1 ring-slate-300">{allInLoc.length} чел.</span>
+                      </summary>
 
-            {bulkAction === "setRate" && (
-              <input type="number" step="0.01" min="0" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)} placeholder="₽" className="!w-32" />
-            )}
+                      <div className="p-3 space-y-2">
+                        {Array.from(lGroup.areas.entries()).map(([aKey, aGroup]) => {
+                          const allInArea = Array.from(aGroup.positions.values()).flat();
+                          const posArr = Array.from(aGroup.positions.entries());
+                          const useTwoCols = posArr.length > 1;
 
-            {bulkAction === "setPaymentType" && (
-              <select value={bulkValue} onChange={(e) => setBulkValue(e.target.value)} className="!w-auto">
-                <option value="">— Форма —</option>
-                <option value="HOURLY">Почасовая</option>
-                <option value="MONTHLY">Месячный оклад</option>
-              </select>
-            )}
+                          return (
+                            <details key={aKey} open className="bg-slate-50 rounded-xl border-2 border-slate-300 overflow-hidden">
+                              <summary className="cursor-pointer px-3 py-2 flex items-center gap-2 hover:bg-slate-100">
+                                <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+                                <Layers className="w-3.5 h-3.5 text-slate-500" />
+                                <span className="font-semibold text-slate-800 text-sm">{areaName(aGroup.areaId)}</span>
+                                <span className="text-xs text-slate-500">({allInArea.length})</span>
+                              </summary>
 
-            {bulkAction === "setEmploymentType" && (
-              <select value={bulkValue} onChange={(e) => setBulkValue(e.target.value)} className="!w-auto">
-                <option value="">— Тип —</option>
-                <option value="SHTAT">В штате</option>
-                <option value="GPH">ГПХ</option>
-              </select>
-            )}
+                              <div className="bg-white p-2">
+                                <div className={useTwoCols ? "columns-2 gap-2" : ""}>
+                                  {posArr.map(([posKey, list]) => {
+                                    const posColor = positions.find((p) => p.name === posKey)?.color ?? "#64748B";
+                                    return (
+                                      <div key={posKey} className={`rounded-lg border border-slate-200 overflow-hidden ${useTwoCols ? "break-inside-avoid mb-2 inline-block w-full" : ""}`}>
+                                        <div className="flex items-center gap-2 px-3 py-2" style={{ backgroundColor: withAlpha(posColor, headerOpacity) }}>
+                                          <Briefcase className="w-3.5 h-3.5 text-slate-900" />
+                                          <span className="text-sm font-bold text-slate-900">{posKey === "__noPos__" ? "Без должности" : posKey}</span>
+                                          <span className="text-[11px] text-slate-700 font-medium">({list.length})</span>
+                                        </div>
 
-            {bulkAction === "setRole" && (
-              <select value={bulkValue} onChange={(e) => setBulkValue(e.target.value)} className="!w-auto">
-                <option value="">— Роль —</option>
-                <option value="OWNER">Владелец</option>
-                <option value="MANAGER">Менеджер</option>
-                <option value="EMPLOYEE">Сотрудник</option>
-              </select>
-            )}
-
-            <button onClick={onBulkApply} disabled={!bulkAction || !bulkValue || bulkBusy || selected.size === 0} className="bg-brand-600 text-white px-4 py-1.5 rounded-lg hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium">
-              {bulkBusy ? "..." : "Применить"}
-            </button>
-            <button onClick={() => setSelected(new Set())} disabled={selected.size === 0} className="text-sm text-slate-600 hover:bg-white px-3 py-1.5 rounded-lg disabled:opacity-40">
-              Сбросить
-            </button>
-          </div>
-        )}
-
-        {loading && <p className="text-slate-500 text-sm">Загрузка...</p>}
-        {error && <p className="text-red-500 text-sm">{error}</p>}
-
-        {!loading && filtered.length === 0 && items.length > 0 && (
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center">
-            <Search className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-            <p className="text-sm text-slate-500">Нет сотрудников по фильтру</p>
-          </div>
-        )}
-
-        {!loading && items.length === 0 && (
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center">
-            <UsersIcon className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-            <h3 className="font-semibold text-slate-900 mb-1">Пока нет сотрудников</h3>
-            <p className="text-sm text-slate-500 mb-6 max-w-sm mx-auto">Добавьте вручную или загрузите Excel со всеми сразу</p>
-            <button onClick={() => setShowForm(true)} className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2.5 rounded-xl hover:bg-brand-700 text-sm font-medium shadow-sm">
-              <UserPlus className="w-4 h-4" /> Добавить сотрудника
-            </button>
-          </div>
-        )}
-
-        {viewMode === "groups" && filtered.length > 0 && (
-          <div className="space-y-3">
-            {Array.from(grouped.entries()).map(([lKey, lGroup]) => {
-              const allInLoc = Array.from(lGroup.areas.values()).flatMap((aG) => Array.from(aG.positions.values()).flat());
-              return (
-                <details key={lKey} open className="bg-white rounded-2xl border-2 border-slate-400 shadow-sm overflow-hidden">
-                  <summary className="cursor-pointer px-4 py-3 bg-slate-100 hover:bg-slate-200 border-b-2 border-slate-400 flex items-center gap-2">
-                    <ChevronDown className="w-4 h-4 text-slate-600" />
-                    {editMode && (
-                      <input type="checkbox" checked={isAllSelected(allInLoc)} onChange={() => selectAll(allInLoc)} onClick={(e) => e.stopPropagation()} className="!w-4 !h-4 !p-0" />
-                    )}
-                    <MapPin className="w-4 h-4 text-slate-700" />
-                    <span className="font-bold text-slate-900 text-sm">{locationName(lGroup.locationId)}</span>
-                    <span className="text-xs text-slate-600 bg-white px-2 py-0.5 rounded-full ring-1 ring-slate-300">{allInLoc.length} чел.</span>
-                  </summary>
-
-                  <div className="p-3 space-y-2">
-                    {Array.from(lGroup.areas.entries()).map(([aKey, aGroup]) => {
-                      const allInArea = Array.from(aGroup.positions.values()).flat();
-                      const posArr = Array.from(aGroup.positions.entries());
-                      const useTwoCols = posArr.length > 1;
-
-                      return (
-                        <details key={aKey} open className="bg-slate-50 rounded-xl border-2 border-slate-300 overflow-hidden">
-                          <summary className="cursor-pointer px-3 py-2 flex items-center gap-2 hover:bg-slate-100">
-                            <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
-                            {editMode && (
-                              <input type="checkbox" checked={isAllSelected(allInArea)} onChange={() => selectAll(allInArea)} onClick={(e) => e.stopPropagation()} className="!w-3.5 !h-3.5 !p-0" />
-                            )}
-                            <Layers className="w-3.5 h-3.5 text-slate-500" />
-                            <span className="font-semibold text-slate-800 text-sm">{areaName(aGroup.areaId)}</span>
-                            <span className="text-xs text-slate-500">({allInArea.length})</span>
-                          </summary>
-
-                          <div className="bg-white p-2">
-                            <div className={useTwoCols ? "columns-2 gap-2" : ""}>
-                              {posArr.map(([posKey, list]) => {
-                                const posColor = positions.find((p) => p.name === posKey)?.color ?? "#64748B";
-                                return (
-                                  <div key={posKey} className={`rounded-lg border border-slate-200 overflow-hidden ${useTwoCols ? "break-inside-avoid mb-2 inline-block w-full" : ""}`}>
-                                    <div className="flex items-center gap-2 px-3 py-2" style={{ backgroundColor: withAlpha(posColor, headerOpacity) }}>
-                                      {editMode && (
-                                        <input type="checkbox" checked={isAllSelected(list)} onChange={() => selectAll(list)} className="!w-3.5 !h-3.5 !p-0" />
-                                      )}
-                                      <Briefcase className="w-3.5 h-3.5 text-slate-900" />
-                                      <span className="text-sm font-bold text-slate-900">{posKey === "__noPos__" ? "Без должности" : posKey}</span>
-                                      <span className="text-[11px] text-slate-700 font-medium">({list.length})</span>
-                                    </div>
-
-                                    <div>
-                                      {list.map((u) => (
-                                        <div key={u.id} className="flex items-center gap-3 px-3 py-2 hover:brightness-95 transition-all border-b border-white/40 last:border-0" style={{ backgroundColor: withAlpha(posColor, rowOpacity) }}>
-                                          {editMode && (
-                                            <input type="checkbox" checked={selected.has(u.id)} onChange={() => tryToggle(u.id)} className="!w-4 !h-4 !p-0" />
-                                          )}
-                                          <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold shrink-0 ${getAvatarColor(u.id)}`}>
-                                            {getInitials(u.name)}
-                                          </div>
-                                          <div className="flex-1 min-w-0">
-                                            <div className="font-medium text-slate-900 text-sm truncate">
-                                              {u.name}
-                                              {u.id === currentUser?.id && <span className="ml-1 text-xs text-slate-500">(вы)</span>}
-                                            </div>
-                                            <div className="text-xs text-slate-600 truncate">{u.email}</div>
-                                          </div>
-                                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${ROLE_COLORS[u.role]}`}>{ROLE_LABELS[u.role]}</span>
-                                          {u.hourlyRate && (
-                                            <span className="text-xs text-slate-800 font-medium whitespace-nowrap hidden sm:inline">
-                                              {u.hourlyRate} {u.paymentType === "MONTHLY" ? "₽/мес" : "₽/ч"}
-                                            </span>
-                                          )}
-                                          {u.employmentType === "GPH" && (
-                                            <span className="text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-100 px-1.5 py-0.5 rounded">ГПХ</span>
-                                          )}
-                                          {editMode && (
-                                            <div className="flex items-center gap-1 shrink-0">
-                                              <button onClick={() => setEditingUser(u)} className="text-slate-600 hover:text-brand-700 p-1.5 rounded-lg bg-white/60 hover:bg-white" title="Редактировать">
-                                                <Pencil className="w-3.5 h-3.5" />
-                                              </button>
-                                              {u.id !== currentUser?.id && (
-                                                <button onClick={() => onDelete(u.id, u.name)} className="text-slate-600 hover:text-red-700 p-1.5 rounded-lg bg-white/60 hover:bg-white" title="Удалить">
-                                                  <Trash2 className="w-3.5 h-3.5" />
-                                                </button>
+                                        <div>
+                                          {list.map((u) => (
+                                            <div key={u.id} className="flex items-center gap-3 px-3 py-2 transition-all border-b border-white/40 last:border-0" style={{ backgroundColor: withAlpha(posColor, rowOpacity) }}>
+                                              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold shrink-0 ${getAvatarColor(u.id)}`}>
+                                                {getInitials(u.name)}
+                                              </div>
+                                              <div className="flex-1 min-w-0">
+                                                <div className="font-medium text-slate-900 text-sm truncate">
+                                                  {u.name}
+                                                  {u.id === currentUser?.id && <span className="ml-1 text-xs text-slate-500">(вы)</span>}
+                                                </div>
+                                                <div className="text-xs text-slate-600 truncate">{u.email}</div>
+                                              </div>
+                                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${ROLE_COLORS[u.role]}`}>{ROLE_LABELS[u.role]}</span>
+                                              {u.hourlyRate && (
+                                                <span className="text-xs text-slate-800 font-medium whitespace-nowrap hidden sm:inline">
+                                                  {u.hourlyRate} {u.paymentType === "MONTHLY" ? "₽/мес" : "₽/ч"}
+                                                </span>
+                                              )}
+                                              {u.employmentType === "GPH" && (
+                                                <span className="text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-100 px-1.5 py-0.5 rounded">ГПХ</span>
                                               )}
                                             </div>
-                                          )}
+                                          ))}
                                         </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        </details>
-                      );
-                    })}
-                  </div>
-                </details>
-              );
-            })}
-          </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </details>
+                          );
+                        })}
+                      </div>
+                    </details>
+                  );
+                })}
+              </div>
+            )}
+          </>
         )}
 
-        {viewMode === "matrix" && filtered.length > 0 && (
-          <MatrixView
-            users={filtered}
-            locations={locations}
-            areas={areas}
-            positions={positions}
-            headerOpacity={headerOpacity}
-            rowOpacity={rowOpacity}
-            editMode={matrixEditMode}
-            pendingChanges={pendingChanges}
-            saving={matrixSaving}
-            onToggleArea={handleMatrixToggle}
-            onEdit={(u) => setEditingUser(u)}
-            onStartEdit={() => setMatrixEditMode(true)}
-            onCancelEdit={onMatrixCancel}
-            onApply={onMatrixApply}
-          />
+        {/* ═══════════════════════════════════════════════════ */}
+        {/* РЕЖИМ: МАТРИЦА                                    */}
+        {/* ═══════════════════════════════════════════════════ */}
+        {viewMode === "matrix" && (
+          <div className="space-y-4">
+            {matrixEditMode && (
+              <div className="sticky top-[70px] z-20 bg-white border-2 border-brand-300 rounded-2xl p-3 flex items-center gap-3 flex-wrap shadow-lg animate-fade-in mb-4">
+                <span className="text-sm font-medium text-brand-900">Выбрано: <b>{selected.size}</b></span>
+                <select 
+                  value={bulkAction} 
+                  onChange={(e) => { setBulkAction(e.target.value as BulkAction); setBulkValue(""); }} 
+                  className="!w-auto"
+                  disabled={selected.size === 0}
+                >
+                  <option value="">— Действие —</option>
+                  <option value="setPosition">Установить должность</option>
+                  <option value="setRate">Изменить ставку/оклад</option>
+                  <option value="setPaymentType">Изменить форму оплаты</option>
+                  <option value="setEmploymentType">Изменить трудоустройство</option>
+                  <option value="setRole">Изменить роль</option>
+                </select>
+
+                {bulkAction === "setPosition" && (
+                  <>
+                    <input list="bulk-positions" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)} placeholder="Название должности" className="!w-48" disabled={selected.size === 0} />
+                    <datalist id="bulk-positions">{positions.map((p) => <option key={p.id} value={p.name} />)}</datalist>
+                  </>
+                )}
+
+                {bulkAction === "setRate" && (
+                  <input type="number" step="0.01" min="0" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)} placeholder="₽" className="!w-32" disabled={selected.size === 0} />
+                )}
+
+                {bulkAction === "setPaymentType" && (
+                  <select value={bulkValue} onChange={(e) => setBulkValue(e.target.value)} className="!w-auto" disabled={selected.size === 0}>
+                    <option value="">— Форма —</option>
+                    <option value="HOURLY">Почасовая</option>
+                    <option value="MONTHLY">Месячный оклад</option>
+                  </select>
+                )}
+
+                {bulkAction === "setEmploymentType" && (
+                  <select value={bulkValue} onChange={(e) => setBulkValue(e.target.value)} className="!w-auto" disabled={selected.size === 0}>
+                    <option value="">— Тип —</option>
+                    <option value="SHTAT">В штате</option>
+                    <option value="GPH">ГПХ</option>
+                  </select>
+                )}
+
+                {bulkAction === "setRole" && (
+                  <select value={bulkValue} onChange={(e) => setBulkValue(e.target.value)} className="!w-auto" disabled={selected.size === 0}>
+                    <option value="">— Роль —</option>
+                    <option value="OWNER">Владелец</option>
+                    <option value="MANAGER">Менеджер</option>
+                    <option value="EMPLOYEE">Сотрудник</option>
+                  </select>
+                )}
+
+                <button onClick={onBulkApply} disabled={selected.size === 0 || !bulkAction || !bulkValue || bulkBusy} className="bg-brand-600 text-white px-4 py-1.5 rounded-lg hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium">
+                  {bulkBusy ? "..." : "Применить"}
+                </button>
+                <button onClick={() => setSelected(new Set())} disabled={selected.size === 0} className="text-sm text-slate-600 hover:bg-white px-3 py-1.5 rounded-lg disabled:opacity-40">
+                  Сбросить
+                </button>
+              </div>
+            )}
+
+            <MatrixView
+              users={filtered}
+              locations={visibleLocations}
+              areas={visibleAreas}
+              positions={positions}
+              headerOpacity={headerOpacity}
+              rowOpacity={rowOpacity}
+              editMode={matrixEditMode}
+              pendingChanges={pendingChanges}
+              saving={matrixSaving}
+              onToggleArea={handleMatrixToggle}
+              onEdit={(u) => setEditingUser(u)}
+              onStartEdit={() => setMatrixEditMode(true)}
+              onCancelEdit={onMatrixCancel}
+              onApply={onMatrixApply}
+              selected={selected}
+              onToggleSelect={toggleSelect}
+              onToggleSelectAll={toggleSelectAll}
+              onToggleSelectPosition={toggleSelectPosition}
+            />
+          </div>
         )}
       </main>
 
@@ -1048,6 +954,7 @@ function MatrixView({
   users, locations, areas, positions, headerOpacity, rowOpacity,
   editMode, pendingChanges, saving, onToggleArea, onEdit,
   onStartEdit, onCancelEdit, onApply,
+  selected, onToggleSelect, onToggleSelectAll, onToggleSelectPosition,
 }: {
   users: TeamUser[];
   locations: { id: string; name: string }[];
@@ -1063,6 +970,10 @@ function MatrixView({
   onStartEdit: () => void;
   onCancelEdit: () => void;
   onApply: () => void;
+  selected: Set<string>;
+  onToggleSelect: (id: string) => void;
+  onToggleSelectAll: () => void;
+  onToggleSelectPosition: (users: TeamUser[]) => void;
 }) {
   const dragScroll = useDragScroll<HTMLDivElement>();
   const locationsWithAreas = useMemo(
@@ -1109,6 +1020,7 @@ function MatrixView({
   }
 
   const changedCount = pendingChanges.size;
+  const allSelected = users.length > 0 && users.every((u) => selected.has(u.id));
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1120,7 +1032,7 @@ function MatrixView({
         <div className="ml-auto flex items-center gap-2 flex-wrap">
           {!editMode ? (
             <button onClick={onStartEdit} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-slate-200 text-slate-700 hover:bg-slate-100">
-              <Pencil className="w-3.5 h-3.5" /> Редактировать
+              <Pencil className="w-3.5 h-3.5" /> Редактировать привязки
             </button>
           ) : (
             <>
@@ -1136,27 +1048,38 @@ function MatrixView({
         </div>
       </div>
 
-      {!editMode && (
-        <div className="px-4 py-2 bg-slate-100/60 border-b border-slate-200 text-[11px] text-slate-500">
-          Для изменения привязок нажмите «Редактировать». В режиме просмотра чекбоксы некликабельны.
-        </div>
-      )}
-
       <div
         ref={dragScroll.ref}
         onMouseDown={dragScroll.onMouseDown}
         onMouseLeave={dragScroll.onMouseLeave}
         onMouseUp={dragScroll.onMouseUp}
         onMouseMove={dragScroll.onMouseMove}
-        className="overflow-auto max-h-[55vh]"
+        className="overflow-auto max-h-[65vh]"
         style={dragScroll.style}
       >
         <table className="w-full border-separate border-spacing-0 text-xs">
           <thead className="sticky top-0 z-30">
             <tr>
-              <th rowSpan={2} className="sticky left-0 top-0 z-40 bg-slate-100 border-r border-b border-slate-300 px-2 py-2 text-left font-semibold text-slate-900 min-w-[200px]">
+              {editMode && (
+                <th rowSpan={2} className="sticky left-0 top-0 z-40 bg-slate-100 border-r border-b border-slate-300 p-2 text-center w-10">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={onToggleSelectAll}
+                    className="!w-4 !h-4 !p-0 cursor-pointer accent-brand-600"
+                    title="Выбрать всех"
+                  />
+                </th>
+              )}
+              
+              <th 
+                rowSpan={2} 
+                className="sticky top-0 z-40 bg-slate-100 border-r border-b border-slate-300 px-2 py-2 text-left font-semibold text-slate-900 min-w-[200px]" 
+                style={{ left: editMode ? 40 : 0 }}
+              >
                 Пользователь
               </th>
+              
               {locationsWithAreas.map((loc) => {
                 const locAreas = areasByLoc.get(loc.id) ?? [];
                 return (
@@ -1186,10 +1109,23 @@ function MatrixView({
           <tbody>
             {groupedByPosition.map(([posKey, list]) => {
               const posColor = positions.find((p) => p.name === posKey)?.color ?? "#64748B";
+              const allPosSelected = list.length > 0 && list.every((u) => selected.has(u.id));
+              
               return (
                 <Fragment key={posKey}>
                   <tr>
-                    <td colSpan={1 + totalAreaCols} className="sticky left-0 z-20 border-r border-b border-slate-200 px-3 py-1.5" style={{ backgroundColor: withAlpha(posColor, headerOpacity) }}>
+                    {editMode && (
+                      <td className="sticky left-0 z-20 border-r border-b border-slate-200 p-2 text-center w-10" style={{ backgroundColor: withAlpha(posColor, headerOpacity) }}>
+                        <input
+                          type="checkbox"
+                          checked={allPosSelected}
+                          onChange={() => onToggleSelectPosition(list)}
+                          className="!w-4 !h-4 !p-0 cursor-pointer accent-brand-600"
+                          title="Выбрать всех в должности"
+                        />
+                      </td>
+                    )}
+                    <td colSpan={1 + totalAreaCols} className="sticky z-20 border-r border-b border-slate-200 px-3 py-1.5" style={{ left: editMode ? 40 : 0, backgroundColor: withAlpha(posColor, headerOpacity) }}>
                       <div className="flex items-center gap-2">
                         <Briefcase className="w-3.5 h-3.5 text-slate-900" />
                         <span className="text-sm font-bold text-slate-900">{posKey === "__noPos__" ? "Без должности" : posKey}</span>
@@ -1201,12 +1137,26 @@ function MatrixView({
                   {list.map((u) => {
                     const pending = pendingChanges.get(u.id);
                     const effectiveAreaIds = pending ? pending.areaIds : new Set(u.areaIds ?? []);
-                    const effectiveLocationIds = pending ? pending.locationIds : new Set(u.locationIds ?? []);
                     const isChanged = !!pending;
+                    const isSelected = selected.has(u.id);
 
                     return (
-                      <tr key={u.id} className="hover:bg-slate-50/50">
-                        <td className="sticky left-0 z-10 bg-white border-r border-b border-slate-200 px-2 py-1.5 min-w-[200px]" style={{ backgroundColor: withAlpha(posColor, rowOpacity) }}>
+                      <tr key={u.id} className={`hover:bg-slate-50/50 ${isSelected ? "bg-brand-50/20" : ""}`}>
+                        {editMode && (
+                          <td className="sticky left-0 z-10 border-r border-b border-slate-200 p-2 text-center w-10" style={{ backgroundColor: isSelected ? "#f0f9ff" : withAlpha(posColor, rowOpacity) }}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => onToggleSelect(u.id)}
+                              className="!w-4 !h-4 !p-0 cursor-pointer accent-brand-600"
+                            />
+                          </td>
+                        )}
+                        
+                        <td 
+                          className="sticky z-10 border-r border-b border-slate-200 px-2 py-1.5 min-w-[200px]" 
+                          style={{ left: editMode ? 40 : 0, backgroundColor: isSelected ? "#f0f9ff" : withAlpha(posColor, rowOpacity) }}
+                        >
                           <div className="flex items-center gap-2">
                             <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-semibold shrink-0 ${getAvatarColor(u.id)}`}>
                               {getInitials(u.name)}
@@ -1226,14 +1176,12 @@ function MatrixView({
                         {locationsWithAreas.flatMap((loc) =>
                           (areasByLoc.get(loc.id) ?? []).map((a) => {
                             const checked = effectiveAreaIds.has(a.id);
-                            const inPoint = effectiveLocationIds.has(a.locationId);
-
                             return (
                               <td
                                 key={a.id}
                                 className="p-1 text-center transition-all"
                                 style={{
-                                  backgroundColor: checked ? "#dcfce7" : undefined,
+                                  backgroundColor: checked ? "#dcfce7" : (isSelected ? "#f0f9ff" : undefined),
                                   boxShadow: checked ? "inset 0 0 0 2px #10b981" : undefined,
                                   borderRight: "1px solid #e2e8f0",
                                   borderBottom: "1px solid #e2e8f0",
@@ -1247,7 +1195,6 @@ function MatrixView({
                                       disabled={saving}
                                       onChange={() => onToggleArea(u, a)}
                                       className="!w-5 !h-5 !p-0 cursor-pointer accent-emerald-600 disabled:opacity-50 disabled:cursor-wait"
-                                      title={checked ? `Убрать из «${a.name}»` : `Добавить в «${a.name}»${!inPoint ? ` (и в точку «${loc.name}»)` : ""}`}
                                     />
                                   </label>
                                 ) : (
@@ -1255,13 +1202,8 @@ function MatrixView({
                                     className={`inline-flex items-center justify-center w-6 h-6 rounded-full transition-all ${
                                       checked ? "bg-emerald-500 text-white shadow-sm" : "bg-slate-100 text-slate-300 border border-slate-200"
                                     }`}
-                                    title={checked ? "В локации" : "Не в локации"}
                                   >
-                                    {checked ? (
-                                      <Check className="w-4 h-4" strokeWidth={3} />
-                                    ) : (
-                                      <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-                                    )}
+                                    {checked ? <Check className="w-4 h-4" strokeWidth={3} /> : <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />}
                                   </span>
                                 )}
                               </td>

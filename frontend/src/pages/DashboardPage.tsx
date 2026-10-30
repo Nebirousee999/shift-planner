@@ -106,7 +106,7 @@ export default function DashboardPage() {
     if (!activeLocationId) return;
 
     Promise.all([
-      dashboardApi.summary(activeLocationId),
+      dashboardApi.summary(activeLocationId, selectedDate),
       meApi.profile().catch(() => null),
       fetchTimeOffs() // <--- ЗАГРУЖАЕМ ОТГУЛЫ
     ])
@@ -116,7 +116,7 @@ export default function DashboardPage() {
 
     fetchWeeks(activeLocationId);
     refreshNotifs();
-  }, [activeLocationId, fetchWeeks, refreshNotifs, fetchTimeOffs]);
+  }, [activeLocationId, selectedDate, fetchWeeks, refreshNotifs, fetchTimeOffs]);
 
   const currentTimePercent =
     ((now.getHours() * 60 + now.getMinutes()) / (24 * 60)) * 100;
@@ -128,10 +128,10 @@ export default function DashboardPage() {
   const canNext = dates.length > 0 && selectedDate < dates[6];
   const dateInWeek = dates.includes(selectedDate);
 
-  useEffect(() => {
-    if (dates.length === 0) return;
-    if (!dates.includes(selectedDate)) setSelectedDate(todayDate);
-  }, [dates.join(","), selectedDate, todayDate]);
+  //useEffect(() => {
+    //if (dates.length === 0) return;
+    //if (!dates.includes(selectedDate)) setSelectedDate(todayDate);
+  //}, [dates.join(","), selectedDate, todayDate]);
 
   const handleGoToToday = () =>
     navigate(
@@ -461,8 +461,8 @@ export default function DashboardPage() {
                     <input
                       type="date"
                       value={selectedDate}
-                      min={dates[0]}
-                      max={dates[6]}
+                      //min={dates[0]}
+                      //max={dates[6]}
                       onChange={(e) => setSelectedDate(e.target.value)}
                       onClick={(e) => e.stopPropagation()}
                       className="!w-36 !text-xs !py-1"

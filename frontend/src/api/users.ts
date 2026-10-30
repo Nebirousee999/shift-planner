@@ -18,6 +18,7 @@ export type TeamUser = {
 export type BulkActionPayload =
   | { action: "addToLocation"; value: string }
   | { action: "addToArea"; value: string }
+  | { action: "moveToLocation"; value: string }
   | { action: "setPosition"; value: string | null }
   | { action: "setRate"; value: string | null }
   | { action: "setRole"; value: "OWNER" | "MANAGER" | "EMPLOYEE" }

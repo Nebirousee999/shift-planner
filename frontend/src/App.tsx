@@ -32,6 +32,8 @@ import LegalPage from "./pages/LegalPage";
 import DialogHost from "./components/DialogHost";
 import CookieBanner from "./components/CookieBanner";
 import PaymentSuccessPage from "./pages/PaymentSuccessPage";
+import HistoryPage from "./pages/HistoryPage";
+
 
 function ProtectedRoute({
   children,
@@ -124,6 +126,7 @@ export default function App() {
         {/* ─── 404 ─── */}
         <Route path="*" element={<Navigate to="/" replace />} />
         <Route path="/payment/success" element={<PaymentSuccessPage />} />
+        <Route path="/history" element={<ProtectedRoute adminOnly><HistoryPage /></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>
   );

@@ -36,8 +36,8 @@ const updateSchema = z.object({
 const bulkSchema = z.object({
   userIds: z.array(z.string().uuid()).min(1).max(500),
   action: z.enum([
-  "addToLocation", "addToArea", "setPosition", "setRate", "setRole",
-  "setPaymentType", "setEmploymentType",
+    "addToLocation", "addToArea", "moveToLocation", "setPosition", "setRate", "setRole",
+    "setPaymentType", "setEmploymentType",
   ]),
   value: z.string().nullable(),
 });

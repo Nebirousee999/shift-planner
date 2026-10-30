@@ -351,6 +351,7 @@ export const usersService = {
     action:
       | "addToLocation"
       | "addToArea"
+      | "moveToLocation"
       | "setPosition"
       | "setRate"
       | "setRole"
@@ -376,18 +377,12 @@ export const usersService = {
           .where(and(eq(locations.id, input.value), eq(locations.orgId, input.orgId)));
         if (!loc) throw new Error("LOCATION_NOT_FOUND");
 
-        const existing = await db
-          .select({ userId: userLocations.userId })
+        const existing = await db.select({ userId: userLocations.userId })
           .from(userLocations)
-          .where(and(
-            eq(userLocations.locationId, loc.id),
-            inArray(userLocations.userId, validIds),
-          ));
+          .where(and(eq(userLocations.locationId, loc.id), inArray(userLocations.userId, validIds)));
         const existingSet = new Set(existing.map((e) => e.userId));
-        const toInsert = validIds
-          .filter((id) => !existingSet.has(id))
-          .map((id) => ({ userId: id, locationId: loc.id }));
-        if (toInsert.length > 0) await db.insert(userLocations).values(toInsert);
+        const toInsert = validIds.filter((id) => !existingSet.has(id));
+        if (toInsert.length > 0) await db.insert(userLocations).values(toInsert).onConflictDoNothing(); 
         return { updated: validIds.length };
       }
 
@@ -399,19 +394,14 @@ export const usersService = {
           .where(and(eq(areas.id, input.value), eq(areas.orgId, input.orgId)));
         if (!area) throw new Error("AREA_NOT_FOUND");
 
-        const existingLoc = await db
-          .select({ userId: userLocations.userId })
+        const existingLoc = await db.select({ userId: userLocations.userId })
           .from(userLocations)
-          .where(and(
-            eq(userLocations.locationId, area.locationId),
-            inArray(userLocations.userId, validIds),
-          ));
+          .where(and(eq(userLocations.locationId, area.locationId), inArray(userLocations.userId, validIds)));
         const inPointSet = new Set(existingLoc.map((e) => e.userId));
         const toAddToPoint = validIds.filter((id) => !inPointSet.has(id));
+        
         if (toAddToPoint.length > 0) {
-          await db
-            .insert(userLocations)
-            .values(toAddToPoint.map((userId) => ({ userId, locationId: area.locationId })));
+          await db.insert(userLocations).values(toAddToPoint.map(userId => ({ userId, locationId: area.locationId }))).onConflictDoNothing();
         }
 
         const existingAreas = await db
@@ -420,13 +410,33 @@ export const usersService = {
           .where(and(eq(userAreas.areaId, area.id), inArray(userAreas.userId, validIds)));
         const existingAreaSet = new Set(existingAreas.map((e) => e.userId));
         const toAddToArea = validIds.filter((id) => !existingAreaSet.has(id));
+        
         if (toAddToArea.length > 0) {
-          await db
-            .insert(userAreas)
-            .values(toAddToArea.map((userId) => ({ userId, areaId: area.id })));
+          await db.insert(userAreas).values(toAddToArea.map(userId => ({ userId, areaId: area.id }))).onConflictDoNothing();
         }
         return { updated: validIds.length };
       }
+
+
+      case "moveToLocation": {
+        if (!input.value) throw new Error("LOCATION_REQUIRED");
+        const [loc] = await db.select({ id: locations.id }).from(locations)
+          .where(and(eq(locations.id, input.value), eq(locations.orgId, input.orgId)));
+        if (!loc) throw new Error("LOCATION_NOT_FOUND");
+
+        // Удаляем ВСЕ старые точки и локации у выбранных сотрудников
+        await db.delete(userLocations).where(inArray(userLocations.userId, validIds));
+        await db.delete(userAreas).where(inArray(userAreas.userId, validIds));
+
+        // Привязываем к новой точке
+        if (validIds.length > 0) {
+          await db.insert(userLocations).values(validIds.map((id) => ({ userId: id, locationId: loc.id }))).onConflictDoNothing();
+        }
+        return { updated: validIds.length };
+      }
+
+
+
 
       case "setPosition": {
         const value = input.value?.trim() || null;

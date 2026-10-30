@@ -1,11 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
   ChevronLeft, ChevronRight, Clock, Wallet, TrendingUp, TrendingDown,
   Minus, AlertTriangle, Banknote, Loader2, ShieldAlert,
-  Target, Flame, History, X,
+  Target, Flame, MapPin, Search, Users
 } from "lucide-react";
 import { analyticsApi } from "../api/analytics";
-import { historyApi } from "../api/history";
 import { useLocations } from "../store/locations";
 import NavBar from "../components/NavBar";
 
@@ -21,7 +20,7 @@ function monthRange(year: number, month: number) {
   return { from: first, to: last };
 }
 
-type Tab = "overview" | "history" | "workload" | "discipline" | "details";
+type Tab = "overview" | "workload" | "discipline" | "details";
 
 export default function AnalyticsPage() {
   const today = new Date();
@@ -32,18 +31,17 @@ export default function AnalyticsPage() {
   const [tab, setTab] = useState<Tab>("overview");
 
   const { activeLocationId, items: locations, fetch: fetchLocations } = useLocations();
-  const [scope, setScope] = useState<"active" | "all">("active");
-
-  const locationId = scope === "active" ? activeLocationId ?? undefined : undefined;
-
-  // История
-  const [historyData, setHistoryData] = useState<any[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [hFrom, setHFrom] = useState("");
-  const [hTo, setHTo] = useState("");
-  const [hType, setHType] = useState("");
+  const [selectedLocationId, setSelectedLocationId] = useState<string>("");
 
   useEffect(() => { fetchLocations(); }, [fetchLocations]);
+  useEffect(() => { if (activeLocationId) setSelectedLocationId(activeLocationId); }, [activeLocationId]);
+
+  const locationId = selectedLocationId || undefined;
+
+  // Дисциплина
+  const [discSearch, setDiscSearch] = useState("");
+  const [discType, setDiscType] = useState<"all" | "Опоздание" | "Ранний уход" | "Прогул">("all");
+  const [discMode, setDiscMode] = useState<"feed" | "summary">("feed");
 
   useEffect(() => {
     const { from, to } = monthRange(year, month);
@@ -54,19 +52,47 @@ export default function AnalyticsPage() {
       .finally(() => setLoading(false));
   }, [year, month, locationId]);
 
-  useEffect(() => {
-    if (tab !== "history") return;
-    let cancelled = false;
-    setHistoryLoading(true);
-    historyApi.list({ from: hFrom, to: hTo, type: hType })
-      .then((res) => { if (!cancelled) setHistoryData(res); })
-      .catch((e) => { if (!cancelled) console.error(e); })
-      .finally(() => { if (!cancelled) setHistoryLoading(false); });
-    return () => { cancelled = true; };
-  }, [tab, hFrom, hTo, hType]);
-
   const prevMonth = () => { if (month === 0) { setMonth(11); setYear(y => y - 1); } else setMonth(m => m - 1); };
   const nextMonth = () => { if (month === 11) { setMonth(0); setYear(y => y + 1); } else setMonth(m => m + 1); };
+
+  // Фильтрация и Суммирование дисциплины
+  const filteredDiscFeed = useMemo(() => {
+    if (!data?.discipline?.feed) return [];
+    return data.discipline.feed.filter((f: any) => {
+      const matchName = f.userName.toLowerCase().includes(discSearch.toLowerCase());
+      const matchType = discType === "all" || f.type === discType;
+      return matchName && matchType;
+    });
+  }, [data, discSearch, discType]);
+
+  const summaryDisc = useMemo(() => {
+    if (!data?.discipline?.feed) return [];
+    const map = new Map<string, { name: string; position: string; lateMins: number; earlyMins: number; noShows: number }>();
+
+    for (const f of data.discipline.feed) {
+      if (!map.has(f.userName)) {
+        map.set(f.userName, { name: f.userName, position: f.position, lateMins: 0, earlyMins: 0, noShows: 0 });
+      }
+      const item = map.get(f.userName)!;
+      if (f.type === "Опоздание") item.lateMins += f.minutes;
+      else if (f.type === "Ранний уход") item.earlyMins += f.minutes;
+      else if (f.type === "Прогул") item.noShows += 1;
+    }
+
+    let arr = Array.from(map.values());
+    
+    // Фильтруем по имени
+    if (discSearch) {
+      arr = arr.filter(u => u.name.toLowerCase().includes(discSearch.toLowerCase()));
+    }
+
+    // Сортируем по сумме (вес прогула = 100 минут для приоритета)
+    return arr.sort((a, b) => {
+      const scoreA = a.lateMins + a.earlyMins + (a.noShows * 100);
+      const scoreB = b.lateMins + b.earlyMins + (b.noShows * 100);
+      return scoreB - scoreA;
+    });
+  }, [data, discSearch]);
 
   if (loading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-500"><Loader2 className="w-6 h-6 animate-spin mr-2" /> Загрузка...</div>;
   if (!data) return <div className="min-h-screen bg-slate-50 p-8 text-center text-red-500">Ошибка данных</div>;
@@ -82,36 +108,42 @@ export default function AnalyticsPage() {
       <NavBar />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
 
-        {/* Шапка с вкладками */}
-        <div className="flex items-center gap-6 border-b border-slate-200 mb-6 overflow-x-auto pb-1">
-          <button onClick={() => setTab("overview")} className={`pb-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === "overview" ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-900"}`}>Сводка и ФОТ</button>
-          <button onClick={() => setTab("history")} className={`pb-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === "history" ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-900"}`}>История действий</button>
-          <button onClick={() => setTab("workload")} className={`pb-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === "workload" ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-900"}`}>Нагрузка персонала</button>
-          <button onClick={() => setTab("discipline")} className={`pb-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === "discipline" ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-900"}`}>Дисциплина</button>
-          <button onClick={() => setTab("details")} className={`pb-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === "details" ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-900"}`}>Детализация</button>
+        {/* Шапка с вкладками и фильтром точек */}
+        <div className="flex items-center justify-between border-b border-slate-200 mb-6 overflow-x-auto pb-1 gap-4">
+          <div className="flex items-center gap-6">
+            <button onClick={() => setTab("overview")} className={`pb-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === "overview" ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-900"}`}>Сводка и ФОТ</button>
+            <button onClick={() => setTab("workload")} className={`pb-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === "workload" ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-900"}`}>Нагрузка персонала</button>
+            <button onClick={() => setTab("discipline")} className={`pb-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === "discipline" ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-900"}`}>Дисциплина</button>
+            <button onClick={() => setTab("details")} className={`pb-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === "details" ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-900"}`}>Детализация</button>
+          </div>
+
+          {/* Фильтр по точкам */}
+          <div className="flex items-center gap-2 pb-3 pr-1 shrink-0">
+            <MapPin className="w-4 h-4 text-slate-400" />
+            <select 
+              value={selectedLocationId} 
+              onChange={(e) => setSelectedLocationId(e.target.value)}
+              className="!w-auto !py-1 !text-xs !bg-white border-slate-200"
+            >
+              <option value="">Все точки</option>
+              {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          </div>
         </div>
 
-        {/* Панель месяца/точки (скрыта в истории) */}
-        {tab !== "history" && (
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-3 mb-6 flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-2 flex-wrap">
-              <button onClick={prevMonth} className="p-2 rounded-lg hover:bg-slate-100 text-slate-600"><ChevronLeft className="w-4 h-4" /></button>
-              <div className="font-semibold text-slate-900 min-w-[140px] text-center">{MONTHS_RU[month]} {year}</div>
-              <button onClick={nextMonth} className="p-2 rounded-lg hover:bg-slate-100 text-slate-600"><ChevronRight className="w-4 h-4" /></button>
-              {locations.length > 1 && (
-                <div className="ml-2 flex items-center gap-1 px-1 py-0.5 bg-slate-100 rounded-lg text-xs">
-                  <button onClick={() => setScope("active")} className={`px-2.5 py-1 rounded-md ${scope === "active" ? "bg-white shadow-sm font-medium" : "text-slate-500"}`}>Точка</button>
-                  <button onClick={() => setScope("all")} className={`px-2.5 py-1 rounded-md ${scope === "all" ? "bg-white shadow-sm font-medium" : "text-slate-500"}`}>Все</button>
-                </div>
-              )}
-            </div>
-            {!data.timeTrackingOn && (
-              <div className="text-xs bg-amber-50 text-amber-700 px-3 py-1.5 rounded-lg border border-amber-200 flex items-center gap-1.5">
-                <AlertTriangle className="w-3.5 h-3.5" /> Учёт времени выключен (факт = план)
-              </div>
-            )}
+        {/* Панель месяца */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-3 mb-6 flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={prevMonth} className="p-2 rounded-lg hover:bg-slate-100 text-slate-600"><ChevronLeft className="w-4 h-4" /></button>
+            <div className="font-semibold text-slate-900 min-w-[140px] text-center">{MONTHS_RU[month]} {year}</div>
+            <button onClick={nextMonth} className="p-2 rounded-lg hover:bg-slate-100 text-slate-600"><ChevronRight className="w-4 h-4" /></button>
           </div>
-        )}
+          {!data.timeTrackingOn && (
+            <div className="text-xs bg-amber-50 text-amber-700 px-3 py-1.5 rounded-lg border border-amber-200 flex items-center gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5" /> Учёт времени выключен (факт = план)
+            </div>
+          )}
+        </div>
 
         {/* ═══ СВОДКА ═══ */}
         {tab === "overview" && (
@@ -153,61 +185,6 @@ export default function AnalyticsPage() {
                     );
                   })}
                 </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ═══ ИСТОРИЯ ═══ */}
-        {tab === "history" && (
-          <div className="space-y-4 animate-fade-in">
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap gap-4 items-center">
-              <div className="flex gap-2 items-center text-sm">
-                <span className="text-slate-500">Период:</span>
-                <input type="date" value={hFrom} onChange={(e) => setHFrom(e.target.value)} className="!w-auto !py-1.5" />
-                <span className="text-slate-400">—</span>
-                <input type="date" value={hTo} onChange={(e) => setHTo(e.target.value)} className="!w-auto !py-1.5" />
-              </div>
-              <div className="flex gap-2 items-center text-sm">
-                <span className="text-slate-500">Действие:</span>
-                <select value={hType} onChange={(e) => setHType(e.target.value)} className="!w-auto !py-1.5">
-                  <option value="">Все действия</option>
-                  <option value="PUBLISH">Публикация расписания</option>
-                  <option value="DISCIPLINE">Изменение дисциплины</option>
-                  <option value="SHIFT_CREATE">Создание смен</option>
-                  <option value="SHIFT_UPDATE">Изменение смен</option>
-                  <option value="VACATION">Отпуска</option>
-                  <option value="SICK_LEAVE">Больничные</option>
-                  <option value="TIME_OFF">Отгулы</option>
-                  <option value="SWAP">Обмены сменами</option>
-                </select>
-              </div>
-              {(hFrom || hTo || hType) && (
-                <button onClick={() => { setHFrom(""); setHTo(""); setHType(""); }} className="text-xs text-slate-500 hover:text-slate-900 ml-auto flex items-center gap-1">
-                  <X className="w-3.5 h-3.5" /> Сбросить фильтры
-                </button>
-              )}
-            </div>
-
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="p-4 border-b border-slate-100 font-semibold text-slate-900 flex items-center gap-2">
-                <History className="w-4 h-4 text-slate-500" /> Лента событий
-              </div>
-              <div className="divide-y divide-slate-100 max-h-[70vh] overflow-y-auto">
-                {historyLoading ? (
-                  <div className="p-8 text-center text-slate-500 flex justify-center items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Загрузка...</div>
-                ) : historyData.length === 0 ? (
-                  <div className="p-8 text-center text-slate-500">Нет событий за выбранный период</div>
-                ) : historyData.map((h: any) => (
-                  <div key={h.id} className="p-4 hover:bg-slate-50 flex items-start gap-4">
-                    <div className="w-2 h-2 mt-1.5 rounded-full bg-brand-500 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm text-slate-900">{h.description}</div>
-                      <div className="text-xs text-slate-500 mt-0.5">Автор: <span className="font-medium text-slate-700">{h.userName}</span> · {new Date(h.createdAt).toLocaleString("ru-RU")}</div>
-                    </div>
-                    <div className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 uppercase tracking-wide shrink-0">{h.actionType}</div>
-                  </div>
-                ))}
               </div>
             </div>
           </div>
@@ -289,30 +266,112 @@ export default function AnalyticsPage() {
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="p-4 border-b border-slate-100 font-semibold text-slate-900 flex items-center gap-2">
-                <ShieldAlert className="w-4 h-4 text-rose-500" /> Лента нарушений
+            {/* Фильтры дисциплины */}
+            <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap gap-3 items-center">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                <input 
+                  value={discSearch} 
+                  onChange={(e) => setDiscSearch(e.target.value)} 
+                  placeholder="Поиск по фамилии..." 
+                  className="!pl-9 !py-1.5 !text-sm" 
+                />
               </div>
-              <div className="divide-y divide-slate-100 max-h-[60vh] overflow-y-auto">
-                {data.discipline.feed.length === 0 ? (
-                  <div className="p-8 text-center text-slate-500">Нарушений нет. Отличная работа!</div>
-                ) : data.discipline.feed.map((f: any, i: number) => (
-                  <div key={i} className="flex items-center justify-between p-4 hover:bg-slate-50">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-2 h-2 rounded-full ${f.type === "Прогул" ? "bg-rose-500" : "bg-amber-500"}`} />
-                      <div>
-                        <div className="font-medium text-slate-900 text-sm">{f.userName}</div>
-                        <div className="text-xs text-slate-500">{f.position}</div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className={`text-sm font-bold ${f.type === "Прогул" ? "text-rose-600" : "text-amber-600"}`}>{f.type}</div>
-                      <div className="text-xs text-slate-500">{f.date} {f.minutes > 0 ? `· ${f.minutes} мин` : ""}</div>
-                    </div>
-                  </div>
-                ))}
+              <select 
+                value={discType} 
+                onChange={(e) => setDiscType(e.target.value as any)}
+                className="!w-auto !py-1.5 !text-sm"
+              >
+                <option value="all">Все нарушения</option>
+                <option value="Опоздание">Только опоздания</option>
+                <option value="Ранний уход">Только ранний уход</option>
+                <option value="Прогул">Только прогулы</option>
+              </select>
+              
+              <div className="flex bg-slate-100 p-1 rounded-lg ml-auto">
+                <button
+                  onClick={() => setDiscMode("feed")}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${discMode === "feed" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                >
+                  Лента
+                </button>
+                <button
+                  onClick={() => setDiscMode("summary")}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${discMode === "summary" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                >
+                  Сводка
+                </button>
               </div>
             </div>
+
+            {/* Лента нарушений */}
+            {discMode === "feed" && (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="p-4 border-b border-slate-100 font-semibold text-slate-900 flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4 text-rose-500" /> Лента нарушений
+                </div>
+                <div className="divide-y divide-slate-100 max-h-[60vh] overflow-y-auto">
+                  {filteredDiscFeed.length === 0 ? (
+                    <div className="p-8 text-center text-slate-500">Нет нарушений по заданным фильтрам</div>
+                  ) : filteredDiscFeed.map((f: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between p-4 hover:bg-slate-50">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-2 h-2 rounded-full ${f.type === "Прогул" ? "bg-rose-500" : "bg-amber-500"}`} />
+                        <div>
+                          <div className="font-medium text-slate-900 text-sm">{f.userName}</div>
+                          <div className="text-xs text-slate-500">{f.position}</div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className={`text-sm font-bold ${f.type === "Прогул" ? "text-rose-600" : "text-amber-600"}`}>{f.type}</div>
+                        <div className="text-xs text-slate-500">{f.date} {f.minutes > 0 ? `· ${f.minutes} мин` : ""}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Сводка нарушений */}
+            {discMode === "summary" && (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="p-4 border-b border-slate-100 font-semibold text-slate-900 flex items-center gap-2">
+                  <Users className="w-4 h-4 text-brand-600" /> Сводка по сотрудникам (сортировка от худших)
+                </div>
+                <div className="overflow-x-auto max-h-[60vh]">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 border-b text-left text-xs uppercase text-slate-500 sticky top-0">
+                      <tr>
+                        <th className="px-5 py-3">Сотрудник</th>
+                        <th className="px-5 py-3 text-center">Опоздания (мин)</th>
+                        <th className="px-5 py-3 text-center">Ранний уход (мин)</th>
+                        <th className="px-5 py-3 text-center">Прогулы (кол-во)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {summaryDisc.length === 0 ? (
+                        <tr><td colSpan={4} className="p-8 text-center text-slate-500">Нет данных</td></tr>
+                      ) : summaryDisc.map((u: any) => (
+                        <tr key={u.name} className="hover:bg-slate-50">
+                          <td className="px-5 py-3 font-medium text-slate-900">
+                            {u.name} <div className="text-xs text-slate-500 font-normal">{u.position}</div>
+                          </td>
+                          <td className="px-5 py-3 text-center text-amber-600 font-medium">
+                            {u.lateMins > 0 ? u.lateMins : "—"}
+                          </td>
+                          <td className="px-5 py-3 text-center text-amber-600 font-medium">
+                            {u.earlyMins > 0 ? u.earlyMins : "—"}
+                          </td>
+                          <td className="px-5 py-3 text-center text-rose-600 font-bold">
+                            {u.noShows > 0 ? u.noShows : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
