@@ -32,6 +32,7 @@ import { areasRoutes } from "./modules/areas/areas.routes.js";
 import { timesheetRoutes } from "./modules/timesheet/timesheet.routes.js";
 import { timeOffRoutes } from "./modules/time-off/time-off.routes.js";
 import { historyRoutes } from "./modules/history/history.routes.js";
+           import { notificationsRoutes } from "./modules/notifications/notifications.routes.js";
 
 const app = Fastify({ logger: true });
 
@@ -76,6 +77,7 @@ await app.register(areasRoutes, { prefix: "/api/areas" });
 await app.register(timesheetRoutes, { prefix: "/api/timesheet" });
 await app.register(timeOffRoutes, { prefix: "/api/time-off" });
 await app.register(historyRoutes, { prefix: "/api/history" });
+           await app.register(notificationsRoutes, { prefix: "/api/notifications" });
 
 const port = Number(process.env.PORT ?? 3001);
 await app.listen({ port, host: "0.0.0.0" });

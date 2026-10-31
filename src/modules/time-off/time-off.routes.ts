@@ -10,6 +10,18 @@ export async function timeOffRoutes(app: FastifyInstance) {
     return timeOffService.list(orgId);
   });
 
+  // Добавь этот роут:
+  app.get("/mine", async (req) => {
+    const { sub: userId } = req.user!;
+    return timeOffService.listMine(userId);
+  });
+
+  app.get("/pending/count", { preHandler: app.requireRole(["OWNER", "MANAGER"]) }, async (req) => {
+    const { orgId } = req.user!;
+    return timeOffService.pendingCount(orgId);
+  });
+
+
   app.post("/", async (req, reply) => {
     const { orgId, sub: userId } = req.user!;
     const parsed = z.object({
@@ -39,4 +51,15 @@ export async function timeOffRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: e.message });
     }
   });
+
+  app.delete<{ Params: { id: string } }>("/:id", async (req, reply) => {
+    const { sub: userId, orgId } = req.user!;
+    try {
+      await timeOffService.cancel(req.params.id, orgId, userId);
+      return { success: true };
+    } catch (e: any) {
+      return reply.code(400).send({ error: e.message });
+    }
+  });
+
 }

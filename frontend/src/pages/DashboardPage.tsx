@@ -1,9 +1,9 @@
 import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Users, Clock, CalendarDays, ChevronRight, ChevronLeft, AlertCircle,
+  Clock, CalendarDays, ChevronRight, ChevronLeft, AlertCircle,
   Timer, ArrowRightLeft, UserCircle, CalendarX2, Activity, Wallet, Banknote,
-  FileEdit, AlertTriangle, X, Check
+  FileEdit, AlertTriangle, X, Check, Palmtree, Eye, Bell,
 } from "lucide-react";
 import { dashboardApi, type DashboardSummary } from "../api/dashboard";
 import { meApi, type MyProfile } from "../api/me";
@@ -13,14 +13,14 @@ import { useWeeks } from "../store/weeks";
 import { useNotifications } from "../store/notifications";
 import { useLocations } from "../store/locations";
 import { useShiftTemplates } from "../store/shiftTemplates";
-import { useTimeOff } from "../store/timeOff"; // <--- ДОБАВЛЕНО
+import { useTimeOff } from "../store/timeOff";
+import { useSwaps } from "../store/swaps";
+import { useVacations } from "../store/vacations";
+         import { shiftChangeRequestsApi, type ShiftChangeRequest } from "../api/shiftChangeRequests";
 import NavBar from "../components/NavBar";
 import { shortDate, dayLabel, weekDates } from "../lib/dates";
 
-const MONTHS_RU = [
-  "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
-  "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
-];
+const MONTHS_RU = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
 const WEEKDAYS_RU = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 
 const calcHours = (start: string, end: string) => {
@@ -71,15 +71,16 @@ const STATUS_LABELS: Record<string, string> = {
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const isEmployee = user?.role === "EMPLOYEE";
+
   const { weeks, fetchWeeks } = useWeeks();
-  const {
-    vacationsPending, swapsIncoming, shiftChangesIncoming, refresh: refreshNotifs,
-  } = useNotifications();
+  const { refresh: refreshNotifs } = useNotifications();
   const { activeLocationId, fetch: fetchLocations } = useLocations();
   const { items: templates, fetch: fetchTemplates } = useShiftTemplates();
-  
-  // Отгулы
+
   const { items: timeOffs, fetch: fetchTimeOffs, approve: approveTimeOff, reject: rejectTimeOff } = useTimeOff();
+  const { incoming: swapsIncomingList, fetchMine: fetchSwaps, accept: acceptSwap, decline: declineSwap } = useSwaps();
+  const { all: vacations, fetchAll: fetchVacations } = useVacations();
 
   const [data, setData] = useState<DashboardSummary | null>(null);
   const [profile, setProfile] = useState<MyProfile | null>(null);
@@ -91,56 +92,65 @@ export default function DashboardPage() {
 
   const [disciplineShift, setDisciplineShift] = useState<any | null>(null);
   const [hoveredShift, setHoveredShift] = useState<any | null>(null);
+  const [showRequestsModal, setShowRequestsModal] = useState(false);
+           const [pendingShiftChanges, setPendingShiftChanges] = useState<ShiftChangeRequest[]>([]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => { 
-    fetchLocations(); 
-    fetchTemplates(); 
+  useEffect(() => {
+    fetchLocations();
+    fetchTemplates();
   }, [fetchLocations, fetchTemplates]);
 
+  const loadAllData = () => {
+             if (!activeLocationId) return;
+             Promise.all([
+               dashboardApi.summary(activeLocationId),
+               meApi.profile().catch(() => null),
+               isEmployee ? Promise.resolve() : fetchTimeOffs(),
+               fetchSwaps(),
+               isEmployee ? Promise.resolve() : fetchVacations(),
+               isEmployee
+                 ? Promise.resolve<ShiftChangeRequest[]>([])
+                 : shiftChangeRequestsApi.incoming().catch(() => [] as ShiftChangeRequest[]),
+             ])
+               .then(([dash, prof, , , , shiftChanges]) => {
+                 setData(dash);
+                 setProfile(prof);
+                 if (!isEmployee) {
+                   setPendingShiftChanges(
+                     (shiftChanges as ShiftChangeRequest[]).filter((r) => r.status === "PENDING")
+                   );
+                 }
+               })
+               .catch(() => alert("Ошибка загрузки дашборда"))
+               .finally(() => setLoading(false));
+           };
+
   useEffect(() => {
-    if (!activeLocationId) return;
+    loadAllData();
+    if (!isEmployee) {
+      if (activeLocationId) fetchWeeks(activeLocationId);
+      refreshNotifs();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeLocationId, isEmployee]);
 
-    Promise.all([
-      dashboardApi.summary(activeLocationId, selectedDate),
-      meApi.profile().catch(() => null),
-      fetchTimeOffs() // <--- ЗАГРУЖАЕМ ОТГУЛЫ
-    ])
-      .then(([dash, prof]) => { setData(dash); setProfile(prof); })
-      .catch(() => alert("Ошибка загрузки дашборда"))
-      .finally(() => setLoading(false));
-
-    fetchWeeks(activeLocationId);
-    refreshNotifs();
-  }, [activeLocationId, selectedDate, fetchWeeks, refreshNotifs, fetchTimeOffs]);
-
-  const currentTimePercent =
-    ((now.getHours() * 60 + now.getMinutes()) / (24 * 60)) * 100;
-  const isEmployee = user?.role === "EMPLOYEE";
+  const currentTimePercent = ((now.getHours() * 60 + now.getMinutes()) / (24 * 60)) * 100;
 
   const dates = data?.currentWeek ? weekDates(data.currentWeek.weekStartDate) : [];
-
   const canPrev = dates.length > 0 && selectedDate > dates[0];
   const canNext = dates.length > 0 && selectedDate < dates[6];
   const dateInWeek = dates.includes(selectedDate);
 
-  //useEffect(() => {
-    //if (dates.length === 0) return;
-    //if (!dates.includes(selectedDate)) setSelectedDate(todayDate);
-  //}, [dates.join(","), selectedDate, todayDate]);
-
-  const handleGoToToday = () =>
-    navigate(
-      isEmployee
-        ? "/my"
-        : data?.currentWeek?.id
-        ? `/weeks/${data.currentWeek.id}`
-        : "/weeks"
-    );
+  useEffect(() => {
+    if (dates.length === 0) return;
+    if (!dates.includes(selectedDate)) setSelectedDate(todayDate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dates.join(","), selectedDate, todayDate]);
 
   const hourlyRate = profile?.hourlyRate ? Number(profile.hourlyRate) : 0;
 
@@ -152,8 +162,13 @@ export default function DashboardPage() {
       .map((s) => {
         const u = data.users.find((x) => x.id === s.userId);
         const tpl = templates.find((t) => t.id === s.templateId);
+
+        const pendingTimeOff = timeOffs.find((t) => t.shiftId === s.id && t.status === "PENDING");
+        const pendingSwap = swapsIncomingList.find((sw) => sw.shiftId === s.id && sw.status === "PENDING");
+
         return {
           id: s.id,
+          weekId: (s as any).weekId,
           startTime: s.startTime,
           endTime: s.endTime,
           userId: s.userId,
@@ -168,16 +183,15 @@ export default function DashboardPage() {
           isUnknownAbsence: (s as any).isUnknownAbsence ?? false,
           templateStartTime: tpl?.startTime ?? null,
           templateEndTime: tpl?.endTime ?? null,
+          pendingTimeOff,
+          pendingSwap,
         };
       });
-  }, [data, selectedDate, templates]);
+  }, [data, selectedDate, templates, timeOffs, swapsIncomingList]);
 
   const myShiftsToday = shiftsForSelectedDate.filter((s) => s.userId === user?.id);
   const myShiftsWeek = data?.currentWeek?.shifts?.filter((s) => s.userId === user?.id) || [];
-  const myEntriesToday =
-    data?.weekTimeEntries?.filter(
-      (te) => te.userId === user?.id && String(te.clockIn).slice(0, 10) === selectedDate
-    ) || [];
+  const myEntriesToday = data?.weekTimeEntries?.filter((te) => te.userId === user?.id && String(te.clockIn).slice(0, 10) === selectedDate) || [];
 
   const plannedToday = myShiftsToday.reduce((acc, s) => acc + calcHours(s.startTime, s.endTime), 0);
   const plannedWeek = myShiftsWeek.reduce((acc, s) => acc + calcHours(s.startTime, s.endTime), 0);
@@ -192,9 +206,7 @@ export default function DashboardPage() {
     return h;
   };
   const actualToday = calcActual(myEntriesToday);
-  const actualWeek = calcActual(
-    data?.weekTimeEntries?.filter((te) => te.userId === user?.id) || []
-  );
+  const actualWeek = calcActual(data?.weekTimeEntries?.filter((te) => te.userId === user?.id) || []);
 
   const getShiftStatus = (shift: any): "past" | "active" | "future" => {
     if (selectedDate < todayDate) return "past";
@@ -262,12 +274,7 @@ export default function DashboardPage() {
     });
   });
 
-  if (loading)
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-500">
-        Загрузка...
-      </div>
-    );
+  if (loading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-500">Загрузка...</div>;
 
   let hoveredOvertime = 0;
   if (hoveredShift && hoveredShift.templateStartTime && hoveredShift.templateEndTime) {
@@ -282,7 +289,6 @@ export default function DashboardPage() {
   const lateness = hoveredShift?.latenessMinutes || 0;
   const early = hoveredShift?.earlyLeaveMinutes || 0;
   const hasViolation = lateness > 0 || early > 0;
-
   const hoveredIsNoShow = !!(hoveredShift as any)?.isNoShow;
   const hoveredIsUnknown = !!(hoveredShift as any)?.isUnknownAbsence;
   const hoveredIsAbsent = hoveredIsNoShow || hoveredIsUnknown;
@@ -295,48 +301,73 @@ export default function DashboardPage() {
 
   let overtimeText = "";
   if (hoveredOvertime > 0) {
-    overtimeText =
-      hoveredOvertime >= 60 ? formatHours(hoveredOvertime / 60) : `${hoveredOvertime} мин`;
+    overtimeText = hoveredOvertime >= 60 ? formatHours(hoveredOvertime / 60) : `${hoveredOvertime} мин`;
   }
 
-  // Фильтруем запросы на отгул для текущего дня
-  const todayTimeOffs = timeOffs.filter(t => t.status === "PENDING" && t.date === selectedDate);
+  const pendingTimeOffs = timeOffs.filter((t) => t.status === "PENDING");
+  const pendingSwaps = swapsIncomingList.filter((s) => s.status === "PENDING");
+  const pendingVacations = vacations.filter((v) => v.status === "PENDING");
+  const totalRequests =
+             pendingTimeOffs.length +
+             pendingSwaps.length +
+             pendingVacations.length +
+             pendingShiftChanges.length;
+
+  const handleApproveTimeOff = async (id: string) => {
+    await approveTimeOff(id);
+    loadAllData();
+  };
+
+  const handleApproveSwap = async (id: string) => {
+             await acceptSwap(id);
+             loadAllData();
+           };
+
+           const handleApproveShiftChange = async (id: string) => {
+             await shiftChangeRequestsApi.approve(id);
+             refreshNotifs();
+             loadAllData();
+           };
+
+           const handleRejectShiftChange = async (id: string) => {
+             await shiftChangeRequestsApi.reject(id);
+             refreshNotifs();
+             loadAllData();
+           };
+
+  // Универсальная навигация: по shiftId ищем weekId
+  const findWeekIdByShiftId = (
+             shiftId: string | null | undefined,
+             dateStr?: string | null
+           ): string | null => {
+             // 1. Смена в текущей неделе — быстрый путь
+             if (shiftId) {
+               const found = data?.currentWeek?.shifts?.find((s: any) => s.id === shiftId);
+               if (found) return (found as any).weekId ?? data?.currentWeek?.id ?? null;
+             }
+             // 2. Ищем неделю, в диапазон которой попадает дата
+             if (dateStr) {
+               const d = String(dateStr).slice(0, 10);
+               for (const w of weeks) {
+                 const start = String(w.weekStartDate).slice(0, 10);
+                 if (!start) continue;
+                 const startDate = new Date(start + "T00:00:00Z");
+                 const endDate = new Date(startDate);
+                 endDate.setUTCDate(endDate.getUTCDate() + 7);
+                 if (d >= start && d < endDate.toISOString().slice(0, 10)) return w.id;
+               }
+               // Дата задана, но неделя не найдена — идём в список недель
+               return null;
+             }
+             // 3. Ничего не передано — текущая неделя
+             return data?.currentWeek?.id ?? null;
+           };
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       <NavBar />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 flex flex-col gap-6">
-        
-        {/* БЛОК ЗАПРОСОВ НА ОТГУЛ */}
-        {!isEmployee && todayTimeOffs.length > 0 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-col gap-2 animate-fade-in">
-            <h3 className="font-semibold text-amber-900 flex items-center gap-2">
-              <CalendarX2 className="w-4 h-4" /> Запросы на отгул на {shortDate(selectedDate)}
-            </h3>
-            {todayTimeOffs.map(t => (
-              <div key={t.id} className="flex items-center justify-between bg-white p-3 rounded-xl shadow-sm border border-amber-100">
-                <div className="text-sm font-medium text-slate-900">{t.userName} <span className="text-slate-500 font-normal ml-1">— {t.comment || "без причины"}</span></div>
-                <div className="flex gap-2">
-                  <button 
-                    onClick={async () => { await approveTimeOff(t.id); fetchTimeOffs(); if(activeLocationId) dashboardApi.summary(activeLocationId).then(setData); }} 
-                    className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-emerald-700"
-                  >
-                    <Check className="w-3.5 h-3.5 inline mr-1" /> Одобрить
-                  </button>
-                  <button 
-                    onClick={async () => { await rejectTimeOff(t.id); fetchTimeOffs(); }} 
-                    className="bg-rose-100 text-rose-700 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-rose-200"
-                  >
-                    <X className="w-3.5 h-3.5 inline mr-1" /> Отклонить
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Верхняя панель — неделя */}
         {data?.currentWeek ? (
           <button
             onClick={() => navigate("/weeks")}
@@ -431,7 +462,6 @@ export default function DashboardPage() {
         )}
 
         <div className={isEmployee ? "flex flex-col gap-4" : "flex flex-col lg:flex-row gap-6 flex-1"}>
-          {/* Текущий день */}
           <div className={`bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex flex-col min-w-0 ${isEmployee ? "shrink-0" : "flex-1"}`}>
             <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
               <div>
@@ -446,7 +476,6 @@ export default function DashboardPage() {
                       onClick={() => canPrev && setSelectedDate(addDays(selectedDate, -1))}
                       disabled={!canPrev}
                       className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-600 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-                      title="Предыдущий день"
                     >
                       <ChevronLeft className="w-4 h-4" />
                     </button>
@@ -454,15 +483,14 @@ export default function DashboardPage() {
                       onClick={() => canNext && setSelectedDate(addDays(selectedDate, 1))}
                       disabled={!canNext}
                       className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-600 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-                      title="Следующий день"
                     >
                       <ChevronRight className="w-4 h-4" />
                     </button>
                     <input
                       type="date"
                       value={selectedDate}
-                      //min={dates[0]}
-                      //max={dates[6]}
+                      min={dates[0]}
+                      max={dates[6]}
                       onChange={(e) => setSelectedDate(e.target.value)}
                       onClick={(e) => e.stopPropagation()}
                       className="!w-36 !text-xs !py-1"
@@ -471,7 +499,6 @@ export default function DashboardPage() {
                       onClick={() => setSelectedDate(todayDate)}
                       disabled={!dateInWeek || selectedDate === todayDate}
                       className="text-[10px] px-2 py-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-30 whitespace-nowrap"
-                      title="Перейти к сегодняшнему дню"
                     >
                       Сегодня
                     </button>
@@ -492,7 +519,6 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Баннер при ховере */}
             <div className="h-10 mb-2 flex items-center justify-center transition-all">
               {hoveredShift && hoveredStatus && (
                 <div
@@ -515,21 +541,11 @@ export default function DashboardPage() {
                       <span className="text-slate-600">Не началась</span>
                     ) : (
                       <>
-                        {lateness > 0 && (
-                          <span className="text-rose-700">Опоздание: {lateness} мин</span>
-                        )}
-                        {lateness > 0 && (early > 0 || hoveredOvertime > 0) && (
-                          <span className="text-rose-300">|</span>
-                        )}
-                        {early > 0 && (
-                          <span className="text-rose-700">Ранний уход: {early} мин</span>
-                        )}
-                        {early > 0 && hoveredOvertime > 0 && (
-                          <span className="text-rose-300">|</span>
-                        )}
-                        {hoveredOvertime > 0 && (
-                          <span className="text-emerald-600">Переработка: {overtimeText}</span>
-                        )}
+                        {lateness > 0 && <span className="text-rose-700">Опоздание: {lateness} мин</span>}
+                        {lateness > 0 && (early > 0 || hoveredOvertime > 0) && <span className="text-rose-300">|</span>}
+                        {early > 0 && <span className="text-rose-700">Ранний уход: {early} мин</span>}
+                        {early > 0 && hoveredOvertime > 0 && <span className="text-rose-300">|</span>}
+                        {hoveredOvertime > 0 && <span className="text-emerald-600">Переработка: {overtimeText}</span>}
                         {lateness === 0 && early === 0 && hoveredOvertime === 0 && (
                           <span className="text-emerald-700">
                             {hoveredStatus === "ended" ? "Смена окончена" : "Приход вовремя"}
@@ -542,7 +558,6 @@ export default function DashboardPage() {
               )}
             </div>
 
-            {/* Таймлайн */}
             <div className={`relative overflow-x-auto overflow-y-hidden ${isEmployee ? "min-h-[220px]" : "flex-1 min-h-[400px]"}`}>
               <div className="min-w-[800px] h-full flex flex-col relative">
                 <div className="absolute inset-0 pointer-events-none z-0">
@@ -586,7 +601,6 @@ export default function DashboardPage() {
                       const st = getShiftStatus(shift);
                       const isEnded = st === "past";
                       const isStarted = st === "active";
-
                       const isAbsent = shift.isNoShow || shift.isUnknownAbsence;
 
                       const sLateness = shift.latenessMinutes || 0;
@@ -606,7 +620,9 @@ export default function DashboardPage() {
                         if (sEnd > tEnd) overtimeEndPct = ((sEnd - tEnd) / (24 * 60)) * 100;
                       }
 
-                      const barColor = isAbsent
+                      const barColor = shift.pendingTimeOff
+                        ? "#f59e0b"
+                        : isAbsent
                         ? "#dc2626"
                         : isEnded
                         ? "#cbd5e1"
@@ -619,7 +635,6 @@ export default function DashboardPage() {
                           onMouseLeave={() => setHoveredShift(null)}
                           onClick={(e) => {
                             e.stopPropagation();
-                            // ИСПРАВЛЕНИЕ: теперь можно кликать по прошлым дням
                             if (!isEmployee && selectedDate <= todayDate) {
                               setDisciplineShift(shift);
                             }
@@ -653,35 +668,46 @@ export default function DashboardPage() {
                               backgroundColor: barColor,
                             }}
                           >
-                            {!isAbsent && sLateness > 0 && (
+                            {!isAbsent && !shift.pendingTimeOff && sLateness > 0 && (
                               <div className="absolute left-0 top-0 bottom-0 bg-rose-600/90 border-r-2 border-rose-800 z-10" style={{ width: `${latenessPct}%` }} />
                             )}
-                            {!isAbsent && overtimeStartPct > 0 && (
+                            {!isAbsent && !shift.pendingTimeOff && overtimeStartPct > 0 && (
                               <div className="absolute left-0 top-0 bottom-0 bg-emerald-500/90 border-r-2 border-emerald-700 z-10" style={{ width: `${overtimeStartPct}%` }} />
                             )}
-                            {!isAbsent && sEarly > 0 && (
+                            {!isAbsent && !shift.pendingTimeOff && sEarly > 0 && (
                               <div className="absolute right-0 top-0 bottom-0 bg-rose-600/90 border-l-2 border-rose-800 z-10" style={{ width: `${earlyLeavePct}%` }} />
                             )}
-                            {!isAbsent && overtimeEndPct > 0 && (
+                            {!isAbsent && !shift.pendingTimeOff && overtimeEndPct > 0 && (
                               <div className="absolute right-0 top-0 bottom-0 bg-emerald-500/90 border-l-2 border-emerald-700 z-10" style={{ width: `${overtimeEndPct}%` }} />
                             )}
 
                             <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-white truncate drop-shadow-md z-20 flex items-center gap-1.5">
-                              {isAbsent && (
-                                <span className="font-bold">{shift.isNoShow ? "ПР" : "НН"}</span>
-                              )}
+                              {isAbsent && <span className="font-bold">{shift.isNoShow ? "ПР" : "НН"}</span>}
                               <span className={isAbsent ? "opacity-80 font-normal" : "font-medium"}>
                                 {shift.startTime} – {shift.endTime}
                               </span>
-                              {shift.templateName && (
+                              {shift.templateName && !shift.pendingTimeOff && (
                                 <span className="opacity-80 font-normal">· {shift.templateName}</span>
                               )}
+                              {shift.pendingTimeOff && (
+                                <span className="font-bold bg-amber-900/20 px-1 rounded ml-1">Отгул</span>
+                              )}
                             </span>
+
+                            <div className="absolute right-1 top-1/2 -translate-y-1/2 flex gap-1 z-30">
+                              {shift.pendingSwap && (
+                                <span className="bg-blue-400 text-blue-950 rounded-full p-0.5 shadow-sm" title="Запрос на обмен">
+                                  <ArrowRightLeft className="w-3 h-3" />
+                                </span>
+                              )}
+                            </div>
                           </div>
 
                           <div className="w-28 shrink-0 pl-2 text-right relative z-30 ml-auto pointer-events-none">
                             <div className="bg-white/80 backdrop-blur-sm px-2 py-0.5 rounded inline-block">
-                              {isAbsent ? (
+                              {shift.pendingTimeOff ? (
+                                <span className="text-[10px] font-medium text-amber-600">Ждет отгул</span>
+                              ) : isAbsent ? (
                                 <span className="text-[10px] font-medium text-rose-600">
                                   {shift.isNoShow ? "Прогул" : "Неявка"}
                                 </span>
@@ -706,7 +732,6 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Правая панель */}
           {isEmployee ? (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <StatCard icon={Clock} label="Смена (день)" value={formatHours(plannedToday)} />
@@ -733,15 +758,15 @@ export default function DashboardPage() {
                 value={todayShiftsToShow.filter((s) => getShiftStatus(s) === "active" && !(s.isNoShow || s.isUnknownAbsence)).length || 0}
                 highlight
               />
-              <StatCard icon={ArrowRightLeft} label="Обмены" value={swapsIncoming} onClick={() => navigate("/swaps")} />
+              <StatCard icon={ArrowRightLeft} label="Обмены" value={pendingSwaps.length} onClick={() => navigate("/swaps")} />
               <StatCard
                 icon={AlertCircle}
                 label="Запросы"
-                value={vacationsPending + shiftChangesIncoming + timeOffs.filter(t => t.status === "PENDING").length}
-                onClick={() => navigate("/vacations")}
-                alert={vacationsPending + shiftChangesIncoming + timeOffs.filter(t => t.status === "PENDING").length > 0}
+                value={totalRequests}
+                onClick={() => setShowRequestsModal(true)}
+                alert={totalRequests > 0}
               />
-              <StatCard icon={FileEdit} label="Ред. смены" value={shiftChangesIncoming} onClick={() => navigate("/weeks")} />
+              <StatCard icon={FileEdit} label="Ред. смены" value={data ? data.currentWeek?.shifts?.filter((s: any) => s.status === "REQUESTED").length || 0 : 0} onClick={() => navigate("/weeks")} />
               <div className="col-span-2 grid grid-cols-2 gap-3">
                 <StatCard icon={CalendarDays} label="Смен за месяц" value={monthShiftsCount} />
                 <StatCard icon={Wallet} label="Затраты за месяц" value={formatMoney(monthCost)} />
@@ -762,11 +787,164 @@ export default function DashboardPage() {
           }}
         />
       )}
+
+      {showRequestsModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={() => setShowRequestsModal(false)}>
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-xl w-full p-6 max-h-[85vh] flex flex-col animate-fade-in" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-slate-900 text-lg flex items-center gap-2">
+                <Bell className="w-5 h-5 text-brand-600" />
+                Все запросы ({totalRequests})
+              </h3>
+              <button onClick={() => setShowRequestsModal(false)} className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+              {totalRequests === 0 && (
+                <p className="text-center text-sm text-slate-500 py-6">Нет активных запросов</p>
+              )}
+
+              {pendingVacations.map((v) => (
+                <div key={v.id} className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium text-slate-900 flex items-center gap-1.5">
+                      <Palmtree className="w-4 h-4 text-emerald-600" /> {v.userName}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-0.5">{v.startDate} — {v.endDate}</div>
+                  </div>
+                  <button onClick={() => { setShowRequestsModal(false); navigate("/vacations"); }} className="text-xs bg-white border border-emerald-300 text-emerald-700 px-3 py-1.5 rounded-lg hover:bg-emerald-100 font-medium">
+                    Перейти
+                  </button>
+                </div>
+              ))}
+
+              {pendingTimeOffs.map((t) => {
+                const targetWeekId = findWeekIdByShiftId(t.shiftId, t.date);
+                return (
+                  <div key={t.id} className="bg-amber-50 border border-amber-200 p-3 rounded-xl">
+                    <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
+                      <div>
+                        <div className="text-sm font-medium text-slate-900 flex items-center gap-1.5">
+                          <CalendarX2 className="w-4 h-4 text-amber-600" /> {t.userName}
+                        </div>
+                        <div className="text-xs text-slate-500 mt-0.5">Отгул на {t.date}</div>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <button onClick={() => handleApproveTimeOff(t.id)} className="text-xs bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-emerald-700 font-medium">Одобрить</button>
+                        <button onClick={async () => { await rejectTimeOff(t.id); fetchTimeOffs(); }} className="text-xs text-rose-600 hover:bg-rose-100 px-2.5 py-1.5 rounded-lg font-medium">Отклонить</button>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowRequestsModal(false);
+                        if (targetWeekId) navigate(`/weeks/${targetWeekId}`);
+                        else navigate("/weeks");
+                      }}
+                      className="text-xs text-amber-800 hover:underline flex items-center gap-1"
+                    >
+                      Посмотреть в расписании <ChevronRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                );
+              })}
+
+              {pendingSwaps.map((s) => {
+                const targetWeekId = findWeekIdByShiftId(s.shiftId, s.shiftDate);
+                return (
+                  <div key={s.id} className="bg-blue-50 border border-blue-200 p-3 rounded-xl">
+                    <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
+                      <div>
+                        <div className="text-sm font-medium text-slate-900 flex items-center gap-1.5">
+                          <ArrowRightLeft className="w-4 h-4 text-blue-600" /> {s.requestedByName}
+                        </div>
+                        <div className="text-xs text-slate-500 mt-0.5">{s.shiftDate} · {s.startTime}–{s.endTime}</div>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <button onClick={() => handleApproveSwap(s.id)} className="text-xs bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-emerald-700 font-medium">Принять</button>
+                        <button onClick={async () => { await declineSwap(s.id); fetchSwaps(); }} className="text-xs text-rose-600 hover:bg-rose-100 px-2.5 py-1.5 rounded-lg font-medium">Отклонить</button>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowRequestsModal(false);
+                        if (targetWeekId) navigate(`/weeks/${targetWeekId}`);
+                        else navigate("/weeks");
+                      }}
+                      className="text-xs text-blue-800 hover:underline flex items-center gap-1"
+                    >
+                      Посмотреть в расписании <ChevronRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                );
+              })}
+              {pendingShiftChanges.map((r) => {
+                         const targetWeekId = r.weekId ?? findWeekIdByShiftId(null, r.newShiftDate);
+                         return (
+                           <div key={r.id} className="bg-amber-50 border border-amber-200 p-3 rounded-xl">
+                             <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
+                               <div className="min-w-0">
+                                 <div className="text-sm font-medium text-slate-900 flex items-center gap-1.5">
+                                   <CalendarDays className="w-4 h-4 text-amber-600" />
+                                   {r.requestedByName ?? "Сотрудник"}
+                                 </div>
+                                 <div className="text-xs text-slate-500 mt-0.5">
+                                   {r.kind === "CREATE" ? "Новая смена" : "Изменение смены"}
+                                 </div>
+                               </div>
+                               <div className="flex gap-1.5">
+                                 <button
+                                   onClick={() => handleApproveShiftChange(r.id)}
+                                   className="text-xs bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-emerald-700 font-medium"
+                                 >
+                                   Принять
+                                 </button>
+                                 <button
+                                   onClick={() => handleRejectShiftChange(r.id)}
+                                   className="text-xs text-rose-600 hover:bg-rose-100 px-2.5 py-1.5 rounded-lg font-medium"
+                                 >
+                                   Отклонить
+                                 </button>
+                               </div>
+                             </div>
+                             <div className="text-xs space-y-0.5 mb-2">
+                               {r.kind === "UPDATE" ? (
+                                 <>
+                                   <div className="text-slate-400 line-through">
+                                     {r.oldShiftDate.slice(0, 10)} · {r.oldStartTime}–{r.oldEndTime}
+                                   </div>
+                                   <div className="text-slate-900 font-medium">
+                                     {r.newShiftDate.slice(0, 10)} · {r.newStartTime}–{r.newEndTime}
+                                   </div>
+                                 </>
+                               ) : (
+                                 <div className="text-slate-900 font-medium">
+                                   {r.newShiftDate.slice(0, 10)} · {r.newStartTime}–{r.newEndTime}
+                                 </div>
+                               )}
+                             </div>
+                             <button
+                               onClick={() => {
+                                 setShowRequestsModal(false);
+                                 if (targetWeekId) navigate(`/weeks/${targetWeekId}`);
+                                 else navigate("/weeks");
+                               }}
+                               className="text-xs text-amber-800 hover:underline flex items-center gap-1"
+                             >
+                               Посмотреть в расписании <ChevronRight className="w-3 h-3" />
+                             </button>
+                           </div>
+                         );
+                       })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// ─── Модалка дисциплины ────────────────────────────────
 function DisciplineModal({ shift, onClose, onSave }: any) {
   const [lateness, setLateness] = useState(shift.latenessMinutes || 0);
   const [earlyLeave, setEarlyLeave] = useState(shift.earlyLeaveMinutes || 0);
@@ -834,7 +1012,6 @@ function DisciplineModal({ shift, onClose, onSave }: any) {
           </button>
         </div>
 
-        {/* Прогул */}
         <label className={`flex items-start gap-3 p-3 rounded-xl border-2 mb-3 cursor-pointer transition-all ${
           isNoShow ? "bg-rose-50 border-rose-300" : "bg-slate-50 border-slate-200 hover:border-slate-300"
         }`}>
@@ -857,7 +1034,6 @@ function DisciplineModal({ shift, onClose, onSave }: any) {
           </div>
         </label>
 
-        {/* НН */}
         <label className={`flex items-start gap-3 p-3 rounded-xl border-2 mb-4 cursor-pointer transition-all ${
           isUnknownAbsence ? "bg-rose-50 border-rose-300" : "bg-slate-50 border-slate-200 hover:border-slate-300"
         }`}>

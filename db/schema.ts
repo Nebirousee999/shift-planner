@@ -349,3 +349,23 @@ export const actionLogs = pgTable("action_logs", {
   description: text("description").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+// ─── IN-APP УВЕДОМЛЕНИЯ ────────────────────────────────
+export const userNotifications = pgTable("user_notifications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: uuid("org_id")
+    .references(() => organizations.id, { onDelete: "cascade" })
+    .notNull(),
+  userId: uuid("user_id")
+    .references(() => users.id, { onDelete: "cascade" })
+    .notNull(),
+  kind: varchar("kind", { length: 50 }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  message: text("message").notNull(),
+  relatedId: uuid("related_id"),
+  relatedType: varchar("related_type", { length: 50 }),
+  requiresAction: boolean("requires_action").default(false).notNull(),
+  acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  payload: jsonb("payload"),
+});

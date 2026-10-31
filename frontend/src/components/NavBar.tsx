@@ -1,26 +1,16 @@
 import { useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
-  Calendar,
-  Users,
-  CalendarDays,
-  Clock,
-  FileText,
-  ArrowLeftRight,
-  UserCircle,
-  LogOut,
-  Palmtree,
-  FileSpreadsheet,
-  BarChart3,
-  HelpCircle,
-  AlertCircle,
-  MapPin,
-  History, // <--- Добавлена иконка
+  Calendar, Users, CalendarDays, Clock, FileText,
+  ArrowLeftRight, UserCircle, LogOut, Palmtree,
+  FileSpreadsheet, BarChart3, HelpCircle, AlertCircle,
+  MapPin, History,
 } from "lucide-react";
 import { useAuth } from "../store/auth";
 import { useNotifications } from "../store/notifications";
 import { useOrganization } from "../store/organization";
 import LocationSwitcher from "./LocationSwitcher";
+           import NotificationBell from "./NotificationBell";
 
 type TabLink = {
   path: string;
@@ -38,12 +28,7 @@ const CATEGORIES: TabCategory[] = [
       { path: "/weeks", label: "Недели", icon: CalendarDays },
       { path: "/locations", label: "Точки", icon: MapPin },
       { path: "/templates", label: "Шаблоны", icon: Calendar },
-      {
-        path: "/time",
-        label: "Учёт времени",
-        icon: Clock,
-        hideIfTimeTrackingOff: true,
-      },
+      { path: "/time", label: "Учёт времени", icon: Clock, hideIfTimeTrackingOff: true },
       { path: "/swaps", label: "Обмены", icon: ArrowLeftRight },
     ],
   },
@@ -61,7 +46,7 @@ const CATEGORIES: TabCategory[] = [
     label: "Аналитика",
     links: [
       { path: "/analytics", label: "Статистика", icon: BarChart3 },
-      { path: "/history", label: "История действий", icon: History }, // <--- Новый пункт
+      { path: "/history", label: "История действий", icon: History },
     ],
   },
   {
@@ -78,14 +63,11 @@ function isActive(pathname: string, path: string): boolean {
   return pathname === path || pathname.startsWith(path + "/");
 }
 
-function Badge({ value, tone = "red" }: { value: number; tone?: "red" | "amber" }) {
+// 🎈 ОБНОВЛЕННЫЙ БЕЙДЖ (Красный кружок справа сверху)
+function Badge({ value }: { value: number }) {
   if (value <= 0) return null;
-  const cls =
-    tone === "red" ? "bg-red-500 text-white" : "bg-amber-500 text-white";
   return (
-    <span
-      className={`ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold leading-none ${cls}`}
-    >
+    <span className="absolute -top-1 -right-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white shadow-sm ring-2 ring-white">
       {value > 99 ? "99+" : value}
     </span>
   );
@@ -95,8 +77,10 @@ export default function NavBar() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { user, logout } = useAuth();
-  const { vacationsPending, swapsIncoming, shiftChangesIncoming, refresh } =
-    useNotifications();
+  
+  // Добавили timeOffsPending, если ты вынесешь его в стор (см. ниже)
+  const { vacationsPending, swapsIncoming, shiftChangesIncoming, timeOffsPending = 0, refresh } = useNotifications();
+  
   const org = useOrganization((s) => s.org);
 
   const isAdmin = user?.role === "OWNER" || user?.role === "MANAGER";
@@ -104,9 +88,7 @@ export default function NavBar() {
 
   const visibleCategories = CATEGORIES.map((cat) => ({
     ...cat,
-    links: cat.links.filter(
-      (link) => !(link.hideIfTimeTrackingOff && !timeTrackingOn)
-    ),
+    links: cat.links.filter((link) => !(link.hideIfTimeTrackingOff && !timeTrackingOn)),
   }));
 
   const currentCategory = (() => {
@@ -138,69 +120,46 @@ export default function NavBar() {
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30 backdrop-blur-sm bg-white/90">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-4 min-w-0">
-            <button
-              onClick={() => navigate("/")}
-              className="flex items-center gap-2 shrink-0"
-              title="Дашборд"
-            >
+            <button onClick={() => navigate("/")} className="flex items-center gap-2 shrink-0">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center">
                 <CalendarDays className="w-4 h-4 text-white" />
               </div>
-              <span className="font-semibold text-slate-900 hidden sm:inline">
-                Планировщик
-              </span>
+              <span className="font-semibold text-slate-900 hidden sm:inline">Планировщик</span>
             </button>
 
             <nav className="flex items-center gap-1">
-              <button
-                onClick={() => navigate("/")}
-                className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                  isActive(pathname, "/")
-                    ? "bg-brand-50 text-brand-700 font-medium"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                }`}
-              >
+              <button onClick={() => navigate("/")} className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${isActive(pathname, "/") ? "bg-brand-50 text-brand-700 font-medium" : "text-slate-600 hover:bg-slate-100"}`}>
                 Дашборд
               </button>
-              <button
-                onClick={() => navigate("/my")}
-                className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                  isActive(pathname, "/my")
-                    ? "bg-brand-50 text-brand-700 font-medium"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                }`}
-              >
+              <button onClick={() => navigate("/my")} className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${isActive(pathname, "/my") ? "bg-brand-50 text-brand-700 font-medium" : "text-slate-600 hover:bg-slate-100"}`}>
                 Мой график
               </button>
             </nav>
           </div>
-
+          
           <div className="flex items-center gap-2 shrink-0">
+            <NotificationBell />
             <button
               onClick={() => navigate("/help")}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+              className={`relative flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
                 isActive(pathname, "/help")
-                  ? "bg-brand-50 text-brand-700 font-medium"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                  ? "bg-brand-50 text-brand-700"
+                  : "text-slate-600 hover:bg-slate-100"
               }`}
-              title="Справка"
             >
               <HelpCircle className="w-4 h-4" />
               <span className="hidden lg:inline">Справка</span>
             </button>
             <button
               onClick={() => navigate("/profile")}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+              className={`relative flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
                 isActive(pathname, "/profile")
-                  ? "bg-brand-50 text-brand-700 font-medium"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                  ? "bg-brand-50 text-brand-700"
+                  : "text-slate-600 hover:bg-slate-100"
               }`}
-              title="Профиль"
             >
               <UserCircle className="w-4 h-4" />
-              <span className="hidden lg:inline">
-                {user?.name ?? user?.email}
-              </span>
+              <span className="hidden lg:inline">{user?.name ?? user?.email}</span>
             </button>
             <button
               onClick={handleLogout}
@@ -210,6 +169,7 @@ export default function NavBar() {
               <LogOut className="w-4 h-4" />
             </button>
           </div>
+
         </div>
       </header>
     );
@@ -220,20 +180,14 @@ export default function NavBar() {
     <header className="bg-white border-b border-slate-200 sticky top-0 z-30 backdrop-blur-sm bg-white/95">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
         <div className="flex items-center gap-6 min-w-0">
-          <button
-            onClick={() => navigate("/")}
-            className="flex items-center gap-2 shrink-0"
-            title="На главную"
-          >
+          <button onClick={() => navigate("/")} className="flex items-center gap-2 shrink-0">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center">
               <CalendarDays className="w-4 h-4 text-white" />
             </div>
-            <span className="font-semibold text-slate-900 hidden sm:inline">
-              Планировщик
-            </span>
+            <span className="font-semibold text-slate-900 hidden sm:inline">Планировщик</span>
           </button>
 
-          <nav className="flex items-center gap-1 overflow-x-auto">
+          <nav className="flex items-center gap-2 overflow-x-auto pt-1">
             {visibleCategories.map((cat) => {
               const active = currentCategory?.id === cat.id;
               const firstLink = cat.links[0];
@@ -241,17 +195,14 @@ export default function NavBar() {
 
               let badge = 0;
               if (cat.id === "users") badge = vacationsPending;
-              if (cat.id === "schedule")
-                badge = swapsIncoming + shiftChangesIncoming;
+              if (cat.id === "schedule") badge = swapsIncoming + shiftChangesIncoming + timeOffsPending;
 
               return (
                 <button
                   key={cat.id}
                   onClick={() => navigate(firstLink.path)}
-                  className={`inline-flex items-center px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors ${
-                    active
-                      ? "bg-brand-50 text-brand-700 font-medium"
-                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                  className={`relative inline-flex items-center px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors ${
+                    active ? "bg-brand-50 text-brand-700 font-medium" : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
                   }`}
                 >
                   <span>{cat.label}</span>
@@ -263,50 +214,26 @@ export default function NavBar() {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={() => navigate("/help")}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
-              isActive(pathname, "/help")
-                ? "bg-brand-50 text-brand-700 font-medium"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-            }`}
-            title="Справка"
-          >
+          <NotificationBell />
+          <button onClick={() => navigate("/help")} className={`relative flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${isActive(pathname, "/help") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`}>
             <HelpCircle className="w-4 h-4" />
             <span className="hidden lg:inline">Справка</span>
           </button>
-          <button
-            onClick={() => navigate("/profile")}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
-              isActive(pathname, "/profile")
-                ? "bg-brand-50 text-brand-700 font-medium"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-            }`}
-            title="Профиль"
-          >
+          <button onClick={() => navigate("/profile")} className={`relative flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${isActive(pathname, "/profile") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`}>
             <UserCircle className="w-4 h-4" />
-            <span className="hidden lg:inline">
-              {user?.name ?? user?.email}
-            </span>
+            <span className="hidden lg:inline">{user?.name ?? user?.email}</span>
           </button>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors"
-            title="Выйти"
-          >
+          <button onClick={handleLogout} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors">
             <LogOut className="w-4 h-4" />
           </button>
         </div>
       </div>
 
-      {/* Подменю активной категории + переключатель точек.
-          Вкладки и свитчер — ДВА разных контейнера:
-          overflow-x-auto только на вкладках, чтобы не обрезать dropdown. */}
+      {/* Подменю активной категории */}
       {currentCategory && currentCategory.links.length > 0 && (
         <div className="border-t border-slate-100 bg-slate-50/50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-stretch gap-3">
-            {/* Вкладки — скроллятся при переполнении */}
-            <div className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0">
+            <div className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0 pt-1 pb-1">
               {currentCategory.links.map((link) => {
                 const Icon = link.icon;
                 const active = isActive(pathname, link.path);
@@ -314,16 +241,14 @@ export default function NavBar() {
                 let badge = 0;
                 if (link.path === "/vacations") badge = vacationsPending;
                 if (link.path === "/swaps") badge = swapsIncoming;
-                if (link.path === "/weeks") badge = shiftChangesIncoming;
+                if (link.path === "/weeks") badge = shiftChangesIncoming + timeOffsPending;
 
                 return (
                   <button
                     key={link.path}
                     onClick={() => navigate(link.path)}
-                    className={`inline-flex items-center gap-2 px-3 py-2 text-sm whitespace-nowrap border-b-2 transition-colors ${
-                      active
-                        ? "border-brand-600 text-brand-700 font-medium"
-                        : "border-transparent text-slate-600 hover:text-slate-900"
+                    className={`relative inline-flex items-center gap-2 px-3 py-2 text-sm whitespace-nowrap border-b-2 transition-colors ${
+                      active ? "border-brand-600 text-brand-700 font-medium" : "border-transparent text-slate-600 hover:text-slate-900"
                     }`}
                   >
                     <Icon className="w-4 h-4" />
@@ -334,7 +259,6 @@ export default function NavBar() {
               })}
             </div>
 
-            {/* Свитчер — ВНЕ overflow-x-auto, чтобы dropdown не обрезался */}
             {currentCategory.id === "schedule" && (
               <div className="flex items-center shrink-0 py-1.5">
                 <LocationSwitcher />

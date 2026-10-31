@@ -1,9 +1,9 @@
 import { eq, and, lte, gte, desc } from "drizzle-orm";
 import { db } from "../../../db/client.js";
 import { vacations, users } from "../../../db/schema.js";
+import { notificationsService } from "../notifications/notifications.service.js";
 
 export const vacationsService = {
-  // Все отпуска организации
   async list(orgId: string) {
     const rows = await db
       .select()
@@ -23,7 +23,6 @@ export const vacationsService = {
     }));
   },
 
-  // Мои отпуска
   async mine(userId: string) {
     return db
       .select()
@@ -32,7 +31,6 @@ export const vacationsService = {
       .orderBy(vacations.startDate);
   },
 
-  // Проверка нахождения в отпуске
   async check(userId: string, date: string, orgId: string) {
     const [user] = await db
       .select({ id: users.id })
@@ -55,7 +53,6 @@ export const vacationsService = {
     return found ?? null;
   },
 
-  // Создание отпуска
   async create(input: {
     orgId: string;
     userId: string;
@@ -64,9 +61,7 @@ export const vacationsService = {
     comment?: string;
     requesterRole: string;
   }) {
-    if (input.startDate > input.endDate) {
-      throw new Error("INVALID_DATES");
-    }
+    if (input.startDate > input.endDate) throw new Error("INVALID_DATES");
 
     const [user] = await db
       .select()
@@ -74,7 +69,6 @@ export const vacationsService = {
       .where(and(eq(users.id, input.userId), eq(users.orgId, input.orgId)));
     if (!user) throw new Error("USER_NOT_FOUND");
 
-    // Сотрудник — PENDING, менеджер/владелец — сразу APPROVED
     const isManager =
       input.requesterRole === "OWNER" || input.requesterRole === "MANAGER";
     const status = isManager ? "APPROVED" : "PENDING";
@@ -90,10 +84,28 @@ export const vacationsService = {
         status,
       })
       .returning();
+
+    if (status === "PENDING") {
+      await notificationsService.notifyManagers({
+        orgId: input.orgId,
+        kind: "VACATION_REQUEST",
+        title: "Запрос отпуска",
+        message: `${user.name} просит отпуск с ${input.startDate} по ${input.endDate}${input.comment ? `. ${input.comment}` : ""}`,
+        relatedId: created.id,
+        relatedType: "vacation_request",
+        requiresAction: true,
+        payload: {
+          startDate: input.startDate,
+          endDate: input.endDate,
+          userName: user.name,
+        },
+        excludeUserId: input.userId,
+      });
+    }
+
     return created;
   },
 
-  // Обновление (сотрудником — на модерацию, менеджером — сразу)
   async update(input: {
     id: string;
     orgId: string;
@@ -111,16 +123,13 @@ export const vacationsService = {
 
     const isAdmin =
       input.requesterRole === "OWNER" || input.requesterRole === "MANAGER";
-    if (!isAdmin && vac.userId !== input.requesterId) {
-      throw new Error("FORBIDDEN");
-    }
+    if (!isAdmin && vac.userId !== input.requesterId) throw new Error("FORBIDDEN");
 
     const newStart = input.startDate ?? String(vac.startDate);
     const newEnd = input.endDate ?? String(vac.endDate);
     if (newStart > newEnd) throw new Error("INVALID_DATES");
 
     if (isAdmin) {
-      // Менеджер меняет — сразу применям
       const [updated] = await db
         .update(vacations)
         .set({
@@ -136,10 +145,23 @@ export const vacationsService = {
         })
         .where(eq(vacations.id, input.id))
         .returning();
+
+      if (vac.userId !== input.requesterId) {
+        await notificationsService.create({
+          orgId: input.orgId,
+          userId: vac.userId,
+          kind: "VACATION_UPDATED_BY_MANAGER",
+          title: "Ваш отпуск изменён",
+          message: `Руководитель изменил отпуск: ${newStart} — ${newEnd}`,
+          relatedId: input.id,
+          relatedType: "vacation",
+          requiresAction: false,
+        });
+      }
+
       return updated;
     }
 
-    // Сотрудник меняет — сохраняем старые значения и переводим в PENDING
     const [updated] = await db
       .update(vacations)
       .set({
@@ -147,17 +169,33 @@ export const vacationsService = {
         endDate: newEnd,
         comment: input.comment !== undefined ? input.comment : vac.comment,
         status: "PENDING",
-        // Сохраняем предыдущие значения только один раз (если ещё не сохранены)
         previousStartDate: vac.previousStartDate ?? vac.startDate,
         previousEndDate: vac.previousEndDate ?? vac.endDate,
         previousComment: vac.previousComment ?? vac.comment,
       })
       .where(eq(vacations.id, input.id))
       .returning();
+
+    const [u] = await db
+      .select({ name: users.name })
+      .from(users)
+      .where(eq(users.id, input.requesterId));
+
+    await notificationsService.notifyManagers({
+      orgId: input.orgId,
+      kind: "VACATION_EDIT_REQUEST",
+      title: "Изменение отпуска",
+      message: `${u?.name ?? "Сотрудник"} изменил(а) свой отпуск: ${newStart} — ${newEnd}`,
+      relatedId: input.id,
+      relatedType: "vacation_request",
+      requiresAction: true,
+      payload: { startDate: newStart, endDate: newEnd, userName: u?.name },
+      excludeUserId: input.requesterId,
+    });
+
     return updated;
   },
 
-  // Удаление
   async remove(input: {
     id: string;
     orgId: string;
@@ -172,15 +210,12 @@ export const vacationsService = {
 
     const isAdmin =
       input.requesterRole === "OWNER" || input.requesterRole === "MANAGER";
-    if (!isAdmin && vac.userId !== input.requesterId) {
-      throw new Error("FORBIDDEN");
-    }
+    if (!isAdmin && vac.userId !== input.requesterId) throw new Error("FORBIDDEN");
 
     await db.delete(vacations).where(eq(vacations.id, input.id));
     return { success: true };
   },
 
-  // ─── Модерация ─────────────────────────────────────
   async listPending(orgId: string) {
     const rows = await db
       .select()
@@ -228,6 +263,32 @@ export const vacationsService = {
       })
       .where(eq(vacations.id, id))
       .returning();
+
+    // Убираем action-required карточки из колокольчика у всех менеджеров
+    const [reviewer] = await db
+                 .select({ name: users.name })
+                 .from(users)
+                 .where(eq(users.id, reviewerId));
+
+               await notificationsService.resolveActionable(
+                 id,
+                 "vacation_request",
+                 "APPROVED",
+                 reviewer?.name ?? "Руководитель",
+                 `отпуск ${String(updated.startDate).slice(0, 10)} — ${String(updated.endDate).slice(0, 10)} одобрен`
+               );
+
+    await notificationsService.create({
+      orgId,
+      userId: vac.userId,
+      kind: "VACATION_APPROVED",
+      title: "Отпуск одобрен",
+      message: `Ваш отпуск одобрен: ${String(updated.startDate).slice(0, 10)} — ${String(updated.endDate).slice(0, 10)}`,
+      relatedId: id,
+      relatedType: "vacation",
+      requiresAction: false,
+    });
+
     return updated;
   },
 
@@ -239,7 +300,6 @@ export const vacationsService = {
     if (!vac) throw new Error("NOT_FOUND");
     if (vac.status !== "PENDING") throw new Error("NOT_PENDING");
 
-    // Возвращаем старые значения
     const [updated] = await db
       .update(vacations)
       .set({
@@ -255,6 +315,31 @@ export const vacationsService = {
       })
       .where(eq(vacations.id, id))
       .returning();
+
+    const [reviewer] = await db
+                 .select({ name: users.name })
+                 .from(users)
+                 .where(eq(users.id, reviewerId));
+
+               await notificationsService.resolveActionable(
+                 id,
+                 "vacation_request",
+                 "REJECTED",
+                 reviewer?.name ?? "Руководитель",
+                 "изменение отпуска отклонено"
+               );
+
+    await notificationsService.create({
+      orgId,
+      userId: vac.userId,
+      kind: "VACATION_REJECTED",
+      title: "Изменение отпуска отклонено",
+      message: "Ваш запрос на изменение отпуска отклонён",
+      relatedId: id,
+      relatedType: "vacation",
+      requiresAction: false,
+    });
+
     return updated;
   },
 };

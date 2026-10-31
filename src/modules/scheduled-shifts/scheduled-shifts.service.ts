@@ -11,6 +11,7 @@ import {
 } from "../../../db/schema.js";
 import { isWithinWeek, toDateStr, shiftsOverlap } from "../../lib/time.js";
 import { messengerService } from "../../lib/messenger.service.js";
+           import { notificationsService } from "../notifications/notifications.service.js";
 
 const WEEKLY_LIMIT_HOURS = 40;
 
@@ -361,11 +362,30 @@ export const scheduledShiftsService = {
       const [requester] = await db.select({ name: users.name }).from(users).where(eq(users.id, input.requesterId));
       if (isOnlyDiscipline) {
         await db.insert(actionLogs).values({
-          orgId: input.orgId,
-          userId: input.requesterId,
-          actionType: "DISCIPLINE",
-          description: `${requester?.name} изменил(а) дисциплину для смены ${String(shift.shiftDate).slice(0, 10)}`,
-        });
+                     orgId: input.orgId,
+                     userId: input.requesterId,
+                     actionType: "DISCIPLINE",
+                     description: `${requester?.name} изменил(а) дисциплину для смены ${String(shift.shiftDate).slice(0, 10)}`,
+                   });
+
+                   if (shift.userId && shift.userId !== input.requesterId) {
+                     await notificationsService.create({
+                       orgId: input.orgId,
+                       userId: shift.userId,
+                       kind: "DISCIPLINE_CHANGED",
+                       title: "Изменение дисциплины",
+                       message: `Руководитель обновил данные о дисциплине за ${String(shift.shiftDate).slice(0, 10)}`,
+                       relatedId: input.id,
+                       relatedType: "discipline",
+                       requiresAction: false,
+                       payload: {
+                         latenessMinutes: input.latenessMinutes,
+                         earlyLeaveMinutes: input.earlyLeaveMinutes,
+                         isNoShow: input.isNoShow,
+                         isUnknownAbsence: input.isUnknownAbsence,
+                       },
+                     });
+                   }
       } else {
         await db.insert(actionLogs).values({
           orgId: input.orgId,

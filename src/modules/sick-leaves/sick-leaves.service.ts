@@ -2,8 +2,8 @@ import { eq, and, lte, gte, desc } from "drizzle-orm";
 import { db } from "../../../db/client.js";
 import { sickLeaves, users } from "../../../db/schema.js";
 import { messengerService } from "../../lib/messenger.service.js";
+import { notificationsService } from "../notifications/notifications.service.js";
 
-// Показываем время в МСК независимо от TZ сервера
 function formatMoscow(d: Date): string {
   return d.toLocaleString("ru-RU", { timeZone: "Europe/Moscow" });
 }
@@ -38,7 +38,6 @@ export const sickLeavesService = {
     comment?: string;
     createdById: string;
   }) {
-    // updatedAt / updatedById НЕ ставим — запись "ещё не редактировалась"
     const [created] = await db
       .insert(sickLeaves)
       .values({
@@ -63,6 +62,19 @@ export const sickLeavesService = {
       input.userId,
       `<b>Больничный</b>\n\n${who} добавил(а) вам больничный с <b>${input.startDate}</b> по <b>${input.endDate}</b>.\n${input.comment ? `Комментарий: ${input.comment}\n` : ""}\nСоздано: ${nowStr}\n\nНажмите «ОК», чтобы подтвердить.`
     );
+
+    if (input.userId !== input.createdById) {
+      await notificationsService.create({
+        orgId: input.orgId,
+        userId: input.userId,
+        kind: "SICK_LEAVE_CREATED",
+        title: "Больничный",
+        message: `${who} добавил(а) вам больничный с ${input.startDate} по ${input.endDate}`,
+        relatedId: created.id,
+        relatedType: "sick_leave",
+        requiresAction: false,
+      });
+    }
 
     return created;
   },
@@ -104,6 +116,19 @@ export const sickLeavesService = {
       updated.userId,
       `<b>Больничный изменён</b>\n\n${who} изменил(а) ваш больничный.\nНовые даты: <b>${String(updated.startDate).slice(0, 10)}</b> — <b>${String(updated.endDate).slice(0, 10)}</b>.\n\nИзменено: ${nowStr}`
     );
+
+    if (updated.userId !== input.updatedById) {
+      await notificationsService.create({
+        orgId: input.orgId,
+        userId: updated.userId,
+        kind: "SICK_LEAVE_UPDATED",
+        title: "Больничный изменён",
+        message: `Больничный изменён: ${String(updated.startDate).slice(0, 10)} — ${String(updated.endDate).slice(0, 10)}`,
+        relatedId: input.id,
+        relatedType: "sick_leave",
+        requiresAction: false,
+      });
+    }
 
     return updated;
   },

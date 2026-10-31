@@ -1,7 +1,48 @@
 import { api } from "./client";
 
-export const notificationsApi = {
-  vacationsPendingCount: async (): Promise<number> => {
+export type InAppNotification = {
+           id: string;
+           orgId: string;
+           userId: string;
+           kind: string;
+           title: string;
+           message: string;
+           relatedId: string | null;
+           relatedType: string | null;
+           requiresAction: boolean;
+           acknowledgedAt: string | null;
+           createdAt: string;
+           payload: any;
+         };
+
+         export const notificationsApi = {
+           listMine: async (): Promise<InAppNotification[]> => {
+             try {
+               const { data } = await api.get<InAppNotification[]>("/notifications");
+               return data;
+             } catch { return []; }
+           },
+
+           unreadInAppCount: async (): Promise<number> => {
+             try {
+               const { data } = await api.get<{ count: number }>("/notifications/unread/count");
+               return data.count;
+             } catch { return 0; }
+           },
+
+           ackInApp: async (id: string): Promise<void> => {
+                        try { await api.post(`/notifications/${id}/ack`, {}); } catch {}
+                      },
+
+                      dismissInApp: async (id: string): Promise<void> => {
+                        try { await api.delete(`/notifications/${id}`); } catch {}
+                      },
+
+           ackAllInApp: async (): Promise<void> => {
+             try { await api.post("/notifications/ack-all", {}); } catch {}
+           },
+
+           vacationsPendingCount: async (): Promise<number> => {
     try {
       const { data } = await api.get<{ count: number }>(
         "/vacations/pending/count"
@@ -34,4 +75,12 @@ export const notificationsApi = {
       return 0;
     }
   },
+
+  timeOffsPendingCount: async (): Promise<number> => {
+    try {
+      const { data } = await api.get<{ count: number }>("/time-off/pending/count");
+      return data.count;
+    } catch { return 0; }
+  },
+
 };

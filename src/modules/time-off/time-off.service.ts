@@ -1,7 +1,8 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { db } from "../../../db/client.js";
 import { timeOffRequests, scheduledShifts, users, actionLogs } from "../../../db/schema.js";
 import { messengerService } from "../../lib/messenger.service.js";
+import { notificationsService } from "../notifications/notifications.service.js";
 
 export const timeOffService = {
   async create(input: { orgId: string; userId: string; shiftId: string; date: string; comment?: string }) {
@@ -17,6 +18,18 @@ export const timeOffService = {
       description: `${user?.name} запросил(а) отгул на ${input.date}`,
     });
 
+    await notificationsService.notifyManagers({
+      orgId: input.orgId,
+      kind: "TIME_OFF_REQUEST",
+      title: "Запрос отгула",
+      message: `${user?.name ?? "Сотрудник"} просит отгул на ${input.date}${input.comment ? `. ${input.comment}` : ""}`,
+      relatedId: req.id,
+      relatedType: "time_off_request",
+      requiresAction: true,
+      payload: { date: input.date, userName: user?.name, shiftId: input.shiftId },
+      excludeUserId: input.userId,
+    });
+
     return req;
   },
 
@@ -24,23 +37,38 @@ export const timeOffService = {
     const [req] = await db.select().from(timeOffRequests).where(and(eq(timeOffRequests.id, id), eq(timeOffRequests.orgId, orgId)));
     if (!req || req.status !== "PENDING") throw new Error("NOT_FOUND_OR_PROCESSED");
 
-    // 1. Обновляем статус заявки
     const [updated] = await db.update(timeOffRequests).set({
       status: "APPROVED", reviewedAt: new Date(), reviewedBy: reviewerId,
     }).where(eq(timeOffRequests.id, id)).returning();
 
-    // 2. Удаляем смену
     await db.delete(scheduledShifts).where(eq(scheduledShifts.id, req.shiftId));
 
-    // 3. Логируем
     const [reviewer] = await db.select({ name: users.name }).from(users).where(eq(users.id, reviewerId));
     await db.insert(actionLogs).values({
       orgId, userId: reviewerId, actionType: "TIME_OFF_APPROVED",
       description: `${reviewer?.name} одобрил(а) отгул сотруднику на ${req.date} (смена снята)`,
     });
 
-    // 4. Уведомление
     await messengerService.sendToUser(req.userId, `<b>Отгул одобрен</b>\n\nВаш запрос на отгул на ${req.date} одобрен. Смена снята.`);
+
+    await notificationsService.create({
+      orgId,
+      userId: req.userId,
+      kind: "TIME_OFF_APPROVED",
+      title: "Отгул одобрен",
+      message: `Ваш запрос на отгул на ${req.date} одобрен. Смена снята.`,
+      relatedId: id,
+      relatedType: "time_off",
+      requiresAction: false,
+    });
+
+    await notificationsService.resolveActionable(
+      id,
+      "time_off_request",
+      "APPROVED",
+      reviewer?.name ?? "Руководитель",
+      `отгул на ${req.date} одобрен, смена снята`
+    );
 
     return updated;
   },
@@ -60,6 +88,26 @@ export const timeOffService = {
     });
 
     await messengerService.sendToUser(req.userId, `<b>Отгул отклонён</b>\n\nЗапрос на ${req.date} отклонён.`);
+
+    await notificationsService.create({
+      orgId,
+      userId: req.userId,
+      kind: "TIME_OFF_REJECTED",
+      title: "Отгул отклонён",
+      message: `Запрос на отгул на ${req.date} отклонён.`,
+      relatedId: id,
+      relatedType: "time_off",
+      requiresAction: false,
+    });
+
+    await notificationsService.resolveActionable(
+      id,
+      "time_off_request",
+      "REJECTED",
+      reviewer?.name ?? "Руководитель",
+      `запрос на отгул на ${req.date} отклонён`
+    );
+
     return updated;
   },
 
@@ -72,5 +120,27 @@ export const timeOffService = {
       .where(eq(timeOffRequests.orgId, orgId))
       .orderBy(timeOffRequests.createdAt);
     return rows.map(r => ({ ...r.req, userName: r.userName }));
+  },
+
+  async listMine(userId: string) {
+    return db.select()
+      .from(timeOffRequests)
+      .where(eq(timeOffRequests.userId, userId))
+      .orderBy(desc(timeOffRequests.createdAt));
+  },
+
+  async pendingCount(orgId: string) {
+    const reqs = await db.select().from(timeOffRequests).where(
+      and(eq(timeOffRequests.orgId, orgId), eq(timeOffRequests.status, "PENDING"))
+    );
+    return { count: reqs.length };
+  },
+
+  async cancel(id: string, orgId: string, userId: string) {
+    const [req] = await db.select().from(timeOffRequests)
+      .where(and(eq(timeOffRequests.id, id), eq(timeOffRequests.orgId, orgId)));
+    if (!req || req.status !== "PENDING" || req.userId !== userId) throw new Error("INVALID_REQUEST");
+    await db.delete(timeOffRequests).where(eq(timeOffRequests.id, id));
+    return { success: true };
   }
 };

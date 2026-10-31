@@ -1,12 +1,12 @@
-import { eq, and, or, desc } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { db } from "../../../db/client.js";
 import {
   shiftChangeRequests,
   scheduledShifts,
-  scheduleWeeks,
   users,
 } from "../../../db/schema.js";
 import { messengerService } from "../../lib/messenger.service.js";
+import { notificationsService } from "../notifications/notifications.service.js";
 
 export const shiftChangeRequestsService = {
   async list(orgId: string) {
@@ -91,7 +91,12 @@ export const shiftChangeRequestsService = {
       ? new Date(req.createdAt).toLocaleString("ru-RU")
       : "—";
 
-    // ─── CREATE — создаём новую смену ───
+    const [resolver] = await db
+      .select({ name: users.name })
+      .from(users)
+      .where(eq(users.id, userId));
+
+    // ─── CREATE ───
     if (req.kind === "CREATE") {
       if (!req.weekId) throw new Error("NO_WEEK");
 
@@ -117,23 +122,40 @@ export const shiftChangeRequestsService = {
         .where(eq(shiftChangeRequests.id, id))
         .returning();
 
-      // Уведомление сотруднику
       if (req.newUserId) {
         await messengerService.sendToUser(
           req.newUserId,
           `<b>Новая смена</b>\n\nВам назначена смена на ${req.newShiftDate} (${req.newStartTime}–${req.newEndTime}).\n\nСоздано: ${createdStr}\nСогласовано: ${nowStr}`
         );
       }
-      // Уведомление инициатору
       await messengerService.sendToUser(
         req.requestedBy,
         `<b>Смена согласована</b>\n\nСотрудник согласовал назначение смены на ${req.newShiftDate}.\n\nСоздано: ${createdStr}\nСогласовано: ${nowStr}`
       );
 
+      await notificationsService.create({
+        orgId: req.orgId,
+        userId: req.requestedBy,
+        kind: "SHIFT_CHANGE_APPROVED",
+        title: "Запрос одобрен",
+        message: `Сотрудник согласовал создание смены на ${req.newShiftDate}`,
+        relatedId: id,
+        relatedType: "shift_change",
+        requiresAction: false,
+      });
+
+      await notificationsService.resolveActionable(
+        id,
+        "shift_change_request",
+        "APPROVED",
+        resolver?.name ?? "Сотрудник",
+        `создание смены на ${req.newShiftDate} согласовано`
+      );
+
       return updated;
     }
 
-    // ─── UPDATE — обновляем существующую смену ───
+    // ─── UPDATE ───
     if (!req.shiftId) throw new Error("NO_SHIFT");
 
     await db
@@ -152,17 +174,34 @@ export const shiftChangeRequestsService = {
       .where(eq(shiftChangeRequests.id, id))
       .returning();
 
-    // Уведомление сотруднику (чью смену меняли)
     if (req.newUserId) {
       await messengerService.sendToUser(
         req.newUserId,
         `<b>Смена изменена</b>\n\nВаша смена перенесена на ${req.newShiftDate} (${req.newStartTime}–${req.newEndTime}).\n\nСоздано: ${createdStr}\nСогласовано: ${nowStr}`
       );
     }
-    // Уведомление инициатору (менеджеру)
     await messengerService.sendToUser(
       req.requestedBy,
       `<b>Изменение согласовано</b>\n\nСотрудник согласовал изменение смены на ${req.newShiftDate}.\n\nСоздано: ${createdStr}\nСогласовано: ${nowStr}`
+    );
+
+    await notificationsService.create({
+      orgId: req.orgId,
+      userId: req.requestedBy,
+      kind: "SHIFT_CHANGE_APPROVED",
+      title: "Запрос одобрен",
+      message: `Сотрудник согласовал изменение смены на ${req.newShiftDate}`,
+      relatedId: id,
+      relatedType: "shift_change",
+      requiresAction: false,
+    });
+
+    await notificationsService.resolveActionable(
+      id,
+      "shift_change_request",
+      "APPROVED",
+      resolver?.name ?? "Сотрудник",
+      `изменение смены на ${req.newShiftDate} согласовано`
     );
 
     return updated;
@@ -188,9 +227,33 @@ export const shiftChangeRequestsService = {
       ? new Date(req.createdAt).toLocaleString("ru-RU")
       : "—";
 
+    const [resolver] = await db
+      .select({ name: users.name })
+      .from(users)
+      .where(eq(users.id, userId));
+
     await messengerService.sendToUser(
       req.requestedBy,
       `<b>Изменение отклонено</b>\n\nСотрудник отклонил изменение смены на ${req.newShiftDate}.\n\nСоздано: ${createdStr}\nОтклонено: ${nowStr}`
+    );
+
+    await notificationsService.create({
+      orgId: req.orgId,
+      userId: req.requestedBy,
+      kind: "SHIFT_CHANGE_REJECTED",
+      title: "Запрос отклонён",
+      message: `Сотрудник отклонил изменение смены на ${req.newShiftDate}`,
+      relatedId: id,
+      relatedType: "shift_change",
+      requiresAction: false,
+    });
+
+    await notificationsService.resolveActionable(
+      id,
+      "shift_change_request",
+      "REJECTED",
+      resolver?.name ?? "Сотрудник",
+      `изменение смены на ${req.newShiftDate} отклонено`
     );
 
     return updated;
