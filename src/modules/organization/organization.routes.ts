@@ -15,6 +15,8 @@ const updateSchema = z.object({
   positionHeaderOpacity: z.number().int().min(0).max(100).optional(),
   positionRowOpacity: z.number().int().min(0).max(100).optional(),
   taxRate: z.string().optional(),
+  requireShiftApproval: z.boolean().optional(),
+  disciplineEditWindowDays: z.number().int().min(0).max(90).optional(),
 });
 
 export async function organizationRoutes(app: FastifyInstance) {

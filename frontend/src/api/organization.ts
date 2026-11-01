@@ -15,6 +15,8 @@ export type Organization = {
   positionHeaderOpacity: number;
   positionRowOpacity: number;
   taxRate: string;
+  requireShiftApproval?: boolean;
+  disciplineEditWindowDays?: number;
 };
 
 export const organizationApi = {

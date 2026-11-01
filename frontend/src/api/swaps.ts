@@ -36,6 +36,16 @@ export const swapsApi = {
     return data.count;
   },
 
+  available: async (): Promise<SwapRequest[]> => {
+    const { data } = await api.get<SwapRequest[]>("/swaps/available");
+    return data;
+  },
+
+  availableCount: async (): Promise<number> => {
+    const { data } = await api.get<{ count: number }>("/swaps/available/count");
+    return data.count;
+  },
+
   create: async (input: {
     shiftId: string;
     swapWithUserId?: string;

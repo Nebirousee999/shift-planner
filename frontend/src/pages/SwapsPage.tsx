@@ -10,8 +10,10 @@ import {
   CalendarDays,
   Check,
   X,
+  Trash2
 } from "lucide-react";
 import { useSwaps } from "../store/swaps";
+import { useAuth } from "../store/auth";
 import { useNotifications } from "../store/notifications";
 import { swapsApi } from "../api/swaps";
 import { alertDialog, confirmDialog } from "../store/dialogs";
@@ -80,12 +82,39 @@ function initials(name: string | null | undefined): string {
 }
 
 export default function SwapsPage() {
-  const { all, loading, error, fetchAll } = useSwaps();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "OWNER" || user?.role === "MANAGER";
+  const {
+    all: adminAll,
+    available,
+    outgoing,
+    loading,
+    error,
+    fetchAll,
+    fetchAvailable,
+    fetchMine,
+  } = useSwaps();
+
   const [tab, setTab] = useState<Tab>("all");
 
   useEffect(() => {
-    fetchAll();
-  }, [fetchAll]);
+    if (isAdmin) fetchAll();
+    else {
+      fetchAvailable();
+      fetchMine(); // Загружаем свои исходящие запросы
+    }
+  }, [isAdmin, fetchAll, fetchAvailable, fetchMine]);
+
+  // Объединяем доступные для меня обмены и мои собственные
+  const all = useMemo(() => {
+    if (isAdmin) return adminAll;
+    const map = new Map();
+    for (const a of available) map.set(a.id, a);
+    for (const o of outgoing) map.set(o.id, o);
+    return Array.from(map.values()).sort((a, b) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }, [isAdmin, adminAll, available, outgoing]);
 
   const filtered = useMemo(() => {
     if (tab === "all") return all;
@@ -101,12 +130,16 @@ export default function SwapsPage() {
     };
   }, [all]);
 
-  // ─── Модерация (на странице владельца) ─────────────
+  const reload = async () => {
+    await (isAdmin ? fetchAll() : fetchAvailable());
+    if (!isAdmin) await fetchMine();
+    useNotifications.getState().refresh();
+  };
+
   const onAccept = async (id: string) => {
     try {
       await swapsApi.accept(id);
-      useNotifications.getState().refresh();
-      await fetchAll();
+      await reload();
     } catch (e: any) {
       await alertDialog(e.response?.data?.error ?? "Ошибка", {
         variant: "error",
@@ -115,7 +148,7 @@ export default function SwapsPage() {
   };
 
   const onDecline = async (id: string) => {
-    const ok = await confirmDialog("Отклонить запрос?", {
+    const ok = await confirmDialog("Отклонить запрос на обмен?", {
       title: "Отклонение",
       variant: "danger",
     });
@@ -123,8 +156,25 @@ export default function SwapsPage() {
 
     try {
       await swapsApi.decline(id);
-      useNotifications.getState().refresh();
-      await fetchAll();
+      await reload();
+      setTab("DENIED"); // Автоматически переключаем на вкладку "Отклонены"
+    } catch (e: any) {
+      await alertDialog(e.response?.data?.error ?? "Ошибка", {
+        variant: "error",
+      });
+    }
+  };
+
+  const onCancel = async (id: string) => {
+    const ok = await confirmDialog("Отменить ваш запрос на обмен?", {
+      title: "Отмена",
+      variant: "danger",
+    });
+    if (!ok) return;
+
+    try {
+      await swapsApi.cancel(id);
+      await reload();
     } catch (e: any) {
       await alertDialog(e.response?.data?.error ?? "Ошибка", {
         variant: "error",
@@ -144,7 +194,6 @@ export default function SwapsPage() {
           </p>
         </div>
 
-        {/* Табы */}
         <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
           {TABS.map((t) => {
             const Icon = t.icon;
@@ -178,7 +227,6 @@ export default function SwapsPage() {
         {loading && <p className="text-slate-500 text-sm">Загрузка...</p>}
         {error && <p className="text-red-500 text-sm">{error}</p>}
 
-        {/* Пусто */}
         {!loading && filtered.length === 0 && (
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center">
             <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
@@ -189,9 +237,7 @@ export default function SwapsPage() {
               )}
             </div>
             <h3 className="font-semibold text-slate-900 mb-1">
-              {tab === "all"
-                ? "Пока нет ни одного обмена"
-                : "Здесь пока пусто"}
+              {tab === "all" ? "Пока нет ни одного обмена" : "Здесь пока пусто"}
             </h3>
             <p className="text-sm text-slate-500 max-w-sm mx-auto">
               {tab === "all"
@@ -201,12 +247,12 @@ export default function SwapsPage() {
           </div>
         )}
 
-        {/* Список */}
         {filtered.length > 0 && (
           <div className="space-y-3">
             {filtered.map((r) => {
               const meta = STATUS_META[r.status];
               const StatusIcon = meta.icon;
+              const isMyRequest = r.requestedBy === user?.id;
               const canModerate = r.status === "PENDING";
 
               return (
@@ -226,9 +272,7 @@ export default function SwapsPage() {
 
                       <div className="min-w-0">
                         <div className="font-semibold text-slate-900">
-                          {r.shiftDate
-                            ? shortDate(r.shiftDate)
-                            : "Смена удалена"}
+                          {r.shiftDate ? shortDate(r.shiftDate) : "Смена удалена"}
                         </div>
                         <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5">
                           {r.startTime && r.endTime ? (
@@ -268,21 +312,36 @@ export default function SwapsPage() {
                       </span>
 
                       {canModerate && (
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => onAccept(r.id)}
-                            className="inline-flex items-center gap-1 bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-emerald-700 text-xs font-medium transition-colors"
-                            title="Принять"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => onDecline(r.id)}
-                            className="inline-flex items-center gap-1 text-red-600 hover:bg-red-50 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
-                            title="Отклонить"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
+                        <div className="flex items-center gap-1.5">
+                          {isMyRequest ? (
+                            <button
+                              onClick={() => onCancel(r.id)}
+                              className="inline-flex items-center gap-1 text-red-600 bg-red-50 hover:bg-red-100 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                              title="Отменить"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">Отменить</span>
+                            </button>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => onAccept(r.id)}
+                                className="inline-flex items-center gap-1 bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-emerald-700 text-xs font-medium transition-colors"
+                                title="Принять"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">Принять</span>
+                              </button>
+                              <button
+                                onClick={() => onDecline(r.id)}
+                                className="inline-flex items-center gap-1 text-rose-600 hover:bg-rose-50 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                                title="Отклонить"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">Отклонить</span>
+                              </button>
+                            </>
+                          )}
                         </div>
                       )}
                     </div>

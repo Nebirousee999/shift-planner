@@ -168,6 +168,7 @@ export async function scheduledShiftsRoutes(app: FastifyInstance) {
       const map: Record<string, string> = {
         SHIFT_NOT_FOUND: "Смена не найдена",
         WEEK_LOCKED: "Неделя заблокирована",
+        DISCIPLINE_WINDOW_CLOSED: "Прошло слишком много времени. Редактирование дисциплины за этот день закрыто.",
       };
       if (map[e.message]) {
         return reply.code(e.message === "SHIFT_NOT_FOUND" ? 404 : 400).send({

@@ -79,7 +79,7 @@ export default function NavBar() {
   const { user, logout } = useAuth();
   
   // Добавили timeOffsPending, если ты вынесешь его в стор (см. ниже)
-  const { vacationsPending, swapsIncoming, shiftChangesIncoming, timeOffsPending = 0, refresh } = useNotifications();
+  const { vacationsPending, swapsIncoming, shiftChangesIncoming, timeOffsPending = 0, swapsAvailable = 0, refresh } = useNotifications();
   
   const org = useOrganization((s) => s.org);
 
@@ -118,21 +118,24 @@ export default function NavBar() {
   if (!isAdmin) {
     return (
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30 backdrop-blur-sm bg-white/90">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4 min-w-0">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2 sm:py-3 flex items-center justify-between gap-2 sm:gap-4 flex-wrap sm:flex-nowrap">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
             <button onClick={() => navigate("/")} className="flex items-center gap-2 shrink-0">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center">
                 <CalendarDays className="w-4 h-4 text-white" />
               </div>
-              <span className="font-semibold text-slate-900 hidden sm:inline">Планировщик</span>
             </button>
 
-            <nav className="flex items-center gap-1">
+            <nav className="flex items-center gap-1 overflow-x-auto whitespace-nowrap pb-1 sm:pb-0 scrollbar-none flex-1">
               <button onClick={() => navigate("/")} className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${isActive(pathname, "/") ? "bg-brand-50 text-brand-700 font-medium" : "text-slate-600 hover:bg-slate-100"}`}>
                 Дашборд
               </button>
               <button onClick={() => navigate("/my")} className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${isActive(pathname, "/my") ? "bg-brand-50 text-brand-700 font-medium" : "text-slate-600 hover:bg-slate-100"}`}>
                 Мой график
+              </button>
+              <button onClick={() => navigate("/swaps")} className={`relative px-3 py-1.5 rounded-lg text-sm transition-colors ${isActive(pathname, "/swaps") ? "bg-brand-50 text-brand-700 font-medium" : "text-slate-600 hover:bg-slate-100"}`}>
+                Обмены
+                <Badge value={swapsIncoming + swapsAvailable} />
               </button>
             </nav>
           </div>
@@ -240,7 +243,7 @@ export default function NavBar() {
 
                 let badge = 0;
                 if (link.path === "/vacations") badge = vacationsPending;
-                if (link.path === "/swaps") badge = swapsIncoming;
+                if (link.path === "/swaps") badge = swapsIncoming + swapsAvailable;
                 if (link.path === "/weeks") badge = shiftChangesIncoming + timeOffsPending;
 
                 return (

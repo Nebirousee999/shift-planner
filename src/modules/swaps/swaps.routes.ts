@@ -40,6 +40,17 @@ export async function swapsRoutes(app: FastifyInstance) {
   });
 
   // Создать запрос — любой
+    app.get("/available", async (req) => {
+    const { sub: userId } = req.user!;
+    return swapsService.available(userId);
+  });
+
+  app.get("/available/count", async (req) => {
+    const { sub: userId } = req.user!;
+    return swapsService.availableCount(userId);
+  });
+
+  // Создать запрос — любой
   app.post("/", async (req, reply) => {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) {

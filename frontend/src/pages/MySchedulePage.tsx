@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Play, Square, Activity, CalendarDays, Clock, ArrowRightLeft,
   Check, X, Inbox, Send, XCircle, Palmtree, Plus, AlertCircle,
-  Pencil, Bell, CalendarX2
+  Pencil, Bell, CalendarX2, Stethoscope
 } from "lucide-react";
 import { meApi, type MyShift, type Colleague } from "../api/me";
 import type { Vacation } from "../api/vacations";
@@ -11,6 +11,7 @@ import { shiftChangeRequestsApi, type ShiftChangeRequest } from "../api/shiftCha
 import { useTimeEntries } from "../store/timeEntries";
 import { useSwaps } from "../store/swaps";
 import { useVacations } from "../store/vacations";
+import { useSickLeaves } from "../store/sickLeaves";
 import { useAuth } from "../store/auth";
 import { useNotifications } from "../store/notifications";
 import { useOrganization } from "../store/organization";
@@ -20,7 +21,7 @@ import VacationsGantt from "../components/VacationsGantt";
 import { weekDates, dayLabel, shortDate } from "../lib/dates";
 import { validateShiftTimes } from "../lib/time";
 
-type Tab = "schedule" | "vacations";
+type Tab = "schedule" | "vacations" | "sick";
 
 function formatDateTime(iso: string | null): string {
   if (!iso) return "—";
@@ -61,10 +62,12 @@ export default function MySchedulePage() {
   const [incomingShiftRequests, setIncomingShiftRequests] = useState<ShiftChangeRequest[]>([]);
   const [outgoingShiftRequests, setOutgoingShiftRequests] = useState<ShiftChangeRequest[]>([]);
   const [myTimeOffs, setMyTimeOffs] = useState<any[]>([]);
+  const [dismissedOffers, setDismissedOffers] = useState<Set<string>>(new Set());
 
   const { active, fetchActive, clockIn, clockOut } = useTimeEntries();
-  const { incoming, outgoing, create: createSwap, accept, decline, cancel, fetchMine } = useSwaps();
+  const { incoming, outgoing, available, create: createSwap, accept, decline, cancel, fetchMine, fetchAvailable } = useSwaps();
   const { mine: myVacations, fetchMine: fetchVacations, create: createVacation, update: updateVacation, remove: removeVacation } = useVacations();
+  const { mine: mySickLeaves, fetchMine: fetchMineSickLeaves } = useSickLeaves();
 
   const [busy, setBusy] = useState(false);
   const [swapShift, setSwapShift] = useState<MyShift | null>(null);
@@ -90,7 +93,9 @@ export default function MySchedulePage() {
         timeOffApi.listMine().catch(() => []),
         fetchActive(),
         fetchMine(),
+        fetchAvailable(),
         fetchVacations(),
+        fetchMineSickLeaves(),
       ]);
       setShifts(s);
       setColleagues(cols);
@@ -188,6 +193,12 @@ export default function MySchedulePage() {
   const onDecline = async (id: string) => {
     try {
       await decline(id);
+      // Для открытых обменов сервер удаляет только напоминание — прячем локально
+      setDismissedOffers((prev) => {
+        const n = new Set(prev);
+        n.add(id);
+        return n;
+      });
       useNotifications.getState().refresh();
       await loadAll();
     } catch (e: any) {
@@ -305,6 +316,23 @@ export default function MySchedulePage() {
     }
   };
 
+  const toGanttVacation = (s: any): Vacation => ({
+    id: s.id,
+    orgId: "",
+    userId: s.userId,
+    startDate: s.startDate,
+    endDate: s.endDate,
+    comment: s.comment,
+    status: "APPROVED",
+    previousStartDate: null,
+    previousEndDate: null,
+    previousComment: null,
+    reviewedBy: null,
+    reviewedAt: null,
+    createdAt: s.createdAt ?? new Date().toISOString(),
+    userName: s.userName,
+  });
+
   const incomingActive = incoming.filter((r) => r.status === "PENDING");
   const outgoingActive = outgoing.filter((r) => r.status === "PENDING");
 
@@ -347,7 +375,31 @@ export default function MySchedulePage() {
   }
 
   const allWeekKeys = new Set<string>([...groups.keys(), ...virtualGroups.keys()]);
+  for (const a of available) {
+    if (dismissedOffers.has(a.id)) continue;
+    if (!a.shiftDate) continue;
+    allWeekKeys.add(weekStartOf(String(a.shiftDate).slice(0, 10)));
+  }
   const sortedWeeks = Array.from(allWeekKeys).sort();
+
+  const availableByDate = useMemo(() => {
+    const map = new Map<string, typeof available>();
+    const seenShiftIds = new Set<string>();
+
+    for (const a of available) {
+      if (dismissedOffers.has(a.id)) continue;
+      if (!a.shiftDate) continue;
+      if (a.status !== "PENDING") continue;
+      
+      if (seenShiftIds.has(a.shiftId)) continue;
+
+      const d = String(a.shiftDate).slice(0, 10);
+      if (!map.has(d)) map.set(d, []);
+      map.get(d)!.push(a);
+      seenShiftIds.add(a.shiftId);
+    }
+    return map;
+  }, [available, dismissedOffers]);
 
   const pendingIncomingByShift = useMemo(() => {
     const m = new Map<string, ShiftChangeRequest>();
@@ -368,6 +420,7 @@ export default function MySchedulePage() {
   const tabs: { id: Tab; label: string; icon: React.ElementType; badge?: number }[] = [
     { id: "schedule", label: "Расписание", icon: CalendarDays, badge: incomingActive.length + incomingShiftRequests.length + myTimeOffs.filter(t => t.status === "PENDING").length > 0 ? incomingActive.length + incomingShiftRequests.length + myTimeOffs.filter(t => t.status === "PENDING").length : undefined },
     { id: "vacations", label: "Отпуска", icon: Palmtree, badge: upcomingVacations.length > 0 ? upcomingVacations.length : undefined },
+    { id: "sick", label: "Больничные", icon: Stethoscope, badge: mySickLeaves.length > 0 ? mySickLeaves.length : undefined },
   ];
 
   return (
@@ -478,7 +531,7 @@ export default function MySchedulePage() {
 
             {loading && <p className="text-slate-500 text-sm">Загрузка...</p>}
 
-            {!loading && shifts.length === 0 && (
+            {!loading && shifts.length === 0 && available.length === 0 && (
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center">
                 <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4"><CalendarDays className="w-8 h-8 text-slate-400" /></div>
                 <h3 className="font-semibold text-slate-900 mb-1">У вас пока нет смен</h3>
@@ -512,7 +565,8 @@ export default function MySchedulePage() {
                     {dates.map((date) => {
                       const dayShifts = weekShifts.filter((s) => String(s.shiftDate).slice(0, 10) === date);
                       const dayVirtual = weekVirtual.filter((v) => v.date === date);
-                      const hasAnything = dayShifts.length > 0 || dayVirtual.length > 0;
+                      const dayOffers = availableByDate.get(date) ?? [];
+                      const hasAnything = dayShifts.length > 0 || dayVirtual.length > 0 || dayOffers.length > 0;
                       const isToday = date === new Date().toISOString().slice(0, 10);
                       return (
                         <div key={date} className={`bg-white rounded-2xl border shadow-sm p-3 min-h-[120px] flex flex-col transition-all ${isToday ? "border-brand-300 ring-2 ring-brand-500/10" : "border-slate-200"}`}>
@@ -590,6 +644,42 @@ export default function MySchedulePage() {
                               );
                             })}
                             
+                            {dayOffers.map((a) => {
+                              const isTargeted = !!a.swapWithUserId;
+                              return (
+                                <div
+                                  key={`offer-${a.id}`}
+                                  className="text-xs p-2 rounded-lg border-l-4 border-violet-500 bg-violet-50/60 ring-2 ring-violet-300/50"
+                                >
+                                  <div className="flex items-center gap-1.5 font-medium text-slate-900">
+                                    <ArrowRightLeft className="w-3 h-3 text-violet-600 shrink-0" />
+                                    <span>{a.startTime}–{a.endTime}</span>
+                                  </div>
+                                  <div className="text-slate-700 text-[11px] truncate mt-0.5">
+                                    {a.requestedByName ?? "Сотрудник"}
+                                  </div>
+                                  <div className="mt-1.5 flex items-center gap-1 text-[10px] font-semibold text-violet-800 bg-violet-100 rounded px-1.5 py-1 leading-tight">
+                                    <ArrowRightLeft className="w-3 h-3 shrink-0" />
+                                    <span>Предлагают обмен{isTargeted ? " (вам)" : ""}</span>
+                                  </div>
+                                  <div className="flex gap-1 mt-2">
+                                    <button
+                                      onClick={() => onAccept(a.id)}
+                                      className="flex-1 inline-flex items-center justify-center gap-1 bg-emerald-600 text-white text-[10px] py-1 rounded hover:bg-emerald-700 font-medium"
+                                    >
+                                      <Check className="w-3 h-3" /> Принять
+                                    </button>
+                                    <button
+                                      onClick={() => onDecline(a.id)}
+                                      className="flex-1 inline-flex items-center justify-center gap-1 bg-white text-rose-600 border border-rose-200 text-[10px] py-1 rounded hover:bg-rose-50 font-medium"
+                                    >
+                                      <X className="w-3 h-3" /> {isTargeted ? "Отклонить" : "Скрыть"}
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+
                             {dayVirtual.map((v) => (
                               <div key={v.id} className={`text-xs p-2 rounded-lg border-l-4 ring-2 ${v.kind === "CREATE" ? "bg-amber-50/60 border-amber-500 ring-amber-300/50" : "bg-orange-50/60 border-orange-500 ring-orange-300/50"}`}>
                                 <div className="flex items-center gap-1.5 font-medium text-slate-900"><Clock className={`w-3 h-3 shrink-0 ${v.kind === "CREATE" ? "text-amber-600" : "text-orange-600"}`} /><span>{v.startTime}–{v.endTime}</span></div>
@@ -664,6 +754,44 @@ export default function MySchedulePage() {
             )}
           </div>
         )}
+        {tab === "sick" && (
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 mb-6">
+            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+              <h3 className="font-semibold text-slate-900 flex items-center gap-2">
+                <Stethoscope className="w-4 h-4 text-rose-600" /> Мои больничные
+              </h3>
+            </div>
+
+            {mySickLeaves.length === 0 ? (
+              <p className="text-sm text-slate-500 py-2">У вас нет записей о больничных.</p>
+            ) : (
+              <div className="space-y-2 mb-4">
+                {mySickLeaves.map((s) => (
+                  <div key={s.id} className="flex items-center justify-between gap-3 border-l-4 pl-3 py-2 rounded-r-lg border-rose-500 bg-rose-50/40">
+                    <div className="text-sm min-w-0 flex-1">
+                      <div className="font-medium text-slate-900">
+                        {formatShortDate(s.startDate)} — {formatShortDate(s.endDate)}
+                      </div>
+                      {s.comment && <div className="text-xs text-slate-500 truncate mt-0.5">{s.comment}</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {mySickLeaves.length > 0 && user && (
+              <div className="mt-2">
+                <VacationsGantt
+                  users={[{ id: user.id, name: user.name ?? user.email ?? "Сотрудник" }]}
+                  vacations={mySickLeaves.map(toGanttVacation)}
+                  canEdit={() => false}
+                  barTooltip={(v) => `Больничный: ${formatShortDate(v.startDate)} — ${formatShortDate(v.endDate)}`}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
       </main>
 
       {swapShift && (

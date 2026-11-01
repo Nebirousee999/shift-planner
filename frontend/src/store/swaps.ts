@@ -5,11 +5,13 @@ type State = {
   all: SwapRequest[];
   outgoing: SwapRequest[];
   incoming: SwapRequest[];
+  available: SwapRequest[];
   loading: boolean;
   error: string | null;
 
   fetchAll: () => Promise<void>;
   fetchMine: () => Promise<void>;
+  fetchAvailable: () => Promise<void>;
   create: (input: { shiftId: string; swapWithUserId?: string }) => Promise<void>;
   accept: (id: string) => Promise<void>;
   decline: (id: string) => Promise<void>;
@@ -20,6 +22,7 @@ export const useSwaps = create<State>((set, get) => ({
   all: [],
   outgoing: [],
   incoming: [],
+  available: [],
   loading: false,
   error: null,
 
@@ -45,23 +48,32 @@ export const useSwaps = create<State>((set, get) => ({
     }
   },
 
+  fetchAvailable: async () => {
+    try {
+      const available = await swapsApi.available();
+      set({ available });
+    } catch (e: any) {
+      set({ error: e.response?.data?.error ?? "Ошибка" });
+    }
+  },
+
   create: async (input) => {
     await swapsApi.create(input);
-    await get().fetchMine();
+    await Promise.all([get().fetchMine(), get().fetchAvailable()]);
   },
 
   accept: async (id) => {
     await swapsApi.accept(id);
-    await Promise.all([get().fetchAll(), get().fetchMine()]);
+    await Promise.all([get().fetchMine(), get().fetchAvailable()]);
   },
 
   decline: async (id) => {
     await swapsApi.decline(id);
-    await Promise.all([get().fetchAll(), get().fetchMine()]);
+    await Promise.all([get().fetchMine(), get().fetchAvailable()]);
   },
 
   cancel: async (id) => {
     await swapsApi.cancel(id);
-    await get().fetchMine();
+    await Promise.all([get().fetchMine(), get().fetchAvailable()]);
   },
 }));

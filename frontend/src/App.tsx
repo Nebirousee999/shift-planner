@@ -112,7 +112,7 @@ export default function App() {
         <Route path="/time" element={<ProtectedRoute adminOnly><TimePage /></ProtectedRoute>} />
         <Route path="/documents" element={<ProtectedRoute adminOnly><DocumentsPage /></ProtectedRoute>} />
         <Route path="/timesheet" element={<ProtectedRoute adminOnly><TimesheetPage /></ProtectedRoute>} />
-        <Route path="/swaps" element={<ProtectedRoute adminOnly><SwapsPage /></ProtectedRoute>} />
+        <Route path="/swaps" element={<ProtectedRoute><SwapsPage /></ProtectedRoute>} />
         <Route path="/sick-leaves" element={<ProtectedRoute adminOnly><SickLeavesPage /></ProtectedRoute>} />
         <Route path="/analytics" element={<ProtectedRoute adminOnly><AnalyticsPage /></ProtectedRoute>} />
 

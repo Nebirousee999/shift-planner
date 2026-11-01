@@ -20,6 +20,10 @@ export const sickLeavesApi = {
     const { data } = await api.get<SickLeave[]>("/sick-leaves");
     return data;
   },
+  mine: async () => {
+    const { data } = await api.get<SickLeave[]>("/sick-leaves/mine");
+    return data;
+  },
   create: async (input: { userId: string; startDate: string; endDate: string; comment?: string }) => {
     const { data } = await api.post<SickLeave>("/sick-leaves", input);
     return data;

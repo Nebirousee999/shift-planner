@@ -64,6 +64,17 @@ export type InAppNotification = {
     }
   },
 
+  swapsAvailableCount: async (): Promise<number> => {
+    try {
+      const { data } = await api.get<{ count: number }>(
+        "/swaps/available/count"
+      );
+      return data.count;
+    } catch {
+      return 0;
+    }
+  },
+
   // ← НОВОЕ
   shiftChangesIncomingCount: async (): Promise<number> => {
     try {

@@ -151,7 +151,22 @@ export const notificationsService = {
                                      return { success: true };
                                    },
 
-                                   async dismissActionable(relatedId: string, relatedType?: string) {
+                                   async dismissForUser(
+    relatedId: string,
+    relatedType: string,
+    userId: string
+  ) {
+    await db.delete(userNotifications).where(
+      and(
+        eq(userNotifications.relatedId, relatedId),
+        eq(userNotifications.relatedType, relatedType),
+        eq(userNotifications.userId, userId)
+      )
+    );
+    return { success: true };
+  },
+
+  async dismissActionable(relatedId: string, relatedType?: string) {
                const cond = relatedType
                  ? and(
                      eq(userNotifications.relatedId, relatedId),

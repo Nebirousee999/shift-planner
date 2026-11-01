@@ -108,7 +108,7 @@ export default function DashboardPage() {
   const loadAllData = () => {
              if (!activeLocationId) return;
              Promise.all([
-               dashboardApi.summary(activeLocationId),
+               dashboardApi.summary(activeLocationId, selectedDate),
                meApi.profile().catch(() => null),
                isEmployee ? Promise.resolve() : fetchTimeOffs(),
                fetchSwaps(),
@@ -137,7 +137,7 @@ export default function DashboardPage() {
       refreshNotifs();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeLocationId, isEmployee]);
+  }, [activeLocationId, isEmployee, selectedDate]);
 
   const currentTimePercent = ((now.getHours() * 60 + now.getMinutes()) / (24 * 60)) * 100;
 
@@ -146,11 +146,7 @@ export default function DashboardPage() {
   const canNext = dates.length > 0 && selectedDate < dates[6];
   const dateInWeek = dates.includes(selectedDate);
 
-  useEffect(() => {
-    if (dates.length === 0) return;
-    if (!dates.includes(selectedDate)) setSelectedDate(todayDate);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dates.join(","), selectedDate, todayDate]);
+  // Сброс даты убран, чтобы можно было свободно переключать недели
 
   const hourlyRate = profile?.hourlyRate ? Number(profile.hourlyRate) : 0;
 
@@ -373,32 +369,32 @@ export default function DashboardPage() {
             onClick={() => navigate("/weeks")}
             className="w-full bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden text-left hover:shadow-md hover:border-brand-300 transition-all flex flex-col group"
           >
-            <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50/50">
-              <div className="flex items-center gap-3">
-                <CalendarDays className="w-5 h-5 text-brand-600" />
-                <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 gap-4 border-b border-slate-100 bg-slate-50/50">
+              <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                <CalendarDays className="w-5 h-5 text-brand-600 shrink-0" />
+                <h2 className="text-sm sm:text-base font-semibold text-slate-900 uppercase tracking-wide">
                   {MONTHS_RU[new Date(data.currentWeek.weekStartDate + "T00:00:00Z").getUTCMonth()]}{" "}
                   {new Date(data.currentWeek.weekStartDate + "T00:00:00Z").getUTCFullYear()}
                 </h2>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ring-1 ${STATUS_COLORS[data.currentWeek.status]}`}>
+                <span className={`text-[10px] sm:text-xs px-2 py-0.5 rounded-full font-medium ring-1 ${STATUS_COLORS[data.currentWeek.status]}`}>
                   {STATUS_LABELS[data.currentWeek.status]}
                 </span>
               </div>
-              <div className="flex items-center gap-4">
+              <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
                 <div className="text-right">
-                  <div className="text-[10px] text-slate-500 uppercase tracking-wide font-medium">Смен за неделю</div>
-                  <div className="font-bold text-slate-900">{(data.currentWeek.shifts || []).length}</div>
+                  <div className="text-xs sm:text-sm text-slate-500 uppercase tracking-wide font-medium">Смен за неделю</div>
+                  <div className="font-bold text-slate-900 text-lg sm:text-xl">{(data.currentWeek.shifts || []).length}</div>
                 </div>
-                <div className="w-px h-6 bg-slate-200" />
+                <div className="w-px h-8 bg-slate-200" />
                 <div className="text-right pr-2">
-                  <div className="text-[10px] text-slate-500 uppercase tracking-wide font-medium">Затраты</div>
-                  <div className="font-bold text-emerald-600">{formatMoney(weekCost)}</div>
+                  <div className="text-xs sm:text-sm text-slate-500 uppercase tracking-wide font-medium">Затраты</div>
+                  <div className="font-bold text-emerald-600 text-lg sm:text-xl">{formatMoney(weekCost)}</div>
                 </div>
                 <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-brand-600 transition-colors" />
               </div>
             </div>
 
-            <div className="grid grid-cols-7 w-full divide-x divide-slate-100">
+            <div className="flex overflow-x-auto divide-x divide-slate-100 snap-x snap-mandatory">
               {dates.map((date, idx) => {
                 const isToday = date === todayDate;
                 const isSelected = date === selectedDate;
@@ -413,19 +409,19 @@ export default function DashboardPage() {
                       e.stopPropagation();
                       setSelectedDate(date);
                     }}
-                    className={`p-2 flex flex-col min-h-[140px] transition-colors cursor-pointer ${
+                    className={`w-1/3 min-w-[100px] shrink-0 snap-start p-2 flex flex-col min-h-[140px] transition-colors cursor-pointer md:w-auto md:flex-1 ${
                       isSelected ? "bg-brand-50 ring-2 ring-brand-500/30" : isToday ? "bg-brand-50/30" : "hover:bg-slate-50"
                     }`}
                   >
-                    <div className="flex items-center justify-between text-[11px] whitespace-nowrap mb-1">
+                    <div className="flex items-center justify-between text-sm sm:text-base whitespace-nowrap mb-1.5">
                       <div className="flex items-center gap-1.5">
-                        <span className={`font-bold ${isSelected || isToday ? "text-brand-700" : "text-slate-900"}`}>
+                        <span className={`font-bold text-lg sm:text-xl ${isSelected || isToday ? "text-brand-700" : "text-slate-900"}`}>
                           {parseInt(date.slice(8), 10)}
                         </span>
-                        <span className="text-slate-400 font-medium">{WEEKDAYS_RU[idx]}</span>
+                        <span className="text-slate-500 font-medium ml-1">{WEEKDAYS_RU[idx]}</span>
                       </div>
                     </div>
-                    <div className="text-[10px] text-slate-500 mb-2 font-medium">
+                    <div className="text-xs sm:text-sm text-slate-600 mb-2 font-medium">
                       {dayShifts.length} см. • {new Intl.NumberFormat("ru-RU").format(dayCost)} ₽
                     </div>
                     <div className="relative flex-1 bg-slate-50 rounded-sm border border-slate-100 p-1 overflow-hidden">
@@ -489,15 +485,13 @@ export default function DashboardPage() {
                     <input
                       type="date"
                       value={selectedDate}
-                      min={dates[0]}
-                      max={dates[6]}
                       onChange={(e) => setSelectedDate(e.target.value)}
                       onClick={(e) => e.stopPropagation()}
                       className="!w-36 !text-xs !py-1"
                     />
                     <button
                       onClick={() => setSelectedDate(todayDate)}
-                      disabled={!dateInWeek || selectedDate === todayDate}
+                      disabled={selectedDate === todayDate}
                       className="text-[10px] px-2 py-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-30 whitespace-nowrap"
                     >
                       Сегодня
@@ -635,14 +629,14 @@ export default function DashboardPage() {
                           onMouseLeave={() => setHoveredShift(null)}
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (!isEmployee && selectedDate <= todayDate) {
+                            if (!isEmployee) {
                               setDisciplineShift(shift);
                             }
                           }}
                           className={`flex items-center relative transition-colors ${
                             isEmployee
                               ? "h-12"
-                              : `h-14 ${selectedDate <= todayDate ? "cursor-pointer hover:bg-slate-50/80 hover:ring-2 hover:ring-amber-400 hover:z-30" : ""}`
+                              : "h-14 cursor-pointer hover:bg-slate-50/80 hover:ring-2 hover:ring-amber-400 hover:z-30"
                           }`}
                         >
                           <div className="w-40 shrink-0 pr-2 flex items-center gap-2 relative z-30 pointer-events-none">
@@ -782,7 +776,7 @@ export default function DashboardPage() {
           onClose={() => setDisciplineShift(null)}
           onSave={async () => {
             if (!activeLocationId) return;
-            const res = await dashboardApi.summary(activeLocationId);
+            const res = await dashboardApi.summary(activeLocationId, selectedDate);
             setData(res);
           }}
         />

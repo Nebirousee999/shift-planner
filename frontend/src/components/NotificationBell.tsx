@@ -6,6 +6,7 @@ import { notificationsApi, type InAppNotification } from "../api/notifications";
 import { timeOffApi } from "../api/timeOff";
 import { vacationsApi } from "../api/vacations";
 import { shiftChangeRequestsApi } from "../api/shiftChangeRequests";
+import { swapsApi } from "../api/swaps";
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -67,6 +68,7 @@ export default function NotificationBell() {
       if (n.relatedType === "time_off_request") await timeOffApi.approve(n.relatedId);
       else if (n.relatedType === "vacation_request") await vacationsApi.approve(n.relatedId);
       else if (n.relatedType === "shift_change_request") await shiftChangeRequestsApi.approve(n.relatedId);
+      else if (n.relatedType === "swap_request") await swapsApi.accept(n.relatedId);
 
       optimisticResolve(n.id, "APPROVED");
       await refresh();
@@ -86,6 +88,7 @@ export default function NotificationBell() {
       if (n.relatedType === "time_off_request") await timeOffApi.reject(n.relatedId);
       else if (n.relatedType === "vacation_request") await vacationsApi.reject(n.relatedId);
       else if (n.relatedType === "shift_change_request") await shiftChangeRequestsApi.reject(n.relatedId);
+      else if (n.relatedType === "swap_request") await swapsApi.decline(n.relatedId);
 
       optimisticResolve(n.id, "REJECTED");
       await refresh();
@@ -105,6 +108,7 @@ export default function NotificationBell() {
     else if (n.relatedType === "shift_change_request") navigate("/weeks");
     else if (n.relatedType === "sick_leave") navigate("/sick-leaves");
     else if (n.relatedType === "discipline") navigate("/weeks");
+    else if (n.relatedType === "swap_request") navigate("/swaps");
     else navigate("/");
   };
 

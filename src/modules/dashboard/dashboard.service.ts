@@ -80,7 +80,7 @@ export const dashboardService = {
         .leftJoin(shiftTemplates, eq(scheduledShifts.templateId, shiftTemplates.id))
         .where(
           and(
-            eq(scheduledShifts.shiftDate, todayDate),
+            eq(scheduledShifts.shiftDate, targetDate),
             isNotNull(scheduledShifts.userId),
             locationId ? eq(scheduleWeeks.locationId, locationId) : undefined
           )

@@ -30,6 +30,15 @@ export const sickLeavesService = {
     }));
   },
 
+  async listMine(userId: string) {
+    const rows = await db
+      .select()
+      .from(sickLeaves)
+      .where(eq(sickLeaves.userId, userId))
+      .orderBy(desc(sickLeaves.startDate));
+    return rows;
+  },
+
   async create(input: {
     orgId: string;
     userId: string;

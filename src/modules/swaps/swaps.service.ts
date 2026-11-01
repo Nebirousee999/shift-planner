@@ -1,4 +1,4 @@
-import { eq, and, or, desc } from "drizzle-orm";
+import { eq, and, ne, desc, notInArray } from "drizzle-orm";
 import { db } from "../../../db/client.js";
 import {
   shiftSwapRequests,
@@ -6,51 +6,76 @@ import {
   scheduleWeeks,
   users,
 } from "../../../db/schema.js";
-import { shiftsOverlap } from "../../lib/time.js"; // ← добавь в импорты вверху файла
+import { shiftsOverlap } from "../../lib/time.js";
+import { notificationsService } from "../notifications/notifications.service.js";
+
+async function enrichSwaps(rows: any[]) {
+  if (rows.length === 0) return [];
+  const shifts = await db.select().from(scheduledShifts);
+  const shiftMap = new Map(shifts.map((s) => [s.id, s]));
+  const allUsers = await db
+    .select({ id: users.id, name: users.name })
+    .from(users);
+  const userMap = new Map(allUsers.map((u) => [u.id, u.name]));
+
+  return rows.map((r) => {
+    const shift = shiftMap.get(r.shiftId);
+    return {
+      ...r,
+      requestedByName: userMap.get(r.requestedBy) ?? "—",
+      swapWithName: r.swapWithUserId
+        ? userMap.get(r.swapWithUserId) ?? "—"
+        : null,
+      shiftDate: shift?.shiftDate ?? null,
+      startTime: shift?.startTime ?? null,
+      endTime: shift?.endTime ?? null,
+      templateId: shift?.templateId ?? null,
+    };
+  });
+}
+
+async function getOrgIdForShift(shiftId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ orgId: scheduleWeeks.orgId })
+    .from(scheduledShifts)
+    .innerJoin(scheduleWeeks, eq(scheduledShifts.weekId, scheduleWeeks.id))
+    .where(eq(scheduledShifts.id, shiftId));
+  return row?.orgId ?? null;
+}
 
 export const swapsService = {
-  // Все запросы организации (для владельца)
+  // Все запросы организации (для админа)
   async list(orgId: string) {
     const orgUsers = await db
-      .select({ id: users.id, name: users.name })
+      .select({ id: users.id })
       .from(users)
       .where(eq(users.orgId, orgId));
     const orgUserIds = new Set(orgUsers.map((u) => u.id));
-    const userMap = new Map(orgUsers.map((u) => [u.id, u.name]));
 
     const rows = await db
       .select()
       .from(shiftSwapRequests)
       .orderBy(desc(shiftSwapRequests.createdAt));
 
-    const shifts = await db.select().from(scheduledShifts);
-    const shiftMap = new Map(shifts.map((s) => [s.id, s]));
-
-    return rows
-      .filter((r) => orgUserIds.has(r.requestedBy) || (r.swapWithUserId && orgUserIds.has(r.swapWithUserId)))
-      .map((r) => {
-        const shift = shiftMap.get(r.shiftId);
-        return {
-          ...r,
-          requestedByName: userMap.get(r.requestedBy) ?? "—",
-          swapWithName: r.swapWithUserId ? userMap.get(r.swapWithUserId) ?? "—" : null,
-          shiftDate: shift?.shiftDate ?? null,
-          startTime: shift?.startTime ?? null,
-          endTime: shift?.endTime ?? null,
-        };
-      });
+    const filtered = rows.filter(
+      (r) =>
+        orgUserIds.has(r.requestedBy) ||
+        (r.swapWithUserId && orgUserIds.has(r.swapWithUserId))
+    );
+    return enrichSwaps(filtered);
   },
 
-  // Исходящие запросы (мои предложения)
+  // Мои исходящие
   async outgoing(userId: string) {
-    return db
+    const rows = await db
       .select()
       .from(shiftSwapRequests)
       .where(eq(shiftSwapRequests.requestedBy, userId))
       .orderBy(desc(shiftSwapRequests.createdAt));
+    return enrichSwaps(rows);
   },
 
-  // Входящие предложения мне
+  // Входящие мне (только адресные)
   async incoming(userId: string) {
     const rows = await db
       .select()
@@ -62,46 +87,52 @@ export const swapsService = {
         )
       )
       .orderBy(desc(shiftSwapRequests.createdAt));
-
-    const shifts = await db.select().from(scheduledShifts);
-    const shiftMap = new Map(shifts.map((s) => [s.id, s]));
-
-    const allUsers = await db
-      .select({ id: users.id, name: users.name })
-      .from(users);
-    const userMap = new Map(allUsers.map((u) => [u.id, u.name]));
-
-    return rows.map((r) => {
-      const shift = shiftMap.get(r.shiftId);
-      return {
-        ...r,
-        requestedByName: userMap.get(r.requestedBy) ?? "—",
-        shiftDate: shift?.shiftDate ?? null,
-        startTime: shift?.startTime ?? null,
-        endTime: shift?.endTime ?? null,
-        templateId: shift?.templateId ?? null,
-      };
-    });
+    return enrichSwaps(rows);
   },
 
-  // Открытые смены (swapWithUserId = null) — видны всем сотрудникам
-  async open(userId: string, orgId: string) {
-    const [me] = await db
+  // Доступные мне (открытые + адресные, где я не автор)
+  async available(userId: string) {
+    const rows = await db
       .select()
-      .from(users)
-      .where(and(eq(users.id, userId), eq(users.orgId, orgId)));
-    if (!me) return [];
+      .from(shiftSwapRequests)
+      .where(
+        ne(shiftSwapRequests.requestedBy, userId)
+      )
+      .orderBy(desc(shiftSwapRequests.createdAt));
 
-    return db
+    const filtered = rows.filter(
+      (r) => !r.swapWithUserId || r.swapWithUserId === userId
+    );
+    return enrichSwaps(filtered);
+  },
+
+  async incomingCount(userId: string) {
+    const rows = await db
+      .select({ id: shiftSwapRequests.id })
+      .from(shiftSwapRequests)
+      .where(
+        and(
+          eq(shiftSwapRequests.status, "PENDING"),
+          eq(shiftSwapRequests.swapWithUserId, userId)
+        )
+      );
+    return { count: rows.length };
+  },
+
+  async availableCount(userId: string) {
+    const rows = await db
       .select()
       .from(shiftSwapRequests)
       .where(
         and(
           eq(shiftSwapRequests.status, "PENDING"),
-          // только открытые
-          // (drizzle не имеет isNull для строк напрямую через and, делаем через sql)
-        ),
+          ne(shiftSwapRequests.requestedBy, userId)
+        )
       );
+    const filtered = rows.filter(
+      (r) => !r.swapWithUserId || r.swapWithUserId === userId
+    );
+    return { count: filtered.length };
   },
 
   async create(input: {
@@ -110,15 +141,12 @@ export const swapsService = {
     shiftId: string;
     swapWithUserId?: string;
   }) {
-    // Смена принадлежит организации?
     const [shift] = await db
       .select()
       .from(scheduledShifts)
       .where(eq(scheduledShifts.id, input.shiftId));
     if (!shift) throw new Error("SHIFT_NOT_FOUND");
-    if (shift.userId !== input.requestedBy) {
-      throw new Error("NOT_YOUR_SHIFT");
-    }
+    if (shift.userId !== input.requestedBy) throw new Error("NOT_YOUR_SHIFT");
 
     const [week] = await db
       .select()
@@ -126,7 +154,8 @@ export const swapsService = {
       .where(eq(scheduleWeeks.id, shift.weekId));
     if (!week || week.orgId !== input.orgId) throw new Error("SHIFT_NOT_FOUND");
 
-    // Проверяем target
+    const shiftDateStr = String(shift.shiftDate).slice(0, 10);
+
     if (input.swapWithUserId) {
       const [target] = await db
         .select()
@@ -134,14 +163,11 @@ export const swapsService = {
         .where(
           and(
             eq(users.id, input.swapWithUserId),
-            eq(users.orgId, input.orgId),
-          ),
+            eq(users.orgId, input.orgId)
+          )
         );
       if (!target) throw new Error("USER_NOT_FOUND");
       if (target.id === input.requestedBy) throw new Error("SELF_SWAP");
-
-      // ⚡ НОВОЕ: проверяем, что у target нет пересекающейся смены в этот день
-      const shiftDateStr = String(shift.shiftDate).slice(0, 10);
 
       const sameDayShifts = await db
         .select()
@@ -149,16 +175,14 @@ export const swapsService = {
         .where(
           and(
             eq(scheduledShifts.userId, input.swapWithUserId),
-            eq(scheduledShifts.shiftDate, shiftDateStr),
-          ),
+            eq(scheduledShifts.shiftDate, shiftDateStr)
+          )
         );
-
       const newShift = {
         date: shiftDateStr,
         start: shift.startTime,
         end: shift.endTime,
       };
-
       const conflict = sameDayShifts.find((s) =>
         shiftsOverlap(newShift, {
           date: String(s.shiftDate).slice(0, 10),
@@ -166,10 +190,7 @@ export const swapsService = {
           end: s.endTime,
         })
       );
-
-      if (conflict) {
-        throw new Error("TARGET_BUSY");
-      }
+      if (conflict) throw new Error("TARGET_BUSY");
     }
 
     const [request] = await db
@@ -182,6 +203,50 @@ export const swapsService = {
       })
       .returning();
 
+    const [requester] = await db
+      .select({ name: users.name })
+      .from(users)
+      .where(eq(users.id, input.requestedBy));
+
+    const isTargeted = !!input.swapWithUserId;
+    let recipientIds: string[] = [];
+    if (isTargeted) {
+      recipientIds = [input.swapWithUserId!];
+    } else {
+      const others = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(
+          and(
+            eq(users.orgId, input.orgId),
+            ne(users.id, input.requestedBy),
+            notInArray(users.role, ["OWNER", "MANAGER"])
+          )
+        );
+      recipientIds = others.map((u) => u.id);
+    }
+
+    for (const rid of recipientIds) {
+      await notificationsService.create({
+        orgId: input.orgId,
+        userId: rid,
+        kind: isTargeted ? "SWAP_OFFER" : "SWAP_OPEN",
+        title: isTargeted ? "Предложение обмена" : "Открытый обмен",
+        message:
+          `${requester?.name ?? "Сотрудник"} ` +
+          (isTargeted
+            ? `предлагает вам обменяться сменами: ${shiftDateStr}, ${shift.startTime}–${shift.endTime}`
+            : `ищет замену на смену: ${shiftDateStr}, ${shift.startTime}–${shift.endTime}`),
+        relatedId: request.id,
+        relatedType: "swap_request",
+        requiresAction: true,
+        payload: { shiftId: input.shiftId, date: shiftDateStr },
+      });
+    }
+
+    // Уведомление менеджерам при создании НЕ отправляем —
+    // они получат уведомление только когда обмен примут (SWAP_ACCEPTED_MANAGER).
+
     return request;
   },
 
@@ -192,24 +257,85 @@ export const swapsService = {
       .where(eq(shiftSwapRequests.id, id));
     if (!req) throw new Error("NOT_FOUND");
     if (req.status !== "PENDING") throw new Error("NOT_PENDING");
-
-    // Принимать может либо указанный swapWithUserId, либо любой сотрудник (если открытая)
-    if (req.swapWithUserId && req.swapWithUserId !== userId) {
+    if (req.swapWithUserId && req.swapWithUserId !== userId)
       throw new Error("NOT_FOR_YOU");
-    }
 
-    // Меняем userId у смены
-    await db
+    const orgId = await getOrgIdForShift(req.shiftId);
+    if (!orgId) throw new Error("ORG_NOT_FOUND");
+
+    const [shift] = await db
       .update(scheduledShifts)
       .set({ userId })
-      .where(eq(scheduledShifts.id, req.shiftId));
+      .where(eq(scheduledShifts.id, req.shiftId))
+      .returning();
 
-    // Закрываем запрос
     const [updated] = await db
       .update(shiftSwapRequests)
       .set({ status: "APPROVED", swapWithUserId: userId })
       .where(eq(shiftSwapRequests.id, id))
       .returning();
+
+    // Отменяем остальные PENDING на этот shift
+    const otherSwaps = await db
+      .select()
+      .from(shiftSwapRequests)
+      .where(
+        and(
+          eq(shiftSwapRequests.shiftId, req.shiftId),
+          eq(shiftSwapRequests.status, "PENDING")
+        )
+      );
+    for (const other of otherSwaps) {
+      if (other.id === id) continue;
+      await db
+        .update(shiftSwapRequests)
+        .set({ status: "DENIED" })
+        .where(eq(shiftSwapRequests.id, other.id));
+      await notificationsService.dismissActionable(other.id, "swap_request");
+    }
+
+    const [requester] = await db
+      .select({ name: users.name })
+      .from(users)
+      .where(eq(users.id, req.requestedBy));
+    const [accepter] = await db
+      .select({ name: users.name })
+      .from(users)
+      .where(eq(users.id, userId));
+
+    const shiftDateStr = shift ? String(shift.shiftDate).slice(0, 10) : "";
+
+    await notificationsService.resolveActionable(
+      id,
+      "swap_request",
+      "APPROVED",
+      accepter?.name ?? "Сотрудник",
+      `принял(а) обмен смены на ${shiftDateStr}`
+    );
+
+    if (req.requestedBy !== userId) {
+      await notificationsService.create({
+        orgId,
+        userId: req.requestedBy,
+        kind: "SWAP_ACCEPTED",
+        title: "Обмен принят",
+        message: `${accepter?.name ?? "Сотрудник"} принял(а) ваш обмен смены на ${shiftDateStr}`,
+        relatedId: id,
+        relatedType: "swap_request",
+        requiresAction: false,
+      });
+    }
+
+    await notificationsService.notifyManagers({
+      orgId,
+      kind: "SWAP_ACCEPTED_MANAGER",
+      title: "Обмен смены",
+      message: `${accepter?.name ?? "Сотрудник"} принял(а) обмен смены от ${requester?.name ?? "Сотрудник"} на ${shiftDateStr}`,
+      relatedId: id,
+      relatedType: "swap_request",
+      requiresAction: false,
+      excludeUserId: userId,
+    });
 
     return updated;
   },
@@ -221,15 +347,52 @@ export const swapsService = {
       .where(eq(shiftSwapRequests.id, id));
     if (!req) throw new Error("NOT_FOUND");
     if (req.status !== "PENDING") throw new Error("NOT_PENDING");
-    if (req.swapWithUserId && req.swapWithUserId !== userId) {
+    if (req.swapWithUserId && req.swapWithUserId !== userId)
       throw new Error("NOT_FOR_YOU");
-    }
 
+    const orgId = await getOrgIdForShift(req.shiftId);
+    if (!orgId) throw new Error("ORG_NOT_FOUND");
+
+    const [shift] = await db
+      .select()
+      .from(scheduledShifts)
+      .where(eq(scheduledShifts.id, req.shiftId));
+    const shiftDateStr = shift ? String(shift.shiftDate).slice(0, 10) : "";
+
+    const [decliner] = await db
+      .select({ name: users.name })
+      .from(users)
+      .where(eq(users.id, userId));
+
+    // ВСЕГДА ставим статус DENIED (даже для открытых)
     const [updated] = await db
       .update(shiftSwapRequests)
       .set({ status: "DENIED" })
       .where(eq(shiftSwapRequests.id, id))
       .returning();
+
+    await notificationsService.resolveActionable(
+      id,
+      "swap_request",
+      "REJECTED",
+      decliner?.name ?? "Сотрудник",
+      `отклонил(а) обмен смены на ${shiftDateStr}`
+    );
+
+    // Уведомляем автора (если это не он сам)
+    if (req.requestedBy !== userId) {
+      await notificationsService.create({
+        orgId,
+        userId: req.requestedBy,
+        kind: "SWAP_DECLINED",
+        title: "Обмен отклонён",
+        message: `${decliner?.name ?? "Сотрудник"} отклонил(а) ваш обмен смены на ${shiftDateStr}`,
+        relatedId: id,
+        relatedType: "swap_request",
+        requiresAction: false,
+      });
+    }
+
     return updated;
   },
 
@@ -243,6 +406,8 @@ export const swapsService = {
     if (req.status !== "PENDING") throw new Error("NOT_PENDING");
 
     await db.delete(shiftSwapRequests).where(eq(shiftSwapRequests.id, id));
+    await notificationsService.dismissActionable(id, "swap_request");
+
     return { success: true };
   },
 };

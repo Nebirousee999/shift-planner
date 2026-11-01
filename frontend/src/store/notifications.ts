@@ -4,6 +4,7 @@ import { notificationsApi, type InAppNotification } from "../api/notifications";
 type State = {
   vacationsPending: number;
   swapsIncoming: number;
+  swapsAvailable: number;
   shiftChangesIncoming: number;
   timeOffsPending: number;
   items: InAppNotification[];
@@ -18,23 +19,32 @@ type State = {
 export const useNotifications = create<State>((set, get) => ({
   vacationsPending: 0,
   swapsIncoming: 0,
+  swapsAvailable: 0,
   shiftChangesIncoming: 0,
   timeOffsPending: 0,
   items: [],
   unreadTotal: 0,
 
   refresh: async () => {
-    const [v, s, sc, t, items, unread] = await Promise.all([
-      notificationsApi.vacationsPendingCount(),
+    // Читаем роль из localStorage, чтобы не дергать админские роуты под сотрудником
+    const userStr = localStorage.getItem("user");
+    const user = userStr ? JSON.parse(userStr) : null;
+    const isAdmin = user?.role === "OWNER" || user?.role === "MANAGER";
+
+    const [v, s, sa, sc, t, items, unread] = await Promise.all([
+      isAdmin ? notificationsApi.vacationsPendingCount() : Promise.resolve(0),
       notificationsApi.swapsIncomingCount(),
+      notificationsApi.swapsAvailableCount(),
       notificationsApi.shiftChangesIncomingCount(),
-      notificationsApi.timeOffsPendingCount(),
+      isAdmin ? notificationsApi.timeOffsPendingCount() : Promise.resolve(0),
       notificationsApi.listMine(),
       notificationsApi.unreadInAppCount(),
     ]);
+
     set({
       vacationsPending: v,
       swapsIncoming: s,
+      swapsAvailable: sa,
       shiftChangesIncoming: sc,
       timeOffsPending: t,
       items,
@@ -68,12 +78,15 @@ export const useNotifications = create<State>((set, get) => ({
                 ...n,
                 requiresAction: false,
                 acknowledgedAt: new Date().toISOString(),
-                title: status === "APPROVED" ? "Запрос одобрен" : "Запрос отклонён",
+                title:
+                  status === "APPROVED" ? "Запрос одобрен" : "Запрос отклонён",
                 payload: { ...((n.payload as any) || {}), resolved: status },
               }
             : n
         ),
-        unreadTotal: wasUnread ? Math.max(0, state.unreadTotal - 1) : state.unreadTotal,
+        unreadTotal: wasUnread
+          ? Math.max(0, state.unreadTotal - 1)
+          : state.unreadTotal,
       };
     });
   },

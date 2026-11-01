@@ -14,7 +14,7 @@ const MONTHS_RU = [
 const WEEKDAYS_SHORT = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 
 const STATUS_META: Record<Exclude<TimesheetCellStatus, null>, { label: string; bg: string; text: string; title: string }> = {
-  YA: { label: "Я",   bg: "bg-emerald-100", text: "text-emerald-800", title: "Явка" },
+  YA: { label: "Я",   bg: "bg-emerald-100", text: "text-emerald-800", title: "Явка (отображаются часы)" },
   V:  { label: "В",   bg: "bg-slate-100",   text: "text-slate-500",   title: "Выходной" },
   VV: { label: "ВВ",  bg: "bg-slate-100",   text: "text-slate-500",   title: "Выходной (оклад)" },
   B:  { label: "Б",   bg: "bg-blue-100",    text: "text-blue-800",    title: "Больничный" },
@@ -229,7 +229,7 @@ export default function TimesheetPage() {
                               <div
                                 className={`inline-flex items-center justify-center w-8 h-8 rounded ${meta.bg} ${meta.text} text-[11px] font-bold`}
                                 title={`${meta.title}${day.cell.hours ? ` · ${day.cell.hours} ч` : ""}${day.cell.templateName ? ` · ${day.cell.templateName}` : ""}`}>
-                                {meta.label}
+                                {s === "YA" && day.cell.hours !== undefined ? day.cell.hours : meta.label}
                               </div>
                             ) : day.cell.templateName ? (
                               <div className="text-[9px] text-slate-400 truncate max-w-[36px]" title={day.cell.templateName}>
@@ -351,7 +351,7 @@ export default function TimesheetPage() {
           <div className="text-sm">
             <div className="font-medium text-amber-900">Как определяется статус</div>
             <ul className="text-amber-800 mt-1 text-xs space-y-1 list-disc pl-4">
-              <li><b>Я (Явка)</b> — смена проведена{data?.timeTrackingOn === false ? " (учёт времени выключен, «Я» по умолчанию)" : ", есть отметка прихода/ухода"}.</li>
+              <li><b>Я (Явка)</b> — смена проведена. Вместо буквы «Я» в клетке отображается фактическое количество часов за день.</li>
               <li><b>В (Выходной)</b> — для почасовика в выходной/будний день без смены.</li>
               <li><b>ВВ (Выходной)</b> — для окладника в выходной (оплачивается окладом).</li>
               <li><b>Б (Больничный)</b> — есть запись больничного.</li>

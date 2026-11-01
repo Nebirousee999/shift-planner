@@ -259,6 +259,24 @@ export const scheduledShiftsService = {
       })
       .returning();
 
+    // ─── In-app уведомление target'у ───
+    const [requesterUser] = await db
+      .select({ name: users.name })
+      .from(users)
+      .where(eq(users.id, input.requesterId));
+
+    await notificationsService.create({
+      orgId: input.orgId,
+      userId: targetUserId,
+      kind: "SHIFT_CREATE_REQUEST",
+      title: "Запрос на новую смену",
+      message: `${requesterUser?.name ?? "Руководитель"} предлагает добавить смену: ${input.shiftDate} ${input.startTime}–${input.endTime}`,
+      relatedId: request.id,
+      relatedType: "shift_change_request",
+      requiresAction: true,
+      payload: { shiftDate: input.shiftDate },
+    });
+
     const nowStr = new Date().toLocaleString("ru-RU");
     await messengerService.sendToUser(
       targetUserId,
@@ -400,7 +418,22 @@ export const scheduledShiftsService = {
         const nowStr = new Date().toLocaleString("ru-RU");
         const oldStr = `${String(shift.shiftDate).slice(0,10)} ${shift.startTime}–${shift.endTime}`;
         const newStr = `${input.shiftDate ?? String(shift.shiftDate).slice(0,10)} ${input.startTime ?? shift.startTime}–${input.endTime ?? shift.endTime}`;
-        
+
+        // ─── In-app уведомление сотруднику ───
+        if (shift.userId !== input.requesterId) {
+          await notificationsService.create({
+            orgId: input.orgId,
+            userId: shift.userId,
+            kind: "SHIFT_CHANGED_BY_MANAGER",
+            title: "Смена изменена",
+            message: `Руководитель изменил вашу смену. Было: ${oldStr}. Стало: ${newStr}.`,
+            relatedId: input.id,
+            relatedType: "shift_change",
+            requiresAction: false,
+            payload: { shiftId: input.id, old: oldStr, new: newStr },
+          });
+        }
+
         await messengerService.sendToUser(
           shift.userId,
           `<b>Смена изменена</b>\n\nРуководитель изменил вашу смену.\nБыло: ${oldStr}\nСтало: ${newStr}\n\nСоздано: ${nowStr}\n\nНажмите «ОК», чтобы подтвердить.`
@@ -489,6 +522,34 @@ export const scheduledShiftsService = {
         newUserId,
       })
       .returning();
+
+    // ─── In-app уведомление target'у (кому нужно согласовать) ───
+    const [requesterUser] = await db
+      .select({ name: users.name })
+      .from(users)
+      .where(eq(users.id, input.requesterId));
+
+    const oldShort = `${oldDate} ${shift.startTime}–${shift.endTime}`;
+    const newShort = `${newDate} ${newStart}–${newEnd}`;
+    const isOnlyTimeChange =
+      newDate === oldDate &&
+      newStart === shift.startTime &&
+      newEnd === shift.endTime &&
+      newUserId === shift.userId;
+
+    if (!isOnlyTimeChange) {
+      await notificationsService.create({
+        orgId: input.orgId,
+        userId: targetUserId,
+        kind: "SHIFT_CHANGE_REQUEST",
+        title: "Запрос на изменение смены",
+        message: `${requesterUser?.name ?? "Руководитель"} предлагает изменить смену: ${oldShort} → ${newShort}`,
+        relatedId: request.id,
+        relatedType: "shift_change_request",
+        requiresAction: true,
+        payload: { shiftId: shift.id, oldShort, newShort },
+      });
+    }
 
     return { kind: "requested", request };
   },
