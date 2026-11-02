@@ -26,6 +26,8 @@ type State = {
       role: "OWNER" | "MANAGER" | "EMPLOYEE";
       position: string | null;
       hourlyRate: string | null;
+      locationIds?: string[];
+      areaIds?: string[];
     }>
   ) => Promise<void>;
 
@@ -39,6 +41,8 @@ type State = {
     errors: string[];
     createdUsers: Array<{ name: string; email: string; tempPassword: string }>;
   }>;
+
+  bulkUpdate: (userIds: string[], payload: any) => Promise<void>;
 };
 
 export const useUsers = create<State>((set) => ({
@@ -83,16 +87,14 @@ export const useUsers = create<State>((set) => ({
 
   importFromExcel: async (file) => {
     const result = await usersApi.importFromExcel(file);
-    // Перезагружаем список сотрудников
     const items = await usersApi.list();
     set({ items });
     return result;
   },
 
-  bulkUpdate: async (userIds, payload) => {
+  bulkUpdate: async (userIds: string[], payload: any) => {
     await usersApi.bulkUpdate(userIds, payload);
     const items = await usersApi.list();
     set({ items });
   },
-
 }));

@@ -607,7 +607,7 @@ export default function WeeksPage() {
             const weekStart = week[0];
             const key = toDateStr(weekStart);
             const existing = weeksMap.get(key);
-            const meta = existing ? STATUS_META[existing.status] : null;
+            const meta = existing?.status ? STATUS_META[existing.status] : null;
             const StatusIcon = meta?.icon;
             const hasToday = week.some((d) => toDateStr(d) === todayStr);
 
@@ -702,7 +702,7 @@ export default function WeeksPage() {
                           <StatusIcon className="w-3 h-3" />
                           {meta.label}
                         </span>
-                        {existing.status === "DRAFT" && (
+                        {existing?.status === "DRAFT" && (
                           <button
                             onClick={(e) => onDeleteWeek(e, existing.id, key)}
                             className="text-slate-400 hover:text-red-600 hover:bg-red-100 p-1 rounded-md transition-colors shrink-0"

@@ -23,7 +23,7 @@ services:
         # Передаем адрес API для сборки React
         - VITE_API_URL=http://localhost:3001/api
     ports:
-      - "80:80"
+      - "8080:80"
     depends_on:
       - api
     restart: unless-stopped
