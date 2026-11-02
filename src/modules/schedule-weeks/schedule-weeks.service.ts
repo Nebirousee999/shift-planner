@@ -192,35 +192,40 @@ export const scheduleWeeksService = {
       );
     if (existing) throw new Error("WEEK_EXISTS");
 
-    const [newWeek] = await db
-      .insert(scheduleWeeks)
-      .values({
-        orgId,
-        locationId: source.locationId,
-        weekStartDate: nextStartStr,
-      })
-      .returning();
+    // 🛡️ ТРАНЗАКЦИЯ: Неделя и все её смены создаются атомарно
+    const newWeek = await db.transaction(async (tx) => {
+      const [week] = await tx
+        .insert(scheduleWeeks)
+        .values({
+          orgId,
+          locationId: source.locationId,
+          weekStartDate: nextStartStr,
+        })
+        .returning();
 
-    const sourceShifts = await db
-      .select()
-      .from(scheduledShifts)
-      .where(eq(scheduledShifts.weekId, id));
+      const sourceShifts = await tx
+        .select()
+        .from(scheduledShifts)
+        .where(eq(scheduledShifts.weekId, id));
 
-    if (sourceShifts.length > 0) {
-      const newShifts = sourceShifts.map((s) => {
-        const oldDate = new Date(String(s.shiftDate) + "T00:00:00Z");
-        oldDate.setUTCDate(oldDate.getUTCDate() + 7);
-        return {
-          weekId: newWeek.id,
-          templateId: s.templateId,
-          userId: s.userId,
-          shiftDate: oldDate.toISOString().slice(0, 10),
-          startTime: s.startTime,
-          endTime: s.endTime,
-        };
-      });
-      await db.insert(scheduledShifts).values(newShifts);
-    }
+      if (sourceShifts.length > 0) {
+        const newShifts = sourceShifts.map((s) => {
+          const oldDate = new Date(String(s.shiftDate) + "T00:00:00Z");
+          oldDate.setUTCDate(oldDate.getUTCDate() + 7);
+          return {
+            weekId: week.id,
+            templateId: s.templateId,
+            userId: s.userId,
+            shiftDate: oldDate.toISOString().slice(0, 10),
+            startTime: s.startTime,
+            endTime: s.endTime,
+          };
+        });
+        await tx.insert(scheduledShifts).values(newShifts);
+      }
+
+      return week;
+    });
 
     return newWeek;
   },

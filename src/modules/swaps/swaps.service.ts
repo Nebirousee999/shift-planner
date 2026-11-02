@@ -1,4 +1,4 @@
-import { eq, and, ne, desc, notInArray } from "drizzle-orm";
+import { eq, and, ne, desc, notInArray, gte, lte } from "drizzle-orm";
 import { db } from "../../../db/client.js";
 import {
   shiftSwapRequests,
@@ -32,6 +32,25 @@ async function enrichSwaps(rows: any[]) {
       templateId: shift?.templateId ?? null,
     };
   });
+}
+
+function getShiftRange(dateStr: string, startTime: string, endTime: string) {
+  const [sh, sm] = startTime.split(":").map(Number);
+  const [eh, em] = endTime.split(":").map(Number);
+  const baseTs = new Date(dateStr + "T00:00:00Z").getTime();
+  const startTs = baseTs + (sh * 60 + sm) * 60000;
+  let endTs = baseTs + (eh * 60 + em) * 60000;
+  if (endTs <= startTs) endTs += 24 * 60 * 60000; // ночная смена
+  return { start: startTs, end: endTs };
+}
+
+function shiftsOverlapSafe(
+  a: { date: string; start: string; end: string },
+  b: { date: string; start: string; end: string }
+): boolean {
+  const ar = getShiftRange(a.date, a.start, a.end);
+  const br = getShiftRange(b.date, b.start, b.end);
+  return ar.start < br.end && br.start < ar.end;
 }
 
 async function getOrgIdForShift(shiftId: string): Promise<string | null> {
@@ -169,22 +188,31 @@ export const swapsService = {
       if (!target) throw new Error("USER_NOT_FOUND");
       if (target.id === input.requestedBy) throw new Error("SELF_SWAP");
 
-      const sameDayShifts = await db
+      // Ищем смены target за вчера, сегодня и завтра (для учета ночных)
+      const yesterday = new Date(shiftDateStr + "T00:00:00Z");
+      yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+      const tomorrow = new Date(shiftDateStr + "T00:00:00Z");
+      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+
+      const targetShifts = await db
         .select()
         .from(scheduledShifts)
         .where(
           and(
             eq(scheduledShifts.userId, input.swapWithUserId),
-            eq(scheduledShifts.shiftDate, shiftDateStr)
+            gte(scheduledShifts.shiftDate, yesterday.toISOString().slice(0, 10)),
+            lte(scheduledShifts.shiftDate, tomorrow.toISOString().slice(0, 10))
           )
         );
+
       const newShift = {
         date: shiftDateStr,
         start: shift.startTime,
         end: shift.endTime,
       };
-      const conflict = sameDayShifts.find((s) =>
-        shiftsOverlap(newShift, {
+      
+      const conflict = targetShifts.find((s) =>
+        shiftsOverlapSafe(newShift, {
           date: String(s.shiftDate).slice(0, 10),
           start: s.startTime,
           end: s.endTime,
@@ -263,36 +291,49 @@ export const swapsService = {
     const orgId = await getOrgIdForShift(req.shiftId);
     if (!orgId) throw new Error("ORG_NOT_FOUND");
 
-    const [shift] = await db
-      .update(scheduledShifts)
-      .set({ userId })
-      .where(eq(scheduledShifts.id, req.shiftId))
-      .returning();
+    // 🛡️ ТРАНЗАКЦИЯ: Все изменения в БД применяются атомарно (либо всё, либо ничего)
+    const updated = await db.transaction(async (tx) => {
+      const [shift] = await tx
+        .update(scheduledShifts)
+        .set({ userId })
+        .where(eq(scheduledShifts.id, req.shiftId))
+        .returning();
 
-    const [updated] = await db
-      .update(shiftSwapRequests)
-      .set({ status: "APPROVED", swapWithUserId: userId })
-      .where(eq(shiftSwapRequests.id, id))
-      .returning();
-
-    // Отменяем остальные PENDING на этот shift
-    const otherSwaps = await db
-      .select()
-      .from(shiftSwapRequests)
-      .where(
-        and(
-          eq(shiftSwapRequests.shiftId, req.shiftId),
-          eq(shiftSwapRequests.status, "PENDING")
-        )
-      );
-    for (const other of otherSwaps) {
-      if (other.id === id) continue;
-      await db
+      const [updatedReq] = await tx
         .update(shiftSwapRequests)
-        .set({ status: "DENIED" })
-        .where(eq(shiftSwapRequests.id, other.id));
+        .set({ status: "APPROVED", swapWithUserId: userId })
+        .where(eq(shiftSwapRequests.id, id))
+        .returning();
+
+      // Отменяем остальные PENDING на этот shift
+      const otherSwaps = await tx
+        .select()
+        .from(shiftSwapRequests)
+        .where(
+          and(
+            eq(shiftSwapRequests.shiftId, req.shiftId),
+            eq(shiftSwapRequests.status, "PENDING")
+          )
+        );
+      
+      for (const other of otherSwaps) {
+        if (other.id === id) continue;
+        await tx
+          .update(shiftSwapRequests)
+          .set({ status: "DENIED" })
+          .where(eq(shiftSwapRequests.id, other.id));
+      }
+
+      // Запоминаем shift для использования вне транзакции
+      return { shift, updatedReq, otherSwaps };
+    });
+
+    for (const other of updated.otherSwaps) {
+      if (other.id === id) continue;
       await notificationsService.dismissActionable(other.id, "swap_request");
     }
+    
+    const shift = updated.shift;
 
     const [requester] = await db
       .select({ name: users.name })
@@ -337,7 +378,7 @@ export const swapsService = {
       excludeUserId: userId,
     });
 
-    return updated;
+    return updated.updatedReq;
   },
 
   async decline(id: string, userId: string) {

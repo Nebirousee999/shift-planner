@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
 import { db } from "../../../db/client.js";
 import { payments, organizations } from "../../../db/schema.js";
+import { yookassaService } from "../../lib/yookassa.js";
 
 export async function webhooksRoutes(app: FastifyInstance) {
   app.post("/yookassa", async (req, reply) => {
@@ -21,6 +22,18 @@ export async function webhooksRoutes(app: FastifyInstance) {
 
     try {
       if (event.event === "payment.succeeded") {
+        // 🛡️ БЕЗОПАСНОСТЬ: Проверяем статус платежа напрямую в API ЮKassa
+        try {
+          const realPayment = await yookassaService.getPayment(event.object.id);
+          if (!realPayment || realPayment.status !== "succeeded" || !realPayment.paid) {
+            app.log.warn({ paymentId: event.object.id }, "Подделка вебхука или платеж не оплачен");
+            return reply.code(400).send({ error: "Payment not verified" });
+          }
+        } catch (err) {
+          app.log.error(err, "Ошибка проверки платежа через API ЮKassa");
+          return reply.code(500).send({ error: "Verification failed" });
+        }
+
         // 1. Обновляем статус платежа в нашей БД
         await db
           .update(payments)

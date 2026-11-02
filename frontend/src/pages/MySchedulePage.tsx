@@ -414,7 +414,7 @@ export default function MySchedulePage() {
   }, [outgoingShiftRequests]);
 
   const otherColleagues = colleagues.filter((c) => c.id !== user?.id);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Intl.DateTimeFormat('en-CA').format(new Date());
   const upcomingVacations = myVacations.filter((v) => v.endDate >= today);
 
   const tabs: { id: Tab; label: string; icon: React.ElementType; badge?: number }[] = [

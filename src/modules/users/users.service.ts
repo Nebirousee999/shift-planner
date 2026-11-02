@@ -12,6 +12,10 @@ import {
   userLocations,
   userAreas,
   positionTemplates,
+  timeEntries,
+  userNotifications,
+  timeOffRequests,
+  userMessengers,
 } from "../../../db/schema.js";
 import { POSITION_PALETTE } from "../../lib/colors.js";
 
@@ -337,6 +341,10 @@ export const usersService = {
       .where(eq(shiftChangeRequests.newUserId, id));
 
     await db.delete(vacations).where(eq(vacations.userId, id));
+    await db.delete(timeEntries).where(eq(timeEntries.userId, id));
+    await db.delete(userNotifications).where(eq(userNotifications.userId, id));
+    await db.delete(timeOffRequests).where(eq(timeOffRequests.userId, id));
+    await db.delete(userMessengers).where(eq(userMessengers.userId, id));
 
     const [deleted] = await db
       .delete(users)

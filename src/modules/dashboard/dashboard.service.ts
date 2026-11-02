@@ -10,7 +10,7 @@ import {
 
 export const dashboardService = {
   async summary(orgId: string, locationId?: string, date?: string) {
-    const todayDate = new Date().toISOString().slice(0, 10);
+    const todayDate = new Intl.DateTimeFormat('en-CA').format(new Date());
     const targetDate = date || todayDate; // <--- Используем переданную дату
 
     const weekConditions = [

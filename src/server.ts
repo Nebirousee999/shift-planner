@@ -34,6 +34,12 @@ import { timeOffRoutes } from "./modules/time-off/time-off.routes.js";
 import { historyRoutes } from "./modules/history/history.routes.js";
            import { notificationsRoutes } from "./modules/notifications/notifications.routes.js";
 
+
+if (!process.env.JWT_SECRET) {
+  console.error("❌ КРИТИЧЕСКАЯ ОШИБКА: JWT_SECRET не задан в .env. Сервер остановлен для безопасности.");
+  process.exit(1);
+}
+
 const app = Fastify({ logger: true });
 
 await app.register(cors, {
@@ -44,7 +50,7 @@ await app.register(cors, {
   exposedHeaders: ["Content-Length"],
 });
 await app.register(jwt, {
-  secret: process.env.JWT_SECRET ?? "dev_secret_change_me",
+  secret: process.env.JWT_SECRET,
 });
 await app.register(authPlugin);
 

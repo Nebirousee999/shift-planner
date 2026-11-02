@@ -6,6 +6,7 @@ const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function sickLeavesRoutes(app: FastifyInstance) {
   app.addHook("preHandler", app.authenticate);
+  app.addHook("preHandler", app.requireRole(["OWNER", "MANAGER"]));
 
   app.get("/mine", async (req) => {
     const { sub: userId } = req.user!;

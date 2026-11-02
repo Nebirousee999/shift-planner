@@ -79,6 +79,19 @@ export const analyticsService = {
       );
     const validEntries = entries.filter((e) => orgUserIds.has(e.userId));
 
+    // 4.5. Индексируем данные для быстрого доступа (устраняем N+1)
+    const shiftsByUser = new Map<string, typeof shifts>();
+    for (const s of shifts) {
+      if (!s.userId) continue;
+      if (!shiftsByUser.has(s.userId)) shiftsByUser.set(s.userId, []);
+      shiftsByUser.get(s.userId)!.push(s);
+    }
+    
+    const entriesByShift = new Map<string, typeof validEntries[number]>();
+    for (const e of validEntries) {
+      if (e.shiftId) entriesByShift.set(e.shiftId, e);
+    }
+
     // 5. Расчет
     const weekdayAgg = WEEKDAY_LABELS.map((label, weekday) => ({ weekday, label, shifts: 0, plannedHours: 0, payroll: 0 }));
     const positionAgg = new Map<string, { shifts: number; plannedHours: number; payroll: number }>();
@@ -97,7 +110,7 @@ export const analyticsService = {
     const disciplineFeed: any[] = [];
 
     const userStats = orgUsers.map((u) => {
-      const userShifts = shifts.filter((s) => s.userId === u.id);
+      const userShifts = shiftsByUser.get(u.id) ?? [];
       const rate = u.hourlyRate ? Number(u.hourlyRate) : 0;
       const isMonthly = u.paymentType === "MONTHLY";
 
@@ -113,7 +126,7 @@ export const analyticsService = {
         
         let factHoursForDay = 0;
         if (timeTrackingOn) {
-          const entry = validEntries.find((e) => e.shiftId === s.id);
+          const entry = entriesByShift.get(s.id);
           if (entry && entry.clockIn && entry.clockOut) {
             factHoursForDay = (new Date(entry.clockOut).getTime() - new Date(entry.clockIn).getTime()) / 3600000;
           } else if (dateStr < new Date().toISOString().slice(0, 10)) {

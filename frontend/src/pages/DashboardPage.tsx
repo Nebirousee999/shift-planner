@@ -87,7 +87,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(new Date());
 
-  const todayDate = now.toISOString().slice(0, 10);
+  const todayDate = new Intl.DateTimeFormat('en-CA').format(now);
   const [selectedDate, setSelectedDate] = useState(todayDate);
 
   const [disciplineShift, setDisciplineShift] = useState<any | null>(null);

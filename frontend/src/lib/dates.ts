@@ -44,5 +44,5 @@ export function nextMonday(): string {
   const dow = d.getDay(); // 0=Sun
   const diff = dow === 1 ? 0 : (8 - dow) % 7 || 7;
   d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat('en-CA').format(d);
 }

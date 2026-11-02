@@ -335,6 +335,11 @@ export const scheduledShiftsService = {
       input.startTime === undefined &&
       input.endTime === undefined;
 
+    // 👇 Запрет для сотрудников изменять дисциплину
+    if (isOnlyDiscipline && input.requesterRole === "EMPLOYEE") {
+      throw new Error("FORBIDDEN");
+    }
+
     // 👇 Проверка окна редактирования дисциплины
     if (isOnlyDiscipline) {
       const [org] = await db
