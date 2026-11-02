@@ -104,7 +104,7 @@ export default function PricingSection() {
       setLoadingPlan(plan.id);
 
       try {
-        const amount = yearly ? plan.yearly : plan.monthly;
+        const amount = yearly ? plan.yearly * 12 : plan.monthly;
         
         const res = await fetch(
           `${import.meta.env.VITE_API_URL ?? "http://localhost:3001/api"}/payments/create`,

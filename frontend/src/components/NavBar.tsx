@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import {
   Calendar, Users, CalendarDays, Clock, FileText,
   ArrowLeftRight, UserCircle, LogOut, Palmtree,
-  FileSpreadsheet, BarChart3, HelpCircle, AlertCircle,
+  FileSpreadsheet, BarChart3, HelpCircle, AlertCircle, Wallet,
   MapPin, History,
 } from "lucide-react";
 import { useAuth } from "../store/auth";
@@ -222,6 +222,12 @@ export default function NavBar() {
             <HelpCircle className="w-4 h-4" />
             <span className="hidden lg:inline">Справка</span>
           </button>
+          {user?.role === "OWNER" && (
+            <button onClick={() => navigate("/wallet")} className={`relative flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${isActive(pathname, "/wallet") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`} title="Кошелек">
+              <Wallet className="w-4 h-4" />
+              <span className="hidden lg:inline">Кошелек</span>
+            </button>
+          )}
           <button onClick={() => navigate("/profile")} className={`relative flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${isActive(pathname, "/profile") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`}>
             <UserCircle className="w-4 h-4" />
             <span className="hidden lg:inline">{user?.name ?? user?.email}</span>

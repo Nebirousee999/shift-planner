@@ -6,6 +6,7 @@ import { useOrganization } from "./store/organization";
 // Основные страницы
 import LoginPage from "./pages/LoginPage";
 import LandingPage from "./pages/LandingPage";
+import WalletPage from "./pages/WalletPage";
 import DashboardPage from "./pages/DashboardPage";
 import TemplatesPage from "./pages/TemplatesPage";
 import TeamPage from "./pages/TeamPage";
@@ -115,6 +116,7 @@ export default function App() {
         <Route path="/swaps" element={<ProtectedRoute><SwapsPage /></ProtectedRoute>} />
         <Route path="/sick-leaves" element={<ProtectedRoute adminOnly><SickLeavesPage /></ProtectedRoute>} />
         <Route path="/analytics" element={<ProtectedRoute adminOnly><AnalyticsPage /></ProtectedRoute>} />
+        <Route path="/wallet" element={<ProtectedRoute adminOnly><WalletPage /></ProtectedRoute>} />
 
         {/* ─── ОБЩИЕ (Для всех авторизованных) ─── */}
         <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />

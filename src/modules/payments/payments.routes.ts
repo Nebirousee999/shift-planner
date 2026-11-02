@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "../../../db/client.js";
 import { payments } from "../../../db/schema.js";
 import { yookassaService } from "../../lib/yookassa.js";
+import { paymentsService } from "./payments.service.js";
 
 const createSchema = z.object({
   tariffId: z.enum(["pro", "business"]),
@@ -11,9 +12,9 @@ const createSchema = z.object({
 });
 
 // Цены для проверки (защита от подмены суммы на фронте)
-const TARIFF_PRICES: Record<string, number> = {
-  pro: 990,
-  business: 2490,
+const TARIFF_PRICES: Record<string, number[]> = {
+  pro: [990, 9480],
+  business: [2490, 23880],
 };
 
 export async function paymentsRoutes(app: FastifyInstance) {
@@ -29,9 +30,11 @@ export async function paymentsRoutes(app: FastifyInstance) {
     const { sub: userId, orgId } = req.user!;
 
     // Проверяем сумму на сервере — не доверяем фронту
-    if (TARIFF_PRICES[tariffId] && TARIFF_PRICES[tariffId] !== amount) {
+    if (TARIFF_PRICES[tariffId] && !TARIFF_PRICES[tariffId].includes(amount)) {
       return reply.code(400).send({ error: "Неверная сумма для тарифа" });
     }
+    const isYearly = amount > 5000;
+    const periodDays = isYearly ? 365 : 30;
 
     try {
       const payment = await yookassaService.createPayment({
@@ -42,6 +45,8 @@ export async function paymentsRoutes(app: FastifyInstance) {
           userId,
           orgId,
           tariffId,
+          periodDays: periodDays.toString(),
+          isYearly: isYearly.toString(),
         },
       });
 
@@ -62,10 +67,15 @@ export async function paymentsRoutes(app: FastifyInstance) {
     } catch (e: any) {
       app.log.error(e?.response?.data ?? e);
       return reply.code(500).send({
-        error: "Ошибка создания платежа",
+        error: "Ошибка создания платежа. Проверьте настройки ЮKassa в .env",
         details: e?.response?.data?.description ?? e?.message,
       });
     }
+  });
+
+  app.get("/current", async (req) => {
+    const { orgId } = req.user!;
+    return paymentsService.current(orgId);
   });
 
   // История платежей пользователя

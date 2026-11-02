@@ -29,6 +29,21 @@ export type CreatePaymentInput = {
 
 export const yookassaService = {
   async createPayment(input: CreatePaymentInput) {
+    // 🛡️ Если ключей нет (локальная разработка) — имитируем оплату
+    if (!SHOP_ID || !SECRET_KEY) {
+      console.log("⚠️ [YooKassa] Ключи не заданы. Имитация успешной оплаты.");
+      return {
+        id: "test_" + Date.now(),
+        status: "pending",
+        amount: { value: input.amount.toFixed(2), currency: "RUB" },
+        confirmation: {
+          confirmation_url: `${process.env.FRONTEND_URL ?? "http://localhost:5173"}/payment/success`,
+        },
+        description: input.description,
+        metadata: input.metadata || {},
+      };
+    }
+
     const idempotenceKey = crypto.randomUUID();
 
     const { data } = await client.post(
