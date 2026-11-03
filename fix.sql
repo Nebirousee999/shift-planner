@@ -1,0 +1,15 @@
+DO $$ BEGIN CREATE TYPE "public"."employment_type" AS ENUM('GPH', 'SHTAT'); EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN CREATE TYPE "public"."payment_type" AS ENUM('HOURLY', 'MONTHLY'); EXCEPTION WHEN duplicate_object THEN null; END $$;
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "payment_type" "payment_type" DEFAULT 'HOURLY' NOT NULL;
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "employment_type" "employment_type" DEFAULT 'SHTAT' NOT NULL;
+ALTER TABLE "scheduled_shifts" ADD COLUMN IF NOT EXISTS "is_no_show" boolean DEFAULT false NOT NULL;
+ALTER TABLE "scheduled_shifts" ADD COLUMN IF NOT EXISTS "is_unknown_absence" boolean DEFAULT false NOT NULL;
+ALTER TABLE "organizations" ADD COLUMN IF NOT EXISTS "tax_rate" numeric DEFAULT '13' NOT NULL;
+ALTER TABLE "organizations" ADD COLUMN IF NOT EXISTS "require_shift_approval" boolean DEFAULT true NOT NULL;
+ALTER TABLE "organizations" ADD COLUMN IF NOT EXISTS "discipline_edit_window_days" integer DEFAULT 3 NOT NULL;
+ALTER TABLE "organizations" ADD COLUMN IF NOT EXISTS "position_header_opacity" integer DEFAULT 70 NOT NULL;
+ALTER TABLE "organizations" ADD COLUMN IF NOT EXISTS "position_row_opacity" integer DEFAULT 20 NOT NULL;
+ALTER TABLE "position_templates" ADD COLUMN IF NOT EXISTS "color" varchar(7) DEFAULT '#3B82F6' NOT NULL;
+ALTER TABLE "sick_leaves" ADD COLUMN IF NOT EXISTS "created_by_id" uuid;
+ALTER TABLE "sick_leaves" ADD COLUMN IF NOT EXISTS "updated_by_id" uuid;
+ALTER TABLE "sick_leaves" ADD COLUMN IF NOT EXISTS "updated_at" timestamp with time zone;
