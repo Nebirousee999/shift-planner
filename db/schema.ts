@@ -43,6 +43,9 @@ export const organizations = pgTable("organizations", {
   positionRowOpacity: integer("position_row_opacity").default(20).notNull(),
   requireShiftApproval: boolean("require_shift_approval").default(true).notNull(),
   disciplineEditWindowDays: integer("discipline_edit_window_days").default(3).notNull(),
+  trialEndsAt: timestamp("trial_ends_at"),
+  tariffId: varchar("tariff_id", { length: 20 }).default("free").notNull(),
+  tariffExpiresAt: timestamp("tariff_expires_at"),
 });
 
 // ─── LOCATIONS ─────────────────────────────────────────

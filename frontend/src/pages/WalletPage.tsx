@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Wallet, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
 import { paymentsApi, type CurrentSubscription, type Payment } from "../api/payments";
 import NavBar from "../components/NavBar";
@@ -14,7 +15,7 @@ const TARIFFS = {
       "До 20 сотрудников",
       "Аналитика и переработки",
       "Отпуска и больничные",
-      "Документы по ТК (40+)",
+      "Документы по ТК (10+)",
       "Свой шаблон .docx",
     ],
   },
@@ -38,6 +39,9 @@ const PRICES = {
 const fmtMoney = (n: number) => new Intl.NumberFormat("ru-RU").format(n) + " ₽";
 
 export default function WalletPage() {
+  const [searchParams] = useSearchParams();
+  const checkoutPlan = searchParams.get("checkout") as "pro" | "business" | null;
+
   const [current, setCurrent] = useState<CurrentSubscription | null>(null);
   const [history, setHistory] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,16 +53,43 @@ export default function WalletPage() {
       .then(([c, h]) => {
         setCurrent(c);
         setHistory(h);
-      })
-      .catch(() => alert("Ошибка загрузки данных кошелька"))
-      .finally(() => setLoading(false));
-  }, []);
+        setLoading(false);
 
-  const handlePay = async (tariffId: "pro" | "business") => {
+        // 🎯 Авто-оплата: если пришёл с лендинга с намерением купить
+        if (checkoutPlan && c && (c.tariffId === "free" || (c as any).isTrial)) {
+          // Восстанавливаем yearly из sessionStorage
+          let pendingYearly = false;
+          try {
+            const pending = sessionStorage.getItem("pendingCheckout");
+            if (pending) {
+              pendingYearly = JSON.parse(pending).yearly === true;
+            }
+          } catch {}
+
+          sessionStorage.removeItem("pendingCheckout");
+          setYearly(pendingYearly);
+
+          // Небольшая пауза, чтобы UI отрисовался
+          setTimeout(() => {
+            handlePay(checkoutPlan, pendingYearly);
+          }, 500);
+        } else {
+          // Если оплата не нужна (уже есть Pro) — просто чистим флаг
+          sessionStorage.removeItem("pendingCheckout");
+        }
+      })
+      .catch(() => {
+        alert("Ошибка загрузки данных кошелька");
+        setLoading(false);
+      });
+  }, [checkoutPlan]);
+
+  const handlePay = async (tariffId: "pro" | "business", overrideYearly?: boolean) => {
+    const useYearly = overrideYearly !== undefined ? overrideYearly : yearly;
     setPaying(tariffId);
     try {
-      const amount = yearly ? PRICES[tariffId].yearly : PRICES[tariffId].monthly;
-      const desc = `Тариф ${TARIFFS[tariffId].name} на ${yearly ? "год" : "месяц"}`;
+      const amount = useYearly ? PRICES[tariffId].yearly : PRICES[tariffId].monthly;
+      const desc = `Тариф ${TARIFFS[tariffId].name} на ${useYearly ? "год" : "месяц"}`;
       const { confirmationUrl } = await paymentsApi.create(tariffId, amount, desc);
       window.location.href = confirmationUrl;
     } catch (e: any) {
@@ -80,6 +111,7 @@ export default function WalletPage() {
   }
 
   const currentTariffId = current?.tariffId ?? "free";
+  const isTrial = (current as any)?.isTrial === true;
   const meta = TARIFFS[currentTariffId];
   const isPaid = currentTariffId !== "free";
   const expired = current?.tariffExpiresAt && !current.isActive;
@@ -96,6 +128,20 @@ export default function WalletPage() {
             Управление тарифом, оплата подписки и история платежей
           </p>
         </div>
+
+        {isTrial && (
+          <div className="mb-6 rounded-2xl p-4 bg-gradient-to-r from-emerald-50 to-brand-50 border-2 border-emerald-200 flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+            <div className="text-sm">
+              <div className="font-semibold text-emerald-900">
+                Пробный период Pro: {current.daysLeft} {current.daysLeft === 1 ? "день" : current.daysLeft! < 5 ? "дня" : "дней"} осталось
+              </div>
+              <div className="text-emerald-700 mt-1">
+                Все Pro-функции активны. Чтобы сохранить их, оформите подписку до окончания триала — данные и настройки не потеряются.
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Текущий тариф */}
         <div

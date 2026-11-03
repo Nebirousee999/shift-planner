@@ -1,5 +1,5 @@
 import { CalendarDays, Mail, Send } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 
 const COLUMNS = [
   {
@@ -29,9 +29,17 @@ const COLUMNS = [
 ];
 
 export default function LandingFooter() {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+
   const scrollTo = (href: string) => {
     if (href.startsWith("#") && href.length > 1) {
-      document.querySelector(href)?.scrollIntoView({ behavior: "smooth" });
+      const isHomePage = pathname === "/" || pathname === "/welcome";
+      if (isHomePage) {
+        document.querySelector(href)?.scrollIntoView({ behavior: "smooth" });
+      } else {
+        navigate("/", { state: { scrollTo: href } });
+      }
     }
   };
 

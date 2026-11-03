@@ -1,7 +1,7 @@
 export default function SocialProof() {
   const stats = [
     { value: "5 мин", label: "на планирование недели" },
-    { value: "40+", label: "шаблонов документов по ТК" },
+    { value: "10+", label: "шаблонов документов по ТК" },
     { value: "0 ₽", label: "за старт и настройку" },
     { value: "3", label: "точки в Business-тарифе" },
   ];

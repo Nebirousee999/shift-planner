@@ -5,12 +5,52 @@ import { payments, organizations } from "../../../db/schema.js";
 export const paymentsService = {
   async current(orgId: string) {
     const [org] = await db
-      .select({ maxLocations: organizations.maxLocations })
+      .select({ maxLocations: organizations.maxLocations, trialEndsAt: organizations.trialEndsAt, tariffId: organizations.tariffId, tariffExpiresAt: organizations.tariffExpiresAt })
       .from(organizations)
       .where(eq(organizations.id, orgId));
 
     if (!org) return null;
 
+    const now = new Date();
+    const isTrial = org.trialEndsAt && new Date(org.trialEndsAt) > now;
+    const isPaid = org.tariffExpiresAt && new Date(org.tariffExpiresAt) > now;
+
+    if (isTrial) {
+      return {
+        tariffId: "pro",
+        tariffExpiresAt: org.trialEndsAt.toISOString(),
+        isActive: true,
+        daysLeft: Math.ceil((org.trialEndsAt.getTime() - now.getTime()) / 86400000),
+        maxLocations: org.maxLocations,
+        hasAnyPayment: false,
+        isTrial: true
+      };
+    }
+
+    if (isPaid) {
+      return {
+        tariffId: org.tariffId,
+        tariffExpiresAt: org.tariffExpiresAt.toISOString(),
+        isActive: true,
+        daysLeft: Math.ceil((org.tariffExpiresAt.getTime() - now.getTime()) / 86400000),
+        maxLocations: org.maxLocations,
+        hasAnyPayment: true,
+        isTrial: false
+      };
+    }
+
+    return {
+      tariffId: "free",
+      tariffExpiresAt: null,
+      isActive: true,
+      daysLeft: null,
+      maxLocations: org.maxLocations,
+      hasAnyPayment: false,
+      isTrial: false
+    };
+  },
+  
+  async legacyCurrent(orgId: string) {
     // Получаем все успешные платежи и фильтруем их в памяти (это работает везде)
     const allPayments = await db
       .select()

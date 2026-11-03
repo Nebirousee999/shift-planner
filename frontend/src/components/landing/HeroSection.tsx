@@ -112,7 +112,7 @@ const MiniSchedulePreview = () => {
         {/* Футер карточки */}
         <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100 bg-slate-50/50">
           <div className="text-[11px] text-slate-500">
-            <span className="font-semibold text-slate-800">12 смен</span> · 96 часов
+            <span className="font-semibold text-slate-800">10+ смен</span> · 96 часов
           </div>
           <div className="text-[11px] font-semibold text-emerald-600">38 400 ₽</div>
         </div>
@@ -184,7 +184,7 @@ export default function HeroSection({ onCtaClick }: Props) {
                 <Check className="w-4 h-4 text-emerald-600" /> Первые 3 сотрудника бесплатно
               </li>
               <li className="flex items-center gap-1.5">
-                <Check className="w-4 h-4 text-emerald-600" /> Отмена в один клик
+                <Check className="w-4 h-4 text-emerald-600" /> Легкий перенос из Excel
               </li>
             </ul>
           </div>

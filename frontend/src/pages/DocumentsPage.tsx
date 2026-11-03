@@ -62,6 +62,8 @@ function getCategoryIcon(category: string): React.ElementType {
       return Heart;
     case "Правила":
       return ScrollText;
+    case "Заявления":
+      return FileText;
     default:
       return FileText;
   }

@@ -1,6 +1,6 @@
 import axios from "axios";
 import { db } from "../../db/client.js";
-import { userMessengers } from "../../db/schema.js";
+import { userMessengers, users, organizations } from "../../db/schema.js";
 import { eq } from "drizzle-orm";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { SocksProxyAgent } from "socks-proxy-agent";
@@ -10,6 +10,30 @@ export type MessengerProvider = "telegram" | "max";
 export const messengerService = {
   async sendToUser(userId: string, text: string): Promise<boolean> {
     console.log(`\n📨 [Messenger] Попытка отправки для userId: ${userId}`);
+
+    // ─── Проверка тарифа: мессенджеры только на Pro и Business ───
+    const [orgInfo] = await db
+      .select({
+        orgId: users.orgId,
+        trialEndsAt: organizations.trialEndsAt,
+        tariffId: organizations.tariffId,
+        tariffExpiresAt: organizations.tariffExpiresAt,
+      })
+      .from(users)
+      .innerJoin(organizations, eq(organizations.id, users.orgId))
+      .where(eq(users.id, userId));
+
+    if (!orgInfo) return false;
+
+    const now = new Date();
+    const isTrial = orgInfo.trialEndsAt && new Date(orgInfo.trialEndsAt) > now;
+    const isPaid = orgInfo.tariffExpiresAt && new Date(orgInfo.tariffExpiresAt) > now;
+    const effectiveTariff = isTrial ? "pro" : (isPaid ? orgInfo.tariffId : "free");
+
+    if (effectiveTariff === "free") {
+      console.log(`⏭️ [Messenger] Пропуск: организация на Free тарифе`);
+      return false;
+    }
     
     const connections = await db
       .select()

@@ -312,46 +312,6 @@ function generateFireOrder(params: any): Document {
 }
 
 // ═══════════════════════════════════════════════════════
-// 3. ПРИКАЗ ОБ УТВЕРЖДЕНИИ ГРАФИКА ОТПУСКОВ
-// ═══════════════════════════════════════════════════════
-function generateVacationOrder(params: any): Document {
-  const date = formatDate(params.orderDate);
-  return new Document({
-    sections: [
-      {
-        children: [
-          ...header(
-            params.orgName,
-            params.city,
-            params.orderNumber,
-            "ПРИКАЗ",
-            date,
-            `Об утверждении графика отпусков на ${params.year} год`
-          ),
-          p(
-            `В соответствии со статьёй 123 Трудового кодекса Российской Федерации, ПРИКАЗЫВАЮ:`,
-            { align: AlignmentType.JUSTIFIED, spacing: 300 }
-          ),
-          p(
-            `1. Утвердить график отпусков сотрудников на ${params.year} год.`,
-            { align: AlignmentType.JUSTIFIED }
-          ),
-          p(
-            `2. Ознакомить всех сотрудников с графиком отпусков под подпись.`,
-            { align: AlignmentType.JUSTIFIED }
-          ),
-          p(
-            `3. Контроль за исполнением настоящего приказа оставляю за собой.`,
-            { align: AlignmentType.JUSTIFIED, spacing: 400 }
-          ),
-          ...footer(params.directorName),
-        ],
-      },
-    ],
-  });
-}
-
-// ═══════════════════════════════════════════════════════
 // 4. ПРИКАЗ О ПРИЁМЕ НА РАБОТУ
 // ═══════════════════════════════════════════════════════
 function generateHireOrder(params: any): Document {
@@ -411,23 +371,58 @@ function generateVacationScheduleTable(params: any): Document {
   });
 
   const children: Paragraph[] = [
+    // ─── Шапка приказа ───
     p(params.orgName, { bold: true, align: AlignmentType.CENTER }),
-    p("УТВЕРЖДЕНО", { align: AlignmentType.RIGHT, spacing: 100 }),
-    p(`Приказом от ${date}`, { align: AlignmentType.RIGHT, spacing: 100 }),
-    p(`Директор: ___________ / ${params.directorName} /`, {
-      align: AlignmentType.RIGHT,
-      spacing: 400,
+    p(`ПРИКАЗ № ${params.orderNumber}`, {
+      bold: true,
+      align: AlignmentType.CENTER,
+      spacing: 100,
     }),
-    p(`ГРАФИК ОТПУСКОВ на ${params.year} год`, {
+    p(params.city, { align: AlignmentType.CENTER, spacing: 100 }),
+    p(`от ${date}`, { align: AlignmentType.CENTER, spacing: 300 }),
+    p(`Об утверждении графика отпусков на ${params.year} год`, {
       bold: true,
       align: AlignmentType.CENTER,
       spacing: 400,
     }),
-    blank(1),
+
+    // ─── Текст приказа ───
+    p(
+      "В соответствии со статьёй 123 Трудового кодекса Российской Федерации ПРИКАЗЫВАЮ:",
+      { align: AlignmentType.JUSTIFIED, spacing: 200 }
+    ),
+    p(`1. Утвердить график отпусков сотрудников на ${params.year} год (приложение 1).`, {
+      align: AlignmentType.JUSTIFIED,
+      spacing: 100,
+    }),
+    p("2. Ознакомить всех сотрудников с графиком отпусков под подпись.", {
+      align: AlignmentType.JUSTIFIED,
+      spacing: 100,
+    }),
+    p("3. Контроль за исполнением настоящего приказа оставляю за собой.", {
+      align: AlignmentType.JUSTIFIED,
+      spacing: 300,
+    }),
+    p(`Директор: _________________ / ${params.directorName} /`, {
+      align: AlignmentType.LEFT,
+      spacing: 400,
+    }),
+
+    // ─── Таблица ───
+    p(`Приложение 1. ГРАФИК ОТПУСКОВ на ${params.year} год`, {
+      bold: true,
+      align: AlignmentType.CENTER,
+      spacing: 400,
+    }),
     makeTable(
       ["№", "ФИО сотрудника", "Кол-во дней", "Дата начала отпуска"],
       rows
     ),
+    blank(1),
+    p(`Директор: _________________ / ${params.directorName} /`, {
+      align: AlignmentType.LEFT,
+      spacing: 200,
+    }),
   ];
 
   if (vacations.length === 0) {
@@ -768,12 +763,67 @@ function generateInternalRules(params: any): Document {
 }
 
 // ═══════════════════════════════════════════════════════
+// 12. ЗАЯВЛЕНИЕ НА ОТПУСК
+// ═══════════════════════════════════════════════════════
+function generateVacationApplication(params: any): Document {
+  const start = formatDate(params.startDate);
+  const end = formatDate(params.endDate);
+  const applyDate = formatDate(params.applyDate);
+
+  const s = new Date(params.startDate + "T00:00:00Z").getTime();
+  const e = new Date(params.endDate + "T00:00:00Z").getTime();
+  const days = Math.max(1, Math.round((e - s) / 86400000) + 1);
+
+  return new Document({
+    sections: [
+      {
+        children: [
+          // Шапка (справа)
+          p(params.orgName, { bold: true, align: AlignmentType.RIGHT, spacing: 100 }),
+          p(`Директору: ${params.directorName}`, {
+            align: AlignmentType.RIGHT,
+            spacing: 100,
+          }),
+          p(`от: ${params.employeeName}`, {
+            align: AlignmentType.RIGHT,
+            spacing: 100,
+          }),
+          p(`Должность: ${params.position}`, {
+            align: AlignmentType.RIGHT,
+            spacing: 400,
+          }),
+
+          // Заголовок
+          p("ЗАЯВЛЕНИЕ", {
+            bold: true,
+            align: AlignmentType.CENTER,
+            spacing: 400,
+          }),
+
+          // Тело
+          p(
+            `Прошу предоставить мне ежегодный основной оплачиваемый отпуск на ${days} календарных дней с ${start} по ${end}.`,
+            { align: AlignmentType.JUSTIFIED, spacing: 400 }
+          ),
+
+          // Подпись
+          p(applyDate, { align: AlignmentType.LEFT, spacing: 400 }),
+          p(`Подпись: _________________ / ${params.employeeName} /`, {
+            align: AlignmentType.LEFT,
+            spacing: 200,
+          }),
+        ],
+      },
+    ],
+  });
+}
+
+// ═══════════════════════════════════════════════════════
 // ДИСПЕТЧЕР
 // ═══════════════════════════════════════════════════════
 const GENERATORS: Record<string, (params: any) => Document> = {
   order_safety_responsible: generateSafetyOrder,
   order_fire_safety: generateFireOrder,
-  order_vacation_schedule: generateVacationOrder,
   order_hire: generateHireOrder,
   order_vacation_schedule_table: generateVacationScheduleTable,
   instruction_safety: generateSafetyInstruction,
@@ -781,6 +831,7 @@ const GENERATORS: Record<string, (params: any) => Document> = {
   contract_employment: generateEmploymentContract,
   consent_personal_data: generatePersonalDataConsent,
   rules_internal: generateInternalRules,
+  application_vacation: generateVacationApplication,
 };
 
 export async function generateDocx(
@@ -957,38 +1008,6 @@ function buildSampleChildren(
         ...sampleFooterDoc(),
       ];
 
-    // 3. ПРИКАЗ ОБ УТВЕРЖДЕНИИ ГРАФИКА ОТПУСКОВ
-    case "order_vacation_schedule":
-      return [
-        ...sampleHeaderDoc(),
-        pYellow("Об утверждении графика отпусков на {year} год", {
-          bold: true,
-          align: AlignmentType.CENTER,
-          spacing: 400,
-        }),
-        p(
-          "В соответствии со статьёй 123 Трудового кодекса Российской Федерации, ПРИКАЗЫВАЮ:",
-          { align: AlignmentType.JUSTIFIED, spacing: 300 }
-        ),
-        pYellow(
-          "1. Утвердить график отпусков сотрудников на {year} год.",
-          { align: AlignmentType.JUSTIFIED, spacing: 200 }
-        ),
-        p(
-          "2. Ознакомить всех сотрудников с графиком отпусков под подпись.",
-          { align: AlignmentType.JUSTIFIED, spacing: 200 }
-        ),
-        p("3. Контроль за исполнением настоящего приказа оставляю за собой.", {
-          align: AlignmentType.JUSTIFIED,
-          spacing: 400,
-        }),
-        pYellow("Директор: _____________ / {Директор} /", {
-          align: AlignmentType.LEFT,
-          spacing: 200,
-        }),
-        ...sampleFooterDoc(),
-      ];
-
     // 4. ПРИКАЗ О ПРИЁМЕ НА РАБОТУ
     case "order_hire":
       return [
@@ -1021,7 +1040,7 @@ function buildSampleChildren(
         ...sampleFooterDoc(),
       ];
 
-    // 5. ГРАФИК ОТПУСКОВ (ТАБЛИЦА)
+    // 5. ГРАФИК ОТПУСКОВ С ПРИКАЗОМ (ОБЪЕДИНЁННЫЙ ДОКУМЕНТ)
     case "order_vacation_schedule_table":
       return [
         pYellow("{Название организации}", {
@@ -1029,16 +1048,42 @@ function buildSampleChildren(
           align: AlignmentType.CENTER,
           spacing: 120,
         }),
-        p("УТВЕРЖДЕНО", { align: AlignmentType.RIGHT, spacing: 100 }),
-        pYellow("Приказом от {Дата утверждения}", {
-          align: AlignmentType.RIGHT,
+        pYellow("ПРИКАЗ № {orderNumber}", {
+          bold: true,
+          align: AlignmentType.CENTER,
           spacing: 100,
         }),
-        pYellow("Директор: ________ / {Директор} /", {
-          align: AlignmentType.RIGHT,
+        pYellow("{Город}", { align: AlignmentType.CENTER, spacing: 100 }),
+        pYellow("от {Дата утверждения}", {
+          align: AlignmentType.CENTER,
+          spacing: 300,
+        }),
+        pYellow("Об утверждении графика отпусков на {year} год", {
+          bold: true,
+          align: AlignmentType.CENTER,
           spacing: 400,
         }),
-        pYellow("ГРАФИК ОТПУСКОВ на {year} год", {
+        p("В соответствии со статьёй 123 Трудового кодекса РФ ПРИКАЗЫВАЮ:", {
+          align: AlignmentType.JUSTIFIED,
+          spacing: 200,
+        }),
+        p("1. Утвердить график отпусков сотрудников на {year} год (приложение 1).", {
+          align: AlignmentType.JUSTIFIED,
+          spacing: 100,
+        }),
+        p("2. Ознакомить всех сотрудников с графиком отпусков под подпись.", {
+          align: AlignmentType.JUSTIFIED,
+          spacing: 100,
+        }),
+        p("3. Контроль за исполнением настоящего приказа оставляю за собой.", {
+          align: AlignmentType.JUSTIFIED,
+          spacing: 300,
+        }),
+        pYellow("Директор: _____________ / {Директор} /", {
+          align: AlignmentType.LEFT,
+          spacing: 400,
+        }),
+        pYellow("Приложение 1. ГРАФИК ОТПУСКОВ на {year} год", {
           bold: true,
           align: AlignmentType.CENTER,
           spacing: 400,
@@ -1054,13 +1099,8 @@ function buildSampleChildren(
         }),
         p("2 | (следующий сотрудник) | 14 | 15.08.2026", {
           align: AlignmentType.LEFT,
-          spacing: 100,
+          spacing: 400,
         }),
-        p("", { spacing: 200 }),
-        p(
-          "Плейсхолдер {СписокСотрудников} подставит список выбранных сотрудников.",
-          { spacing: 200, size: 20 }
-        ),
         ...sampleFooterDoc(),
       ];
 
@@ -1292,6 +1332,46 @@ function buildSampleChildren(
           "Настоящие Правила вступают в силу с момента их утверждения.",
           { align: AlignmentType.JUSTIFIED, spacing: 400 }
         ),
+        ...sampleFooterDoc(),
+      ];
+
+    // 12. ЗАЯВЛЕНИЕ НА ОТПУСК
+    case "application_vacation":
+      return [
+        pYellow("{Название организации}", {
+          bold: true,
+          align: AlignmentType.RIGHT,
+          spacing: 120,
+        }),
+        pYellow("Директору: {Директор}", {
+          align: AlignmentType.RIGHT,
+          spacing: 100,
+        }),
+        pYellow("от: {Сотрудник}", {
+          align: AlignmentType.RIGHT,
+          spacing: 100,
+        }),
+        pYellow("Должность: {Должность сотрудника}", {
+          align: AlignmentType.RIGHT,
+          spacing: 400,
+        }),
+        p("ЗАЯВЛЕНИЕ", {
+          bold: true,
+          align: AlignmentType.CENTER,
+          spacing: 400,
+        }),
+        pYellow(
+          "Прошу предоставить мне ежегодный основной оплачиваемый отпуск с {startDate} по {endDate}.",
+          { align: AlignmentType.JUSTIFIED, spacing: 400 }
+        ),
+        pYellow("{Дата заявления}", {
+          align: AlignmentType.LEFT,
+          spacing: 400,
+        }),
+        pYellow("Подпись: _____________ / {Сотрудник} /", {
+          align: AlignmentType.LEFT,
+          spacing: 200,
+        }),
         ...sampleFooterDoc(),
       ];
 

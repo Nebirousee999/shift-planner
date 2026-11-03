@@ -52,13 +52,20 @@ export async function webhooksRoutes(app: FastifyInstance) {
           
           // Пример логики: если купили Business, даем 5 точек, иначе 1.
           if (meta.orgId) {
-             await db
-              .update(organizations)
-              .set({ 
-                maxLocations: meta.tariffId === "business" ? 5 : 1 
-              })
-              .where(eq(organizations.id, meta.orgId));
-          }
+           const days = Number(meta.periodDays) || 30;
+           const expiresAt = new Date();
+           expiresAt.setDate(expiresAt.getDate() + days);
+
+           await db
+            .update(organizations)
+            .set({ 
+              maxLocations: meta.tariffId === "business" ? 5 : 1,
+              tariffId: meta.tariffId,
+              tariffExpiresAt: expiresAt,
+              trialEndsAt: null
+            })
+            .where(eq(organizations.id, meta.orgId));
+        }
         }
       } 
       else if (event.event === "payment.canceled") {

@@ -1,9 +1,33 @@
 import { eq } from "drizzle-orm";
 import { db } from "../../../db/client.js";
-import { organizations, users } from "../../../db/schema.js";
+import { organizations, users, locations, areas, scheduledShifts, scheduleWeeks, vacations, sickLeaves } from "../../../db/schema.js";
 import { messengerService } from "../../lib/messenger.service.js";
 
 export const organizationService = {
+  async exportJson(orgId: string) {
+    const [org] = await db.select().from(organizations).where(eq(organizations.id, orgId));
+    if (!org || org.tariffId !== "business") throw new Error("FORBIDDEN");
+
+    const orgUsers = await db.select().from(users).where(eq(users.orgId, orgId));
+    const orgLocations = await db.select().from(locations).where(eq(locations.orgId, orgId));
+    const orgAreas = await db.select().from(areas).where(eq(areas.orgId, orgId));
+    const orgWeeks = await db.select().from(scheduleWeeks).where(eq(scheduleWeeks.orgId, orgId));
+    const orgShifts = await db.select().from(scheduledShifts);
+    const orgVacations = await db.select().from(vacations).where(eq(vacations.orgId, orgId));
+    const orgSick = await db.select().from(sickLeaves).where(eq(sickLeaves.orgId, orgId));
+
+    return {
+      exportedAt: new Date().toISOString(),
+      organization: org,
+      users: orgUsers,
+      locations: orgLocations,
+      areas: orgAreas,
+      scheduleWeeks: orgWeeks,
+      scheduledShifts: orgShifts.filter(s => orgWeeks.some(w => w.id === s.weekId)),
+      vacations: orgVacations,
+      sickLeaves: orgSick,
+    };
+  },
   async get(orgId: string) {
     const [org] = await db
       .select()

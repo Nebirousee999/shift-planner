@@ -24,7 +24,8 @@ export type DocumentType = {
     | "Журналы"
     | "Договоры"
     | "Согласия"
-    | "Правила";
+    | "Правила"
+    | "Заявления";
   fields: DocumentField[];
   notStored?: boolean;
   /** Альбомная ориентация страницы */
@@ -64,20 +65,6 @@ export const DOCUMENT_TYPES: DocumentType[] = [
     ],
   },
   {
-    id: "order_vacation_schedule",
-    title: "Приказ об утверждении графика отпусков",
-    description: "Утверждает график отпусков сотрудников на календарный год.",
-    category: "Приказы",
-    fields: [
-      { name: "orgName", label: "Название организации", type: "text", required: true },
-      { name: "city", label: "Город", type: "text", required: true, defaultValue: "Москва" },
-      { name: "orderNumber", label: "Номер приказа", type: "text", required: true, defaultValue: "3" },
-      { name: "orderDate", label: "Дата приказа", type: "date", required: true },
-      { name: "directorName", label: "ФИО директора", type: "text", required: true },
-      { name: "year", label: "Год", type: "text", required: true, defaultValue: String(new Date().getFullYear()) },
-    ],
-  },
-  {
     id: "order_hire",
     title: "Приказ о приёме на работу",
     description: "Оформляет приём сотрудника на работу с указанием должности и оклада.",
@@ -96,13 +83,14 @@ export const DOCUMENT_TYPES: DocumentType[] = [
   },
   {
     id: "order_vacation_schedule_table",
-    title: "График отпусков на год (таблица)",
+    title: "График отпусков с приказом об утверждении",
     description:
-      "Таблица отпусков сотрудников за год. Данные берутся из раздела «Отпуска».",
+      "Готовый документ по ст. 123 ТК РФ: приказ + таблица отпусков сотрудников за год. Данные берутся из раздела «Отпуска».",
     category: "Приказы",
     fields: [
       { name: "orgName", label: "Название организации", type: "text", required: true },
       { name: "city", label: "Город", type: "text", required: true, defaultValue: "Москва" },
+      { name: "orderNumber", label: "Номер приказа", type: "text", required: true, defaultValue: "3" },
       { name: "year", label: "Год", type: "text", required: true, defaultValue: String(new Date().getFullYear()) },
       { name: "approveDate", label: "Дата утверждения", type: "date", required: true },
       { name: "directorName", label: "ФИО директора", type: "text", required: true },
@@ -200,6 +188,21 @@ export const DOCUMENT_TYPES: DocumentType[] = [
       { name: "lunchStart", label: "Начало обеда", type: "text", required: true, defaultValue: "13:00" },
       { name: "lunchEnd", label: "Конец обеда", type: "text", required: true, defaultValue: "14:00" },
       { name: "weekendDays", label: "Выходные дни", type: "text", required: true, defaultValue: "суббота, воскресенье" },
+    ],
+  },
+  {
+    id: "application_vacation",
+    title: "Заявление на отпуск",
+    description: "Заявление сотрудника на ежегодный оплачиваемый отпуск. Подписывается сотрудником и директором.",
+    category: "Заявления",
+    fields: [
+      { name: "orgName", label: "Название организации", type: "text", required: true },
+      { name: "directorName", label: "ФИО директора", type: "text", required: true },
+      { name: "employeeName", label: "Сотрудник", type: "employee_select", required: true },
+      { name: "position", label: "Должность", type: "text", required: true },
+      { name: "startDate", label: "Отпуск с", type: "date", required: true },
+      { name: "endDate", label: "Отпуск по", type: "date", required: true },
+      { name: "applyDate", label: "Дата заявления", type: "date", required: true },
     ],
   },
 ];

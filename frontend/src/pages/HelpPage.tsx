@@ -16,6 +16,7 @@ import {
   Stethoscope,
 } from "lucide-react";
 import NavBar from "../components/NavBar";
+import { useOrganization } from "../store/organization";
 
 // ─── Типы данных ───────────────────────────────────
 type HelpArticle = {
@@ -265,6 +266,7 @@ const CATEGORIES = [
 ];
 
 export default function HelpPage() {
+  const org = useOrganization((s) => s.org);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("all");
   const [openArticleId, setOpenArticleId] = useState<string | null>(null);
@@ -405,20 +407,23 @@ export default function HelpPage() {
               Наша команда поддержки на связи с понедельника по пятницу, с 10:00 до 19:00 (МСК). Ответим в течение пары часов.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-              <a
-                href="mailto:help@shift-planner.ru"
-                className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-white text-brand-700 rounded-xl hover:bg-slate-100 text-sm font-semibold shadow-sm transition-all w-full sm:w-auto"
-              >
-                Написать на почту
-              </a>
-              <a
-                href="https://t.me/shift_planner_support"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-brand-800/50 border border-brand-400/30 text-white rounded-xl hover:bg-brand-800 text-sm font-semibold transition-all w-full sm:w-auto backdrop-blur-sm"
-              >
-                Написать в Telegram
-              </a>
+              {org?.tariffId === "business" ? (
+                <a
+                  href="https://t.me/your_telegram_nick"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-white text-brand-700 rounded-xl hover:bg-slate-100 text-sm font-semibold shadow-sm transition-all w-full sm:w-auto"
+                >
+                  Написать основателю в Telegram
+                </a>
+              ) : (
+                <a
+                  href="mailto:help@shift-planner.ru"
+                  className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-white text-brand-700 rounded-xl hover:bg-slate-100 text-sm font-semibold shadow-sm transition-all w-full sm:w-auto"
+                >
+                  Написать на почту
+                </a>
+              )}
             </div>
           </div>
         </div>

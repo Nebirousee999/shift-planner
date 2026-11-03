@@ -297,7 +297,7 @@ type Props = {
 };
 
 export default function NotificationsDemo({ onInteract }: Props) {
-  const [channel, setChannel] = useState<Channel>("telegram");
+  const [channel] = useState<Channel>("max");
   const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
 
   const interact = () => onInteract?.();
@@ -321,7 +321,7 @@ export default function NotificationsDemo({ onInteract }: Props) {
             Уведомления в мессенджер
           </div>
           <div className="text-sm text-slate-500 mt-1">
-            Сотрудники получают важное в Telegram или MAX
+            Сотрудники получают важное прямо в MAX
           </div>
         </div>
         <div className="inline-flex items-center gap-1 p-1 bg-slate-100 rounded-xl">

@@ -111,6 +111,9 @@ export async function usersRoutes(app: FastifyInstance) {
       if (e.message === "EMAIL_TAKEN") {
         return reply.code(409).send({ error: "Email уже занят" });
       }
+      if (e.message === "LIMIT_REACHED") {
+        return reply.code(403).send({ error: "Вы достигли лимита сотрудников на вашем тарифе. Обновите тариф." });
+      }
       app.log.error(e);
       return reply.code(500).send({ error: "Ошибка создания сотрудника" });
     }

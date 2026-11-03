@@ -19,6 +19,7 @@ import { organizationApi, type Organization } from "../api/organization";
 import { useOrganization } from "../store/organization";
 import { alertDialog } from "../store/dialogs";
 import NavBar from "../components/NavBar";
+import { Download } from "lucide-react";
 
 // ─── Схема смены пароля ────────────────────────────
 const passwordSchema = z
@@ -108,6 +109,26 @@ export default function ProfilePage() {
   } = useForm<PasswordForm>({ resolver: zodResolver(passwordSchema) });
 
   const isOwner = profile?.role === "OWNER";
+
+  const downloadJsonBackup = async () => {
+    try {
+      const res = await fetch("/api/organization/export-json", {
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+      });
+      if (!res.ok) throw new Error("Ошибка выгрузки");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `backup_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert("Не удалось скачать бэкап. Убедитесь, что у вас тариф Business.");
+    }
+  };
 
   useEffect(() => {
     Promise.all([
@@ -246,6 +267,16 @@ export default function ProfilePage() {
 
               {section === "messenger" && (
                 <MessengerSection userId={profile.id} />
+              )}
+
+              {section === "modules" && isOwner && org?.tariffId === "business" && (
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 animate-fade-in mb-6">
+                  <h2 className="font-semibold text-slate-900 mb-2">Выгрузка данных (JSON)</h2>
+                  <p className="text-sm text-slate-500 mb-4">Скачайте полную резервную копию всех данных вашей организации.</p>
+                  <button onClick={downloadJsonBackup} className="inline-flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-xl hover:bg-slate-800 text-sm font-medium">
+                    <Download className="w-4 h-4" /> Скачать JSON
+                  </button>
+                </div>
               )}
 
               {section === "requisites" && isOwner && org && (

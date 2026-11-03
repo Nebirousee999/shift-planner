@@ -10,9 +10,17 @@ export const authService = {
 
     const passwordHash = await bcrypt.hash(input.password, 10);
 
+    const trialEndsAt = new Date();
+    trialEndsAt.setDate(trialEndsAt.getDate() + 14);
+
     const [org] = await db
       .insert(organizations)
-      .values({ name: input.orgName })
+      .values({ 
+        name: input.orgName,
+        trialEndsAt,
+        tariffId: "pro",
+        maxLocations: 1
+      })
       .returning();
 
     const [user] = await db

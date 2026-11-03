@@ -22,6 +22,19 @@ const updateSchema = z.object({
 export async function organizationRoutes(app: FastifyInstance) {
   app.addHook("preHandler", app.authenticate);
 
+  app.get("/export-json", { preHandler: app.requireRole(["OWNER"]) }, async (req, reply) => {
+    const { orgId } = req.user!;
+    try {
+      const data = await organizationService.exportJson(orgId);
+      reply
+        .header("Content-Type", "application/json")
+        .header("Content-Disposition", `attachment; filename="backup_${Date.now()}.json"`)
+        .send(data);
+    } catch (e: any) {
+      return reply.code(403).send({ error: "Выгрузка доступна только на тарифе Business" });
+    }
+  });
+
   app.get("/", async (req, reply) => {
     const { orgId } = req.user!;
     const org = await organizationService.get(orgId);

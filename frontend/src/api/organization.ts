@@ -16,6 +16,9 @@ export type Organization = {
   positionRowOpacity: number;
   taxRate: string;
   requireShiftApproval?: boolean;
+  trialEndsAt?: string | null;
+  tariffId?: "free" | "pro" | "business";
+  tariffExpiresAt?: string | null;
   disciplineEditWindowDays?: number;
 };
 

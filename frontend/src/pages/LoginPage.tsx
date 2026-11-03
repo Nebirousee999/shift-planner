@@ -38,16 +38,36 @@ export default function LoginPage() {
     resolver: zodResolver(registerSchema),
   });
 
+  // Куда перенаправить после входа: если было намерение купить — на кошелёк
+  const getPostAuthRedirect = () => {
+    const pending = sessionStorage.getItem("pendingCheckout");
+    if (pending) {
+      try {
+        const { plan } = JSON.parse(pending);
+        return `/wallet?checkout=${plan}`;
+      } catch {
+        // Если данные битые — сбрасываем намерение
+        sessionStorage.removeItem("pendingCheckout");
+      }
+    }
+    return "/";
+  };
+
   const onLogin = async (data: LoginForm) => {
     const ok = await login(data.email, data.password);
     if (ok) {
-      navigate("/");
+      const redirect = getPostAuthRedirect();
+      // Небольшая задержка, чтобы hydrate в useAuth отработал
+      setTimeout(() => navigate(redirect), 100);
     }
   };
 
   const onRegister = async (data: RegisterForm) => {
     const ok = await registerUser(data);
-    if (ok) navigate("/");
+    if (ok) {
+      const redirect = getPostAuthRedirect();
+      setTimeout(() => navigate(redirect), 100);
+    }
   };
 
   return (

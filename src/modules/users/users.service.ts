@@ -1,4 +1,4 @@
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, count } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { db } from "../../../db/client.js";
 import {
@@ -142,6 +142,21 @@ export const usersService = {
       .from(users)
       .where(eq(users.email, input.email));
     if (existing.length > 0) throw new Error("EMAIL_TAKEN");
+
+    // Проверка лимита сотрудников
+    const [org] = await db.select().from(organizations).where(eq(organizations.id, input.orgId));
+    if (org) {
+      const now = new Date();
+      const isTrial = org.trialEndsAt && new Date(org.trialEndsAt) > now;
+      const isPaid = org.tariffExpiresAt && new Date(org.tariffExpiresAt) > now;
+      const effectiveTariff = isTrial ? "pro" : (isPaid ? org.tariffId : "free");
+
+      const [userCountRow] = await db.select({ count: count() }).from(users).where(eq(users.orgId, input.orgId));
+      const countVal = Number(userCountRow.count);
+
+      if (effectiveTariff === "free" && countVal >= 3) throw new Error("LIMIT_REACHED");
+      if (effectiveTariff === "pro" && countVal >= 20) throw new Error("LIMIT_REACHED");
+    }
 
     const plainPassword = input.password ?? generateTempPassword();
     const passwordHash = await bcrypt.hash(plainPassword, 10);

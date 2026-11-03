@@ -17,6 +17,7 @@ import Reveal from "../components/ui/Reveal";
 
 // Базовые компоненты
 import TopBar from "../components/landing/TopBar";
+import TrustBar from "../components/landing/TrustBar";
 import LandingHeader from "../components/landing/LandingHeader";
 import HeroSection from "../components/landing/HeroSection";
 import SocialProof from "../components/landing/SocialProof";
@@ -111,6 +112,7 @@ export default function LandingPage() {
       <main>
         {/* 1. Hero */}
         <HeroSection onCtaClick={() => handleRegisterClick("hero")} />
+        <Reveal><TrustBar /></Reveal>
         
         {/* 2. Соцдоказательства и обзор */}
         <Reveal><SocialProof /></Reveal>
@@ -141,9 +143,9 @@ export default function LandingPage() {
             eyebrow="Уведомления"
             icon={Bell}
             title="Сотрудники всегда в курсе"
-            description="Больше не нужно звонить и писать каждому. Бот в Telegram или MAX напомнит о смене, сообщит об изменениях в графике и предложит обменяться — в один клик."
+            description="Больше не нужно звонить и писать каждому. Бот в MAX напомнит о смене, сообщит об изменениях в графике и предложит обменяться — в один клик."
             bullets={[
-              "Telegram и MAX на выбор",
+              "Уведомления прямо в MAX",
               "Напоминания за N часов до смены",
               "Кнопки «Принять» / «Отклонить» прямо в чате",
             ]}

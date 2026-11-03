@@ -33,7 +33,7 @@ const FEATURES = [
   },
   {
     title: "Документы",
-    desc: "40+ шаблонов по ТК, свой .docx, массовый экспорт",
+    desc: "10+ шаблонов по ТК, свой .docx, массовый экспорт",
     icon: FileText,
     color: "text-amber-600",
     bg: "bg-amber-50",
