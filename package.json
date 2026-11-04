@@ -8,7 +8,8 @@
     "db:migrate": "tsx db/migrate.ts",
     "db:studio": "drizzle-kit studio",
     "db:reset": "Remove-Item -Recurse -Force pgdata -ErrorAction SilentlyContinue; tsx db/migrate.ts",
-    "dev": "tsx watch src/server.ts"
+    "dev": "tsx watch src/server.ts",
+    "deploy": "bash deploy.sh"
   },
   "keywords": [],
   "author": "",
