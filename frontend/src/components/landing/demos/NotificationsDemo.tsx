@@ -298,6 +298,7 @@ type Props = {
 
 export default function NotificationsDemo({ onInteract }: Props) {
   const [channel] = useState<Channel>("max");
+  const setChannel = (_c: any) => {};
   const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
 
   const interact = () => onInteract?.();
