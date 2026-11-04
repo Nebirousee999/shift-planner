@@ -129,12 +129,12 @@ export default function WalletPage() {
           </p>
         </div>
 
-        {isTrial && (
+        {isTrial && current && (
           <div className="mb-6 rounded-2xl p-4 bg-gradient-to-r from-emerald-50 to-brand-50 border-2 border-emerald-200 flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
             <div className="text-sm">
               <div className="font-semibold text-emerald-900">
-                Пробный период Pro: {current.daysLeft} {current.daysLeft === 1 ? "день" : current.daysLeft! < 5 ? "дня" : "дней"} осталось
+                Пробный период Pro: {current.daysLeft ?? 0} {(current.daysLeft ?? 0) === 1 ? "день" : (current.daysLeft ?? 0) < 5 ? "дня" : "дней"} осталось
               </div>
               <div className="text-emerald-700 mt-1">
                 Все Pro-функции активны. Чтобы сохранить их, оформите подписку до окончания триала — данные и настройки не потеряются.

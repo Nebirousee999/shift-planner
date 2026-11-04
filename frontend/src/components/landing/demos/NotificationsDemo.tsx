@@ -63,7 +63,7 @@ function ChatPreview({
   enabledTypes: string[];
   onInteract?: () => void;
 }) {
-  const isTelegram = channel === "telegram";
+  const isTelegram = false;
   const [action, setAction] = useState<string | null>(null);
 
   // Определяем, какое сообщение показать (приоритет: график -> изменение -> напоминание -> обмен)
@@ -331,7 +331,7 @@ export default function NotificationsDemo({ onInteract }: Props) {
               interact();
             }}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${
-              channel === "telegram"
+              false
                 ? "bg-white text-slate-900 shadow-sm"
                 : "text-slate-500 hover:text-slate-700"
             }`}
