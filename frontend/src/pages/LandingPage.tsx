@@ -30,6 +30,7 @@ import PricingSection from "../components/landing/PricingSection";
 import FAQSection from "../components/landing/FAQSection";
 import FinalCTA from "../components/landing/FinalCTA";
 import LandingFooter from "../components/landing/LandingFooter";
+import SeoLandingBlock from "../components/landing/SeoLandingBlock";
 
 // Демо-виджеты
 import DashboardDemo from "../components/landing/demos/DashboardDemo";
@@ -268,6 +269,7 @@ export default function LandingPage() {
         </Reveal>
       </main>
 
+      <SeoLandingBlock />
       <LandingFooter />
 
       {/* Плавающая кнопка (появляется после взаимодействия с демо) */}

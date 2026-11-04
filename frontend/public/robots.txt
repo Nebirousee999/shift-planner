@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /profile
+Disallow: /wallet
+Disallow: /team
+Disallow: /dashboard
+Disallow: /my
+
+Sitemap: https://shift-planner.ru/sitemap.xml

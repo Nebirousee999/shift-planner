@@ -8,8 +8,8 @@ import {
 
 const FEATURES = [
   {
-    title: "Смены",
-    desc: "Drag-and-drop, проверка ТК РФ, копирование дней",
+    title: "Графики 2/2 и 3/3",
+    desc: "Шаблоны смен, проверка ТК РФ, копирование дней",
     icon: CalendarDays,
     color: "text-blue-600",
     bg: "bg-blue-50",
@@ -56,7 +56,7 @@ export default function FeaturesOverview() {
       <div className="relative max-w-6xl mx-auto px-4 sm:px-6">
         <div className="text-center max-w-3xl mx-auto mb-16">
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-slate-900 tracking-tight mb-4">
-            Всё, что нужно <span className="text-brand-600">для команды</span>
+            Всё для расчета <span className="text-brand-600">графика смен</span>
           </h2>
           <p className="text-lg text-slate-600 leading-relaxed">
             От составления графика до приказов по ТК — в одном инструменте.
