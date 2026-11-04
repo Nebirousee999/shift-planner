@@ -12,6 +12,15 @@ const COLUMNS = [
     ],
   },
   {
+    title: "Статьи",
+    links: [
+      { label: "Как составить график 2/2", href: "/blog/kak-sostavit-grafik-2-2" },
+      { label: "Сменный график по ТК РФ", href: "/blog/smennyj-grafik-po-tk-rf" },
+      { label: "График смен в Excel", href: "/blog/grafik-smen-v-excel" },
+      { label: "Заявление на смену графика", href: "/blog/zayavlenie-na-smenu-grafika" },
+    ],
+  },
+  {
     title: "Компания",
     links: [
       { label: "О нас", href: "/about" },
@@ -46,7 +55,8 @@ export default function LandingFooter() {
   return (
     <footer className="border-t border-slate-200 bg-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+        {/* Изменено на grid-cols-5, чтобы вместить новую колонку */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-8">
           <div className="col-span-2 md:col-span-1">
             <div className="flex items-center gap-2 mb-4">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center">

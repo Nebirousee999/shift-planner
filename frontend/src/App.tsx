@@ -6,6 +6,8 @@ import { useOrganization } from "./store/organization";
 // Основные страницы
 import LoginPage from "./pages/LoginPage";
 import LandingPage from "./pages/LandingPage";
+import BlogPage from "./pages/BlogPage";
+import BlogArticlePage from "./pages/BlogArticlePage";
 import WalletPage from "./pages/WalletPage";
 import DashboardPage from "./pages/DashboardPage";
 import TemplatesPage from "./pages/TemplatesPage";
@@ -97,6 +99,8 @@ export default function App() {
         />
 
         {/* ─── ПУБЛИЧНЫЕ (Информационные страницы) ─── */}
+        <Route path="/blog" element={<BlogPage />} />
+        <Route path="/blog/:slug" element={<BlogArticlePage />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/contacts" element={<ContactsPage />} />
         <Route path="/privacy" element={<LegalPage type="privacy" />} />
