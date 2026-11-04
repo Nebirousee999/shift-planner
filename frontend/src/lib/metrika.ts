@@ -4,8 +4,7 @@ declare global {
   }
 }
 
-// Замени 99999999 на свой реальный ID счетчика Метрики
-const COUNTER_ID = 99999999; 
+const COUNTER_ID = 114078577;
 
 export function trackEvent(eventName: string, params?: Record<string, any>) {
   try {
