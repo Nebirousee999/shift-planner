@@ -12,6 +12,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { useAuth } from "../store/auth";
+import { trackEvent } from "../lib/metrika";
 
 const loginSchema = z.object({
   email: z.string().email("Некорректный email"),
@@ -65,6 +66,7 @@ export default function LoginPage() {
   const onRegister = async (data: RegisterForm) => {
     const ok = await registerUser(data);
     if (ok) {
+      trackEvent("ym-register");
       const redirect = getPostAuthRedirect();
       setTimeout(() => navigate(redirect), 100);
     }

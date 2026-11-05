@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Wallet, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
 import { paymentsApi, type CurrentSubscription, type Payment } from "../api/payments";
+import { trackEvent } from "../lib/metrika";
 import NavBar from "../components/NavBar";
 
 const TARIFFS = {
@@ -85,6 +86,7 @@ export default function WalletPage() {
   }, [checkoutPlan]);
 
   const handlePay = async (tariffId: "pro" | "business", overrideYearly?: boolean) => {
+    trackEvent("ym-begin-checkout", { tariff: tariffId });
     const useYearly = overrideYearly !== undefined ? overrideYearly : yearly;
     setPaying(tariffId);
     try {
