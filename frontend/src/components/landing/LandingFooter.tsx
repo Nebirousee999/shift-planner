@@ -121,11 +121,10 @@ export default function LandingFooter() {
           ))}
         </div>
 
-        <div className="mt-10 pt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
-          <div>
-            © {new Date().getFullYear()} Планировщик смен · Все права защищены
-          </div>
-          <div>Сделано с ❤️ для малого бизнеса</div>
+        <div className="mt-10 pt-6 border-t border-slate-100 flex flex-col items-center justify-center gap-2 text-xs text-slate-500 text-center">
+          <div>© {new Date().getFullYear()} Планировщик смен · Все права защищены</div>
+          <div>ИП Приходько Сергей Сергеевич · ИНН 701729214964 · ОГРНИП 323470400073210</div>
+          <div className="mt-1">Сделано с ❤️ для малого бизнеса</div>
         </div>
       </div>
     </footer>
