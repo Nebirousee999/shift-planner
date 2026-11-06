@@ -79,9 +79,7 @@ export default function LoginPage() {
         <div className="w-full max-w-md">
           {/* Логотип */}
           <div className="flex items-center gap-3 mb-8">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shadow-lg shadow-brand-500/20">
-              <CalendarDays className="w-6 h-6 text-white" />
-            </div>
+            <img src="/favicon.svg" alt="Логотип" className="w-12 h-12 object-contain shadow-lg shadow-brand-500/20" />
             <div>
               <div className="font-bold text-lg text-slate-900 leading-none">
                 Планировщик

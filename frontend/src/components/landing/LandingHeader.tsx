@@ -67,9 +67,7 @@ export default function LandingHeader() {
           }}
           className="flex items-center gap-2 shrink-0"
         >
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center">
-            <CalendarDays className="w-5 h-5 text-white" />
-          </div>
+          <img src="/favicon.svg" alt="Логотип" className="w-9 h-9 object-contain" />
           <span className="font-bold text-slate-900">Планировщик</span>
         </button>
 

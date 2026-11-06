@@ -28,79 +28,39 @@ function patchFile(p, replaces) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 1. ОБНОВЛЯЕМ LEGAL PAGE (Оферта, Соглашение, Политика)
+// Исправляем классы у картинки во всех файлах
 // ═══════════════════════════════════════════════════════════════
-patchFile("frontend/src/pages/LegalPage.tsx", [
-  // --- ОФЕРТА ---
-  [
-    `            <p>
-              Настоящий документ является официальным предложением (публичной офертой)
-              ООО «Планировщик» (далее — Исполнитель) заключить договор на оказание
-              платных услуг по предоставлению доступа к расширенному функционалу Сервиса
-              «Планировщик смен» на изложенных ниже условиях.
-            </p>`,
-    `            <p>
-              Настоящий документ является публичной офертой (далее — «Оферта»)
-              Индивидуального предпринимателя <strong>Приходько Сергей Сергеевич</strong>
-              (ИНН <strong>701729214964</strong>, ОГРНИП <strong>323470400073210</strong>, далее — «Исполнитель»),
-              и содержит все существенные условия оказания информационных услуг
-              через сайт <strong>shift-planner.ru</strong> (далее — «Сайт»).
-            </p>`
-  ],
-  // --- СОГЛАШЕНИЕ (Заменяем ООО на ИП) ---
-  [
-    `      <p>
-        Настоящее Пользовательское соглашение (далее — Соглашение) регулирует
-        отношения между ООО «Планировщик» (далее — Администрация) и любым лицом,
-        использующим сервис «Планировщик смен» (далее — Сервис).
-      </p>`,
-    `      <p>
-        Настоящее Пользовательское соглашение (далее — Соглашение) регулирует
-        отношения между ИП Приходько Сергей Сергеевич (ИНН 701729214964, ОГРНИП 323470400073210) (далее — Администрация) и любым лицом,
-        использующим сервис «Планировщик смен» (далее — Сервис).
-      </p>`
-  ],
-  // --- ПОЛИТИКА (Добавляем блок реквизитов в конец) ---
-  [
-    `        Вы имеете право на доступ к своим данным, их изменение или удаление. Для
-        удаления аккаунта и всех связанных данных необходимо направить запрос на
-        почту <a href="mailto:help@shift-planner.ru" className="text-brand-600 hover:underline">help@shift-planner.ru</a>.
-      </p>
-    </>`,
-    `        Вы имеете право на доступ к своим данным, их изменение или удаление. Для
-        удаления аккаунта и всех связанных данных необходимо направить запрос на
-        почту <a href="mailto:help@shift-planner.ru" className="text-brand-600 hover:underline">help@shift-planner.ru</a>.
-      </p>
 
-      <h2 className="text-lg font-bold text-slate-900 mt-8 mb-2">5. Реквизиты Оператора</h2>
-      <p>
-        <b>Индивидуальный предприниматель:</b> Приходько Сергей Сергеевич<br/>
-        <b>ИНН:</b> 701729214964<br/>
-        <b>ОГРНИП:</b> 323470400073210<br/>
-        <b>Email:</b> help@shift-planner.ru
-      </p>
-    </>`
+// 1. LandingHeader (размер w-9 h-9)
+patchFile("frontend/src/components/landing/LandingHeader.tsx", [
+  [
+    `className="w-9 h-9 rounded-xl object-cover"`,
+    `className="w-9 h-9 object-contain"`
   ]
 ]);
 
-// ═══════════════════════════════════════════════════════════════
-// 2. ОБНОВЛЯЕМ ФУТЕР (Добавляем реквизиты)
-// ═══════════════════════════════════════════════════════════════
+// 2. NavBar (размер w-8 h-8, два места)
+patchFile("frontend/src/components/NavBar.tsx", [
+  [
+    `className="w-8 h-8 rounded-lg object-cover"`,
+    `className="w-8 h-8 object-contain"`
+  ]
+]);
+
+// 3. LoginPage (размер w-12 h-12)
+patchFile("frontend/src/pages/LoginPage.tsx", [
+  [
+    `className="w-12 h-12 rounded-2xl object-cover shadow-lg shadow-brand-500/20"`,
+    `className="w-12 h-12 object-contain shadow-lg shadow-brand-500/20"`
+  ]
+]);
+
+// 4. LandingFooter (размер w-8 h-8)
 patchFile("frontend/src/components/landing/LandingFooter.tsx", [
   [
-    `        <div className="mt-10 pt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
-          <div>
-            © {new Date().getFullYear()} Планировщик смен · Все права защищены
-          </div>
-          <div>Сделано с ❤️ для малого бизнеса</div>
-        </div>`,
-    `        <div className="mt-10 pt-6 border-t border-slate-100 flex flex-col items-center justify-center gap-2 text-xs text-slate-500 text-center">
-          <div>© {new Date().getFullYear()} Планировщик смен · Все права защищены</div>
-          <div>ИП Приходько Сергей Сергеевич · ИНН 701729214964 · ОГРНИП 323470400073210</div>
-          <div className="mt-1">Сделано с ❤️ для малого бизнеса</div>
-        </div>`
+    `className="w-8 h-8 rounded-lg object-cover"`,
+    `className="w-8 h-8 object-contain"`
   ]
 ]);
 
-console.log("\n✅ Юридические документы и футер успешно обновлены!");
-console.log("ООО заменено на ИП, добавлены реквизиты и исправлен домен.");
+console.log("\n✅ Картинки исправлены! Убрано обрезание углов (заменено на object-contain).");
