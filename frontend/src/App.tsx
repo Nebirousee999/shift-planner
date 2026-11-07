@@ -33,6 +33,7 @@ import LegalPage from "./pages/LegalPage";
 
 // Глобальные компоненты
 import DialogHost from "./components/DialogHost";
+import OnboardingWidget from "./components/OnboardingWidget";
 import CookieBanner from "./components/CookieBanner";
 import PaymentSuccessPage from "./pages/PaymentSuccessPage";
 import HistoryPage from "./pages/HistoryPage";
@@ -78,6 +79,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <DialogHost />
+      <OnboardingWidget />
       
       {/* Cookie-баннер рендерим глобально, чтобы он был на всех страницах */}
       <CookieBanner />

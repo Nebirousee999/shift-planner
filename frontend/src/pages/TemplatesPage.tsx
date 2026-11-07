@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -45,7 +46,10 @@ type AreasClipboard = {
 } | null;
 
 export default function TemplatesPage() {
-  const [tab, setTab] = useState<Tab>("shifts");
+  const [searchParams] = useSearchParams();
+  const urlTab = searchParams.get("tab") as Tab;
+  const initialTab: Tab = (urlTab === "areas" || urlTab === "positions") ? urlTab : "shifts";
+  const [tab, setTab] = useState<Tab>(initialTab);
 
   // Смены
   const { items: shifts, fetch: fetchShifts, create: createShift, remove: removeShift } = useShiftTemplates();

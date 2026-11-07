@@ -8,6 +8,8 @@ import {
   Bell, Send, MessageSquare, Check, Loader2, X, User as UserIcon,
 } from "lucide-react";
 import { useAuth } from "../store/auth";
+import { useUsers } from "../store/users";
+import { usersApi } from "../api/users";
 import {
   meApi,
   type MyProfile,
@@ -66,6 +68,7 @@ const SECTIONS: Section[] = [
   { id: "overtime", label: "Переработки", icon: Percent, group: "org" },
   { id: "tax", label: "Налоги", icon: Percent, group: "org" },
   { id: "appearance", label: "Внешний вид", icon: Palette, group: "org" },
+  { id: "passwords", label: "Доступы и пароли", icon: KeyRound, group: "org" },
 ];
 
 function initials(name: string): string {
@@ -342,6 +345,10 @@ export default function ProfilePage() {
                   saving={orgSaving}
                   onSave={() => savePartialOrg({ taxRate: orgForm.taxRate })}
                 />
+              )}
+
+              {section === "passwords" && isOwner && (
+                <PasswordsSection />
               )}
 
               {section === "appearance" && isOwner && org && (
@@ -1115,6 +1122,77 @@ function ProviderCard({
           ID: <span className="font-mono font-medium">{boundValue}</span>
         </div>
       )}
+    </div>
+  );
+}
+
+function PasswordsSection() {
+  const { items, fetch } = useUsers();
+  const [sendingAll, setSendingAll] = useState(false);
+
+  useEffect(() => { fetch(); }, [fetch]);
+
+  const withPasswords = items.filter(u => u.tempPassword);
+
+  const handleSendAll = async () => {
+    if (!withPasswords.length) return alert("Нет пользователей с временными паролями");
+    if (!confirm(`Разослать пароли на почту ${withPasswords.length} сотрудникам?`)) return;
+    setSendingAll(true);
+    try {
+      const res = await usersApi.sendPasswords(withPasswords.map(u => u.id));
+      alert(`Успешно отправлено: ${res.sent} писем`);
+    } catch {
+      alert("Ошибка рассылки. Проверьте настройки SMTP.");
+    } finally {
+      setSendingAll(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 animate-fade-in">
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
+            <KeyRound className="w-5 h-5 text-amber-600" />
+          </div>
+          <div>
+            <h2 className="font-semibold text-slate-900">Доступы и пароли</h2>
+            <p className="text-xs text-slate-500">Пользователи, которые еще не сменили временный пароль</p>
+          </div>
+        </div>
+        <button onClick={handleSendAll} disabled={sendingAll || withPasswords.length === 0} className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium transition-colors">
+          <Send className="w-4 h-4" />
+          {sendingAll ? "Отправка..." : "Разослать пароли на почту"}
+        </button>
+      </div>
+
+      {withPasswords.length === 0 ? (
+        <p className="text-sm text-slate-500 py-4">Все сотрудники уже сменили временные пароли.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 text-xs uppercase">
+              <tr>
+                <th className="px-4 py-3">Сотрудник</th>
+                <th className="px-4 py-3">Email</th>
+                <th className="px-4 py-3">Временный пароль</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {withPasswords.map(u => (
+                <tr key={u.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-3 font-medium text-slate-900">{u.name}</td>
+                  <td className="px-4 py-3 text-slate-600 select-all">{u.email}</td>
+                  <td className="px-4 py-3 font-mono font-bold text-brand-600 text-base select-all">{u.tempPassword}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="text-xs text-slate-400 mt-4">
+        * Пароли в таблице можно выделить и скопировать двойным кликом.
+      </p>
     </div>
   );
 }

@@ -77,6 +77,7 @@ export const users = pgTable("users", {
   email: varchar("email", { length: 255 }).notNull().unique(),
   phone: varchar("phone", { length: 20 }),
   passwordHash: varchar("password_hash", { length: 255 }).notNull(),
+  tempPassword: varchar("temp_password", { length: 255 }),
   role: roleEnum("role").default("EMPLOYEE").notNull(),
   position: varchar("position", { length: 255 }),
   hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }),

@@ -3,9 +3,11 @@ import {
   UserPlus, Search, Trash2, X, Check, Pencil, Save,
   MapPin, Briefcase, Layers, ChevronDown,
   FileSpreadsheet, Upload, Users as UsersIcon,
-  LayoutList, LayoutGrid,
+  LayoutList, LayoutGrid, HelpCircle, Send,
 } from "lucide-react";
+import { Link } from "react-router-dom";
 import { useUsers } from "../store/users";
+import { usersApi } from "../api/users";
 import { useAuth } from "../store/auth";
 import { useLocations } from "../store/locations";
 import { useAreas } from "../store/areas";
@@ -54,7 +56,8 @@ type BulkAction =
   | "setRate"
   | "setRole"
   | "setPaymentType"
-  | "setEmploymentType";
+  | "setEmploymentType"
+  | "delete";
 
 type ViewMode = "groups" | "matrix";
 
@@ -100,6 +103,7 @@ export default function TeamPage() {
 
   // Создание
   const [showForm, setShowForm] = useState(false);
+  const [createdUserData, setCreatedUserData] = useState<{ id: string; name: string; email: string; tempPassword: string } | null>(null);
   const [createForm, setCreateForm] = useState({
     name: "",
     email: "",
@@ -405,10 +409,12 @@ export default function TeamPage() {
       const result = await create(payload);
 
       if (result.tempPassword) {
-        await alertDialog(
-          `Сотрудник создан!\n\nВременный пароль: ${result.tempPassword}\n\nПередайте его сотруднику.`,
-          { title: "Готово", variant: "success" }
-        );
+        setCreatedUserData({
+          id: result.user.id,
+          name: createForm.name,
+          email: createForm.email,
+          tempPassword: result.tempPassword
+        });
       }
 
       setCreateForm({
@@ -417,7 +423,20 @@ export default function TeamPage() {
       });
       setShowForm(false);
     } catch (e: any) {
-      await alertDialog(e.response?.data?.error ?? "Ошибка создания", { variant: "error" });
+      let msg = "Не удалось создать сотрудника. Попробуйте позже.";
+      
+      // Обработка конкретных статусов
+      if (e.response?.status === 409) {
+        msg = "Сотрудник с таким Email уже существует. Пожалуйста, укажите другой Email.";
+      } else if (e.response?.status === 403) {
+        msg = e.response?.data?.error || "Достигнут лимит сотрудников на вашем тарифе.";
+      } else if (e.response?.data?.error) {
+        msg = typeof e.response.data.error === "string" 
+                ? e.response.data.error 
+                : JSON.stringify(e.response.data.error);
+      }
+
+      await alertDialog(msg, { title: "Ошибка создания", variant: "error" });
     } finally {
       setCreating(false);
     }
@@ -486,19 +505,32 @@ export default function TeamPage() {
 
   // ─── Массовые действия ───────────────────────────
   const onBulkApply = async () => {
-    if (!bulkAction || !bulkValue || selected.size === 0) return;
+    if (!bulkAction || (bulkAction !== "delete" && !bulkValue) || selected.size === 0) return;
     if (bulkAction === "setRole" && !["OWNER", "MANAGER", "EMPLOYEE"].includes(bulkValue)) return;
     if (bulkAction === "setPaymentType" && !["HOURLY", "MONTHLY"].includes(bulkValue)) return;
     if (bulkAction === "setEmploymentType" && !["GPH", "SHTAT"].includes(bulkValue)) return;
+    if (bulkAction === "delete") {
+      const ok = await confirmDialog(`Удалить выбранных сотрудников (${selected.size})? Это действие нельзя отменить.`, { title: "Удаление", variant: "danger", confirmLabel: "Удалить" });
+      if (!ok) return;
+    }
 
     setBulkBusy(true);
     try {
-      await bulkUpdate(Array.from(selected), {
-        action: bulkAction, value: bulkValue,
-      } as any);
-      setSelected(new Set());
-      setBulkAction("");
-      setBulkValue("");
+      if (bulkAction === "delete") {
+        for (const id of Array.from(selected)) {
+          await remove(id);
+        }
+        setSelected(new Set());
+        setBulkAction("");
+        setBulkValue("");
+      } else {
+        await bulkUpdate(Array.from(selected), {
+          action: bulkAction, value: bulkValue,
+        } as any);
+        setSelected(new Set());
+        setBulkAction("");
+        setBulkValue("");
+      }
     } catch (e: any) {
       await alertDialog(e.response?.data?.error ?? "Ошибка", { variant: "error" });
     } finally {
@@ -632,7 +664,15 @@ export default function TeamPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Должность</label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-sm font-medium text-slate-700">Должность</label>
+                    <div className="group relative flex items-center">
+                      <HelpCircle className="w-4 h-4 text-slate-400 hover:text-brand-600 cursor-help transition-colors" />
+                      <div className="absolute bottom-full right-0 mb-2 w-64 p-2.5 bg-slate-800 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none leading-relaxed">
+                        Создавать и редактировать должности можно в разделе «Шаблоны» → «Должности».
+                      </div>
+                    </div>
+                  </div>
                   <select value={createForm.position} onChange={(e) => setCreateForm((f) => ({ ...f, position: e.target.value }))}>
                     <option value="">Без должности</option>
                     {positions.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
@@ -853,6 +893,7 @@ export default function TeamPage() {
                   <option value="setPaymentType">Изменить форму оплаты</option>
                   <option value="setEmploymentType">Изменить трудоустройство</option>
                   <option value="setRole">Изменить роль</option>
+                  <option value="delete" className="text-red-600 font-medium">Удалить выбранных</option>
                 </select>
 
                 {bulkAction === "setPosition" && (
@@ -891,7 +932,7 @@ export default function TeamPage() {
                   </select>
                 )}
 
-                <button onClick={onBulkApply} disabled={selected.size === 0 || !bulkAction || !bulkValue || bulkBusy} className="bg-brand-600 text-white px-4 py-1.5 rounded-lg hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium">
+                <button onClick={onBulkApply} disabled={selected.size === 0 || !bulkAction || (bulkAction !== "delete" && !bulkValue) || bulkBusy} className="bg-brand-600 text-white px-4 py-1.5 rounded-lg hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium">
                   {bulkBusy ? "..." : "Применить"}
                 </button>
                 <button onClick={() => setSelected(new Set())} disabled={selected.size === 0} className="text-sm text-slate-600 hover:bg-white px-3 py-1.5 rounded-lg disabled:opacity-40">
@@ -912,6 +953,7 @@ export default function TeamPage() {
               saving={matrixSaving}
               onToggleArea={handleMatrixToggle}
               onEdit={(u) => setEditingUser(u)}
+              onDelete={onDelete}
               onStartEdit={() => setMatrixEditMode(true)}
               onCancelEdit={onMatrixCancel}
               onApply={onMatrixApply}
@@ -924,6 +966,59 @@ export default function TeamPage() {
         )}
       </main>
 
+      {createdUserData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={() => setCreatedUserData(null)}>
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-6 animate-fade-in" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
+                  <Check className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-slate-900 text-lg">Сотрудник создан!</h3>
+                  <p className="text-sm text-slate-500">{createdUserData.name}</p>
+                </div>
+              </div>
+              <button onClick={() => setCreatedUserData(null)} className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100 transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-slate-50 rounded-xl p-4 mb-6 border border-slate-200">
+              <div className="text-xs text-slate-500 mb-1">Временный пароль:</div>
+              <div className="font-mono font-bold text-lg text-brand-600 select-all">{createdUserData.tempPassword}</div>
+              <div className="text-xs text-slate-500 mt-3 mb-1">Email:</div>
+              <div className="text-sm font-medium text-slate-900 select-all">{createdUserData.email}</div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={async () => {
+                  try {
+                    await usersApi.sendPasswords([createdUserData.id]);
+                    await alertDialog("Пароль успешно отправлен на почту!", { variant: "success" });
+                    setCreatedUserData(null);
+                  } catch (err: any) {
+                    const errorMsg = err.response?.data?.error || err.message || "Проверьте настройки SMTP в .env";
+                    await alertDialog(`Ошибка отправки: ${errorMsg}`, { title: "Ошибка", variant: "error" });
+                  }
+                }}
+                className="w-full inline-flex items-center justify-center gap-2 bg-brand-600 text-white px-4 py-2.5 rounded-xl hover:bg-brand-700 text-sm font-medium shadow-sm transition-all"
+              >
+                <Send className="w-4 h-4" />
+                Отправить на почту
+              </button>
+              <button
+                onClick={() => setCreatedUserData(null)}
+                className="w-full inline-flex items-center justify-center gap-2 bg-slate-100 text-slate-700 px-4 py-2.5 rounded-xl hover:bg-slate-200 text-sm font-medium transition-all"
+              >
+                ОК
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {editingUser && (
         <EditUserModal
           user={editingUser}
@@ -931,6 +1026,10 @@ export default function TeamPage() {
           areas={areas}
           positions={positions}
           onClose={() => setEditingUser(null)}
+          onDelete={() => {
+            onDelete(editingUser.id, editingUser.name);
+            setEditingUser(null);
+          }}
           onSave={async (data) => {
             try {
               await update(editingUser.id, data);
@@ -952,7 +1051,7 @@ export default function TeamPage() {
 // ═══════════════════════════════════════════════════════
 function MatrixView({
   users, locations, areas, positions, headerOpacity, rowOpacity,
-  editMode, pendingChanges, saving, onToggleArea, onEdit,
+  editMode, pendingChanges, saving, onToggleArea, onEdit, onDelete,
   onStartEdit, onCancelEdit, onApply,
   selected, onToggleSelect, onToggleSelectAll, onToggleSelectPosition,
 }: {
@@ -967,6 +1066,7 @@ function MatrixView({
   saving: boolean;
   onToggleArea: (u: TeamUser, a: Area) => void;
   onEdit: (u: TeamUser) => void;
+  onDelete: (id: string, name: string) => void;
   onStartEdit: () => void;
   onCancelEdit: () => void;
   onApply: () => void;
@@ -1007,25 +1107,27 @@ function MatrixView({
     return entries;
   }, [users]);
 
-  if (locationsWithAreas.length === 0) {
-    return (
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center">
-        <MapPin className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-        <h3 className="font-semibold text-slate-900 mb-1">Нет локаций</h3>
-        <p className="text-sm text-slate-500 max-w-sm mx-auto">
-          Создайте точки и локации в разделе «Шаблоны → Локации» — тогда здесь появится матрица привязок.
-        </p>
-      </div>
-    );
-  }
+
 
   const changedCount = pendingChanges.size;
   const allSelected = users.length > 0 && users.every((u) => selected.has(u.id));
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-      <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex items-center gap-2 flex-wrap">
-        <LayoutGrid className="w-4 h-4 text-brand-600" />
+    <div className="space-y-4">
+      {locationsWithAreas.length === 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3 shadow-sm">
+          <MapPin className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="text-sm text-amber-800 leading-relaxed">
+            <b>Локации еще не созданы.</b> Вы можете добавлять сотрудников и управлять ими, но чтобы распределить их по точкам и локациям, создайте их по пути:{" "}
+            Расписание → <Link to="/templates" className="font-bold underline hover:text-amber-900 transition-colors">Шаблоны</Link> →{" "}
+            <Link to="/templates?tab=areas" className="font-bold underline hover:text-amber-900 transition-colors">Локации</Link>.{" "}
+            После этого здесь появится матрица привязок.
+          </div>
+        </div>
+      )}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex items-center gap-2 flex-wrap">
+          <LayoutGrid className="w-4 h-4 text-brand-600" />
         <span className="font-semibold text-slate-900 text-sm">Матрица привязок</span>
         <span className="text-xs text-slate-500">{users.length} сотр. · {totalAreaCols} локаций</span>
 
@@ -1095,10 +1197,10 @@ function MatrixView({
             <tr>
               {locationsWithAreas.flatMap((loc) =>
                 (areasByLoc.get(loc.id) ?? []).map((a) => (
-                  <th key={a.id} className="bg-slate-50 border-r border-b border-slate-300 px-1.5 py-1.5 text-center font-medium text-slate-700 min-w-[80px] text-[11px]" title={`${loc.name} · ${a.name}`}>
+                  <th key={a.id} className="bg-slate-50 border-r border-b border-slate-300 px-1.5 py-1.5 text-center font-medium text-slate-700 min-w-[110px] text-[11px]" title={`${loc.name} · ${a.name}`}>
                     <div className="flex items-center justify-center gap-1">
                       <Layers className="w-3 h-3 text-slate-400" />
-                      <span className="truncate max-w-[70px] inline-block align-bottom">{a.name}</span>
+                      <span className="truncate max-w-[130px] inline-block align-bottom">{a.name}</span>
                     </div>
                   </th>
                 ))
@@ -1161,14 +1263,23 @@ function MatrixView({
                             <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-semibold shrink-0 ${getAvatarColor(u.id)}`}>
                               {getInitials(u.name)}
                             </div>
-                            <div className="min-w-0 flex-1">
-                              <button onClick={() => onEdit(u)} className="text-xs font-medium text-slate-900 truncate hover:text-brand-700 text-left w-full" title="Редактировать">
-                                {u.name}
-                                {isChanged && <span className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-amber-500 align-middle" title="Есть несохранённые изменения" />}
-                              </button>
-                              <div className="text-[10px] text-slate-600 truncate">
-                                {u.hourlyRate ? `${u.hourlyRate} ${u.paymentType === "MONTHLY" ? "₽/мес" : "₽/ч"}` : u.email}
+                            <div className="min-w-0 flex-1 flex items-center justify-between group/name">
+                              <div className="min-w-0">
+                                <button onClick={() => onEdit(u)} className="text-xs font-medium text-slate-900 truncate hover:text-brand-700 text-left w-full" title="Редактировать">
+                                  {u.name}
+                                  {isChanged && <span className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-amber-500 align-middle" title="Есть несохранённые изменения" />}
+                                </button>
+                                <div className="text-[10px] text-slate-600 truncate">
+                                  {u.hourlyRate ? `${u.hourlyRate} ${u.paymentType === "MONTHLY" ? "₽/мес" : "₽/ч"}` : u.email}
+                                </div>
                               </div>
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); onDelete(u.id, u.name); }} 
+                                className="opacity-0 group-hover/name:opacity-100 text-slate-300 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-md transition-all shrink-0 ml-1" 
+                                title="Удалить сотрудника"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             </div>
                           </div>
                         </td>
@@ -1220,6 +1331,7 @@ function MatrixView({
         </table>
       </div>
     </div>
+    </div>
   );
 }
 
@@ -1227,13 +1339,14 @@ function MatrixView({
 // МОДАЛКА РЕДАКТИРОВАНИЯ
 // ═══════════════════════════════════════════════════════
 function EditUserModal({
-  user, locations, areas, positions, onClose, onSave,
+  user, locations, areas, positions, onClose, onSave, onDelete,
 }: {
   user: TeamUser;
   locations: { id: string; name: string }[];
   areas: { id: string; name: string; locationId: string }[];
   positions: { id: string; name: string; color: string }[];
   onClose: () => void;
+  onDelete?: () => void;
   onSave: (data: Partial<{
     name: string;
     phone: string | null;

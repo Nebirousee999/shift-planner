@@ -16,7 +16,7 @@ type State = {
     position?: string;
     hourlyRate?: string;
     phone?: string;
-  }) => Promise<{ tempPassword?: string }>;
+  }) => Promise<{ user: TeamUser; tempPassword?: string }>;
 
   update: (
     id: string,
@@ -66,7 +66,7 @@ export const useUsers = create<State>((set) => ({
   create: async (input) => {
     const result = await usersApi.create(input);
     set((s) => ({ items: [...s.items, result.user] }));
-    return { tempPassword: result.tempPassword };
+    return result; // <--- Возвращаем весь объект, чтобы взять result.user.id
   },
 
   update: async (id, input) => {

@@ -37,7 +37,8 @@
     "pg": "^8.23.1",
     "socks-proxy-agent": "^10.1.0",
     "yookassa-api-sdk": "^0.1.1",
-    "zod": "^4.6.6"
+    "zod": "^4.6.6",
+    "nodemailer": "^6.9.13"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
@@ -46,6 +47,7 @@
     "@types/pg": "^8.23.1",
     "drizzle-kit": "^0.31.11",
     "tsx": "^4.23.15",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "@types/nodemailer": "^6.4.15"
   }
 }

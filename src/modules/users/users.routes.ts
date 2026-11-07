@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { usersService } from "./users.service.js";
+import { mailerService } from "../../lib/mailer.service.js";
 import {
   buildUsersExcelTemplate,
   parseUsersExcel,
@@ -146,6 +147,18 @@ export async function usersRoutes(app: FastifyInstance) {
       }
       app.log.error(e);
       return reply.code(500).send({ error: "Ошибка удаления" });
+    }
+  });
+
+  app.post("/send-passwords", async (req, reply) => {
+    const parsed = z.object({ userIds: z.array(z.string().uuid()) }).safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const { orgId } = req.user!;
+    try {
+      const result = await usersService.sendPasswords(orgId, parsed.data.userIds);
+      return result;
+    } catch (e: any) {
+      return reply.code(500).send({ error: "Ошибка рассылки" });
     }
   });
 

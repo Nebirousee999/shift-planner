@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { db } from "../../../db/client.js";
 import {
   users,
+  organizations,
   scheduledShifts,
   shiftSwapRequests,
   shiftChangeRequests,
@@ -18,6 +19,7 @@ import {
   userMessengers,
 } from "../../../db/schema.js";
 import { POSITION_PALETTE } from "../../lib/colors.js";
+import { mailerService } from "../../lib/mailer.service.js";
 
 function generateTempPassword(length = 8): string {
   const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
@@ -72,6 +74,17 @@ async function resolveLocationIds(orgId: string, ids: string[]): Promise<string[
 }
 
 export const usersService = {
+  async sendPasswords(orgId: string, userIds: string[]) {
+    const validUsers = await db.select().from(users).where(and(eq(users.orgId, orgId), inArray(users.id, userIds)));
+    let sent = 0;
+    for (const u of validUsers) {
+      if (u.tempPassword) {
+        const ok = await mailerService.sendPasswordEmail(u.email, u.name, u.tempPassword);
+        if (ok) sent++;
+      }
+    }
+    return { sent };
+  },
   async list(orgId: string) {
     const rows = await db
       .select({
@@ -168,6 +181,7 @@ export const usersService = {
         name: input.name,
         email: input.email,
         passwordHash,
+        tempPassword: input.password ? null : plainPassword,
         role: input.role ?? "EMPLOYEE",
         position: input.position,
         hourlyRate: input.hourlyRate,

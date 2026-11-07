@@ -4,7 +4,7 @@ import {
   Calendar, Users, CalendarDays, Clock, FileText,
   ArrowLeftRight, UserCircle, LogOut, Palmtree,
   FileSpreadsheet, BarChart3, HelpCircle, AlertCircle, Wallet,
-  MapPin, History,
+  MapPin, History, ListChecks,
 } from "lucide-react";
 import { useAuth } from "../store/auth";
 import { useNotifications } from "../store/notifications";
@@ -142,29 +142,29 @@ export default function NavBar() {
             <NotificationBell />
             <button
               onClick={() => navigate("/help")}
-              className={`relative flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+              className={`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors ${
                 isActive(pathname, "/help")
                   ? "bg-brand-50 text-brand-700"
                   : "text-slate-600 hover:bg-slate-100"
               }`}
+              title="Справка"
             >
               <HelpCircle className="w-4 h-4" />
-              <span className="hidden lg:inline">Справка</span>
             </button>
             <button
               onClick={() => navigate("/profile")}
-              className={`relative flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+              className={`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors ${
                 isActive(pathname, "/profile")
                   ? "bg-brand-50 text-brand-700"
                   : "text-slate-600 hover:bg-slate-100"
               }`}
+              title="Профиль"
             >
               <UserCircle className="w-4 h-4" />
-              <span className="hidden lg:inline">{user?.name ?? user?.email}</span>
             </button>
             <button
               onClick={handleLogout}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors"
+              className="flex items-center justify-center p-2 rounded-lg text-sm text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors"
               title="Выйти"
             >
               <LogOut className="w-4 h-4" />
@@ -214,21 +214,21 @@ export default function NavBar() {
 
         <div className="flex items-center gap-2 shrink-0">
           <NotificationBell />
-          <button onClick={() => navigate("/help")} className={`relative flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${isActive(pathname, "/help") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`}>
+          <button onClick={() => window.dispatchEvent(new Event("show-onboarding"))} className="relative flex items-center justify-center p-2 rounded-lg text-sm text-slate-600 hover:bg-slate-100 transition-colors" title="С чего начать">
+            <ListChecks className="w-4 h-4" />
+          </button>
+          <button onClick={() => navigate("/help")} className={`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors ${isActive(pathname, "/help") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`} title="Справка">
             <HelpCircle className="w-4 h-4" />
-            <span className="hidden lg:inline">Справка</span>
           </button>
           {user?.role === "OWNER" && (
-            <button onClick={() => navigate("/wallet")} className={`relative flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${isActive(pathname, "/wallet") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`} title="Кошелек">
+            <button onClick={() => navigate("/wallet")} className={`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors ${isActive(pathname, "/wallet") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`} title="Текущий тариф">
               <Wallet className="w-4 h-4" />
-              <span className="hidden lg:inline">Кошелек</span>
             </button>
           )}
-          <button onClick={() => navigate("/profile")} className={`relative flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${isActive(pathname, "/profile") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`}>
+          <button onClick={() => navigate("/profile")} className={`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors ${isActive(pathname, "/profile") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`} title="Профиль">
             <UserCircle className="w-4 h-4" />
-            <span className="hidden lg:inline">{user?.name ?? user?.email}</span>
           </button>
-          <button onClick={handleLogout} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors">
+          <button onClick={handleLogout} className="flex items-center justify-center p-2 rounded-lg text-sm text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors" title="Выйти">
             <LogOut className="w-4 h-4" />
           </button>
         </div>

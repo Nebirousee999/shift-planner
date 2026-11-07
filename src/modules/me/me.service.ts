@@ -35,7 +35,7 @@ export const meService = {
     if (!ok) throw new Error("WRONG_PASSWORD");
 
     const hash = await bcrypt.hash(newPassword, 10);
-    await db.update(users).set({ passwordHash: hash }).where(eq(users.id, userId));
+    await db.update(users).set({ passwordHash: hash, tempPassword: null }).where(eq(users.id, userId));
   },
 
   async myShifts(

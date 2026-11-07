@@ -13,6 +13,7 @@ export type TeamUser = {
   areaIds: string[];
   paymentType: "HOURLY" | "MONTHLY";
   employmentType: "GPH" | "SHTAT";
+  tempPassword?: string | null;
 };
 
 export type BulkActionPayload =
@@ -78,6 +79,11 @@ export const usersApi = {
       userIds,
       ...payload,
     });
+    return data;
+  },
+
+  sendPasswords: async (userIds: string[]): Promise<{ sent: number }> => {
+    const { data } = await api.post<{ sent: number }>("/users/send-passwords", { userIds });
     return data;
   },
 
