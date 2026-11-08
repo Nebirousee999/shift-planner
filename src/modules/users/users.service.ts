@@ -78,9 +78,16 @@ export const usersService = {
     const validUsers = await db.select().from(users).where(and(eq(users.orgId, orgId), inArray(users.id, userIds)));
     let sent = 0;
     for (const u of validUsers) {
-      if (u.tempPassword) {
-        const ok = await mailerService.sendPasswordEmail(u.email, u.name, u.tempPassword);
-        if (ok) sent++;
+      let pwd = u.tempPassword;
+      if (!pwd) {
+        pwd = generateTempPassword();
+        const hash = await bcrypt.hash(pwd, 10);
+        await db.update(users).set({ tempPassword: pwd, passwordHash: hash }).where(eq(users.id, u.id));
+      }
+      const ok = await mailerService.sendPasswordEmail(u.email, u.name, pwd);
+      if (ok) {
+        sent++;
+        await db.update(users).set({ isTempPasswordSent: true }).where(eq(users.id, u.id));
       }
     }
     return { sent };
@@ -98,6 +105,8 @@ export const usersService = {
         paymentType: users.paymentType,
         employmentType: users.employmentType,
         createdAt: users.createdAt,
+        tempPassword: users.tempPassword,
+        isTempPasswordSent: users.isTempPasswordSent,
       })
       .from(users)
       .where(eq(users.orgId, orgId));
@@ -182,6 +191,7 @@ export const usersService = {
         email: input.email,
         passwordHash,
         tempPassword: input.password ? null : plainPassword,
+        isTempPasswordSent: false,
         role: input.role ?? "EMPLOYEE",
         position: input.position,
         hourlyRate: input.hourlyRate,
@@ -200,6 +210,7 @@ export const usersService = {
         paymentType: users.paymentType,
         employmentType: users.employmentType,
         createdAt: users.createdAt,
+        isTempPasswordSent: users.isTempPasswordSent,
       });
 
     if (input.position) {
@@ -314,6 +325,7 @@ export const usersService = {
         paymentType: users.paymentType,
         employmentType: users.employmentType,
         createdAt: users.createdAt,
+        isTempPasswordSent: users.isTempPasswordSent,
       })
       .from(users)
       .where(eq(users.id, input.id));

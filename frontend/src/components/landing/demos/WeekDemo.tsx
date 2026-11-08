@@ -267,7 +267,7 @@ export default function WeekDemo({ onInteract }: Props) {
 
       {/* Сетка */}
       <div className="-mx-1 overflow-x-auto pb-3">
-        <div className="grid grid-cols-7 gap-2 sm:gap-3 min-w-[720px] px-1">
+        <div className="flex sm:grid sm:grid-cols-7 gap-2 sm:gap-3 px-1 w-max sm:w-auto sm:min-w-0 snap-x snap-mandatory">
           {DATES.map((date, i) => {
             const dayShifts = byDay.get(i) ?? [];
             const isOver = dragOverDay === i;
@@ -286,7 +286,7 @@ export default function WeekDemo({ onInteract }: Props) {
                 onDragOver={(e) => onDragOver(e, i)}
                 onDragLeave={() => setDragOverDay(null)}
                 onDrop={(e) => onDrop(e, i)}
-                className={`rounded-xl border-2 min-h-[340px] p-2.5 flex flex-col min-w-0 transition-all ${
+                className={`w-[calc(50vw_-_1rem)] min-w-[140px] sm:min-w-0 sm:w-auto shrink-0 snap-start rounded-xl border-2 min-h-[340px] p-2.5 flex flex-col transition-all ${
                   isOver
                     ? "border-brand-400 bg-brand-50 ring-4 ring-brand-300/30"
                     : isWeekend
@@ -378,8 +378,8 @@ export default function WeekDemo({ onInteract }: Props) {
                           />
                         ) : (
                           <>
-                            <div className="flex items-center justify-between gap-1 mb-1">
-                              <span className="text-[10px] sm:text-[11px] font-semibold text-slate-800 whitespace-nowrap">
+                            <div className="flex items-center justify-between gap-1 mb-1 min-w-0">
+                              <span className="text-[10px] sm:text-[11px] font-semibold text-slate-800 truncate">
                                 {s.startTime}–{s.endTime}
                               </span>
                               <GripVertical className="w-3 h-3 text-slate-400 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity -mt-0.5" />
@@ -395,7 +395,7 @@ export default function WeekDemo({ onInteract }: Props) {
                             </div>
 
                             {/* Стоимость (ниже должности) */}
-                            <div className="text-slate-800 font-bold text-[10px] sm:text-[11px] mt-1">
+                            <div className="text-slate-800 font-bold text-[10px] sm:text-[11px] mt-1 truncate">
                               {shiftCost} ₽
                             </div>
 

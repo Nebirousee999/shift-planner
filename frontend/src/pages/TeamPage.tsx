@@ -995,7 +995,8 @@ export default function TeamPage() {
               <button
                 onClick={async () => {
                   try {
-                    await usersApi.sendPasswords([createdUserData.id]);
+                    const res = await usersApi.sendPasswords([createdUserData.id]);
+            if (res.sent === 0) throw new Error("Письмо не отправлено сервером.");
                     await alertDialog("Пароль успешно отправлен на почту!", { variant: "success" });
                     setCreatedUserData(null);
                   } catch (err: any) {

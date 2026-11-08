@@ -31,10 +31,10 @@ export async function authRoutes(app: FastifyInstance) {
             return { user, token };
         } catch (e: any) {
             if (e.message === "EMAIL_TAKEN") {
-                return reply.code(409).send({ error: "Email уже занят" });
+                return reply.code(409).send({ error: "Email СѓР¶Рµ Р·Р°РЅСЏС‚" });
             }
             app.log.error(e);
-            return reply.code(500).send({ error: "Ошибка регистрации" });
+            return reply.code(500).send({ error: "РћС€РёР±РєР° СЂРµРіРёСЃС‚СЂР°С†РёРё" });
         }
     });
 
@@ -53,7 +53,7 @@ export async function authRoutes(app: FastifyInstance) {
             });
             return { user, token };
         } catch {
-            return reply.code(401).send({ error: "Неверный email или пароль" });
+            return reply.code(401).send({ error: "РќРµРІРµСЂРЅС‹Р№ email РёР»Рё РїР°СЂРѕР»СЊ" });
         }
     });
 }

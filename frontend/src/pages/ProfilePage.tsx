@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
   Mail, Phone, Coins, Shield, KeyRound, Save, CalendarDays, Building2,
-  Lock, Pencil, Settings as SettingsIcon, Clock, Percent, Palette,
+  Lock, Pencil, Settings as SettingsIcon, Clock, Percent, Palette, AlertCircle,
   Bell, Send, MessageSquare, Check, Loader2, X, User as UserIcon,
 } from "lucide-react";
 import { useAuth } from "../store/auth";
@@ -1129,22 +1129,35 @@ function ProviderCard({
 function PasswordsSection() {
   const { items, fetch } = useUsers();
   const [sendingAll, setSendingAll] = useState(false);
+  const [sendingId, setSendingId] = useState<string | null>(null);
 
   useEffect(() => { fetch(); }, [fetch]);
 
-  const withPasswords = items.filter(u => u.tempPassword);
-
   const handleSendAll = async () => {
-    if (!withPasswords.length) return alert("Нет пользователей с временными паролями");
-    if (!confirm(`Разослать пароли на почту ${withPasswords.length} сотрудникам?`)) return;
+    if (!items.length) return alert("Нет сотрудников");
+    if (!confirm(`Разослать пароли на почту всем ${items.length} сотрудникам?`)) return;
     setSendingAll(true);
     try {
-      const res = await usersApi.sendPasswords(withPasswords.map(u => u.id));
-      alert(`Успешно отправлено: ${res.sent} писем`);
-    } catch {
-      alert("Ошибка рассылки. Проверьте настройки SMTP.");
+      const res = await usersApi.sendPasswords(items.map(u => u.id));
+      await alertDialog(`Успешно отправлено: ${res.sent} писем`, { variant: "success" });
+      fetch();
+    } catch (e: any) {
+      await alertDialog(e.response?.data?.error ?? "Ошибка рассылки", { variant: "error" });
     } finally {
       setSendingAll(false);
+    }
+  };
+
+  const handleSendOne = async (id: string) => {
+    setSendingId(id);
+    try {
+      await usersApi.sendPasswords([id]);
+      await alertDialog("Пароль отправлен на почту!", { variant: "success" });
+      fetch();
+    } catch (e: any) {
+      await alertDialog(e.response?.data?.error ?? "Ошибка отправки", { variant: "error" });
+    } finally {
+      setSendingId(null);
     }
   };
 
@@ -1157,17 +1170,17 @@ function PasswordsSection() {
           </div>
           <div>
             <h2 className="font-semibold text-slate-900">Доступы и пароли</h2>
-            <p className="text-xs text-slate-500">Пользователи, которые еще не сменили временный пароль</p>
+            <p className="text-xs text-slate-500">Сгенерировать новые пароли и отправить сотрудникам</p>
           </div>
         </div>
-        <button onClick={handleSendAll} disabled={sendingAll || withPasswords.length === 0} className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium transition-colors">
+        <button onClick={handleSendAll} disabled={sendingAll || items.length === 0} className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium transition-colors">
           <Send className="w-4 h-4" />
-          {sendingAll ? "Отправка..." : "Разослать пароли на почту"}
+          {sendingAll ? "Отправка..." : "Разослать всем на почту"}
         </button>
       </div>
 
-      {withPasswords.length === 0 ? (
-        <p className="text-sm text-slate-500 py-4">Все сотрудники уже сменили временные пароли.</p>
+      {items.length === 0 ? (
+        <p className="text-sm text-slate-500 py-4">В организации пока нет сотрудников.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
@@ -1176,14 +1189,44 @@ function PasswordsSection() {
                 <th className="px-4 py-3">Сотрудник</th>
                 <th className="px-4 py-3">Email</th>
                 <th className="px-4 py-3">Временный пароль</th>
+                <th className="px-4 py-3 text-right">Действие</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {withPasswords.map(u => (
+              {items.map(u => (
                 <tr key={u.id} className="hover:bg-slate-50">
                   <td className="px-4 py-3 font-medium text-slate-900">{u.name}</td>
                   <td className="px-4 py-3 text-slate-600 select-all">{u.email}</td>
-                  <td className="px-4 py-3 font-mono font-bold text-brand-600 text-base select-all">{u.tempPassword}</td>
+                  <td className="px-4 py-3">
+                    {u.tempPassword ? (
+                      <div className="flex flex-col gap-1">
+                        <span className="font-mono font-bold text-brand-600 text-base select-all">
+                          {u.tempPassword}
+                        </span>
+                        {u.isTempPasswordSent ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded w-fit">
+                            <Check className="w-3 h-3" /> Отправлен
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded w-fit">
+                            <AlertCircle className="w-3 h-3" /> Не отправлен
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-slate-400 font-normal text-xs">пароль изменён</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      onClick={() => handleSendOne(u.id)}
+                      disabled={sendingId === u.id}
+                      className="inline-flex items-center gap-1.5 text-brand-600 hover:text-brand-700 hover:bg-brand-50 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      {sendingId === u.id ? "Отправка..." : "Отправить"}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1191,7 +1234,7 @@ function PasswordsSection() {
         </div>
       )}
       <p className="text-xs text-slate-400 mt-4">
-        * Пароли в таблице можно выделить и скопировать двойным кликом.
+        * Если сотрудник уже сменил пароль, при отправке ему будет сгенерирован новый временный пароль.
       </p>
     </div>
   );

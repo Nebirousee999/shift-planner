@@ -14,6 +14,7 @@ export type TeamUser = {
   paymentType: "HOURLY" | "MONTHLY";
   employmentType: "GPH" | "SHTAT";
   tempPassword?: string | null;
+  isTempPasswordSent?: boolean;
 };
 
 export type BulkActionPayload =

@@ -156,9 +156,13 @@ export async function usersRoutes(app: FastifyInstance) {
     const { orgId } = req.user!;
     try {
       const result = await usersService.sendPasswords(orgId, parsed.data.userIds);
+      if (result.sent === 0) {
+        return reply.code(502).send({ error: "Письма не отправлены. Проверьте консоль сервера (возможно, SMTP-сервер отклонил запрос)." });
+      }
       return result;
     } catch (e: any) {
-      return reply.code(500).send({ error: "Ошибка рассылки" });
+      app.log.error(e);
+      return reply.code(500).send({ error: e.message || "Ошибка рассылки" });
     }
   });
 
