@@ -81,14 +81,32 @@ export const organizationService = {
       .from(organizations)
       .where(eq(organizations.id, input.orgId));
 
-    // 🤖 Если передан токен, получаем ID бота
+    // 🤖 Если передан токен, получаем ID бота и настраиваем вебхук
     let botId = undefined;
     if (input.maxBotToken) {
       try {
-        const { data } = await axios.get("https://platform-api2.max.ru/me", {
+        const { data: botInfo } = await axios.get("https://platform-api2.max.ru/me", {
           headers: { Authorization: input.maxBotToken },
         });
-        botId = data.id?.toString();
+        botId = botInfo.id?.toString();
+
+        // Автоматически подписываем бота на наш вебхук
+        try {
+          await axios.post("https://platform-api2.max.ru/subscriptions", {
+            url: "https://shift-planner.ru/api/webhooks/max",
+            update_types: ["message_created", "bot_started"],
+            secret: "super_secret_webhook_key_123" // Можно сгенерировать случайный
+          }, {
+            headers: { 
+              Authorization: input.maxBotToken,
+              "Content-Type": "application/json"
+            },
+          });
+          console.log(`✅ Бот ${botId} успешно подписан на вебхук`);
+        } catch (webhookError) {
+          console.error("Ошибка настройки вебхука MAX:", webhookError.response?.data || webhookError.message);
+          // Не прерываем сохранение токена, просто логируем ошибку
+        }
       } catch (e) {
         console.error("Ошибка получения ID бота MAX (проверьте токен):", e.message);
       }
