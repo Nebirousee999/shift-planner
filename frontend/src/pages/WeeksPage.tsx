@@ -169,7 +169,7 @@ export default function WeeksPage() {
   const [showForm, setShowForm] = useState(false);
   const [newDate, setNewDate] = useState(today.toISOString().slice(0, 10));
   const [creating, setCreating] = useState(false);
-  const [pendingDates, setPendingDates] = useState<Set<string>>(new Set());
+  const [shiftChangeDates, setShiftChangeDates] = useState<Set<string>>(new Set());
 
   const [clipboardWeek, setClipboardWeek] = useState<{
     startDate: string;
@@ -200,26 +200,22 @@ export default function WeeksPage() {
         set.add(String(r.oldShiftDate).slice(0, 10));
         set.add(String(r.newShiftDate).slice(0, 10));
       }
-      setPendingDates(set);
+      setShiftChangeDates(set);
     });
   }, [
     activeLocationId, fetchWeeks, fetchTemplates, fetchUsers,
     fetchVacations, fetchSickLeaves, fetchAreas, fetchPositions,
   ]);
 
-  useEffect(() => {
-    if (timeOffs.length > 0) {
-      setPendingDates((prev) => {
-        const next = new Set(prev);
-        for (const t of timeOffs) {
-          if (t.status === "PENDING") {
-            next.add(String(t.date).slice(0, 10));
-          }
-        }
-        return next;
-      });
+  const pendingDates = useMemo(() => {
+    const set = new Set(shiftChangeDates);
+    for (const t of timeOffs) {
+      if (t.status === "PENDING" && t.date) {
+        set.add(String(t.date).slice(0, 10));
+      }
     }
-  }, [timeOffs]);
+    return set;
+  }, [shiftChangeDates, timeOffs]);
 
   // ═════════════════════════════════════════════════════════
   // СВОДКА: только активная точка

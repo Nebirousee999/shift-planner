@@ -27,91 +27,25 @@ function patchFile(relPath, search, replace, label) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// 1. Очистка уведомлений в колокольчике при одобрении/отклонении
-// ═══════════════════════════════════════════════════════════════
-
-// Отгулы
-patchFile(
-  "src/modules/time-off/time-off.service.ts",
-  `    await messengerService.sendToUser(req.userId, \`<b>Отгул одобрен</b>\\n\\nВаш запрос на отгул на \${req.date} одобрен. Смена снята.\`);`,
-  `    await notificationsService.resolveActionable(id, "time_off_request", "APPROVED", reviewer?.name ?? "Руководитель", \`отгул на \${req.date} одобрен, смена снята\`);\n    await messengerService.sendToUser(req.userId, \`<b>Отгул одобрен</b>\\n\\nВаш запрос на отгул на \${req.date} одобрен. Смена снята.\`);`,
-  "time-off.service.ts (resolveActionable при одобрении)"
-);
-patchFile(
-  "src/modules/time-off/time-off.service.ts",
-  `    await messengerService.sendToUser(req.userId, \`<b>Отгул отклонён</b>\\n\\nЗапрос на \${req.date} отклонён.\`);`,
-  `    await notificationsService.resolveActionable(id, "time_off_request", "REJECTED", reviewer?.name ?? "Руководитель", \`отгул на \${req.date} отклонён\`);\n    await messengerService.sendToUser(req.userId, \`<b>Отгул отклонён</b>\\n\\nЗапрос на \${req.date} отклонён.\`);`,
-  "time-off.service.ts (resolveActionable при отклонении)"
-);
-
-// Отпуска
-patchFile(
-  "src/modules/vacations/vacations.service.ts",
-  `    await notificationsService.create({\n      orgId,\n      userId: vac.userId,\n      kind: "VACATION_APPROVED",`,
-  `    await notificationsService.resolveActionable(id, "vacation_request", "APPROVED", reviewer?.name ?? "Руководитель", \`отпуск одобрен\`);\n    await notificationsService.create({\n      orgId,\n      userId: vac.userId,\n      kind: "VACATION_APPROVED",`,
-  "vacations.service.ts (resolveActionable при одобрении)"
-);
-patchFile(
-  "src/modules/vacations/vacations.service.ts",
-  `    await notificationsService.create({\n      orgId,\n      userId: vac.userId,\n      kind: "VACATION_REJECTED",`,
-  `    await notificationsService.resolveActionable(id, "vacation_request", "REJECTED", reviewer?.name ?? "Руководитель", \`отпуск отклонён\`);\n    await notificationsService.create({\n      orgId,\n      userId: vac.userId,\n      kind: "VACATION_REJECTED",`,
-  "vacations.service.ts (resolveActionable при отклонении)"
-);
-
-// Обмены сменами
-patchFile(
-  "src/modules/swaps/swaps.service.ts",
-  `    if (req.requestedBy !== userId) {\n      await notificationsService.create({\n        orgId,\n        userId: req.requestedBy,\n        kind: "SWAP_ACCEPTED",`,
-  `    await notificationsService.resolveActionable(id, "swap_request", "APPROVED", accepter?.name ?? "Сотрудник", \`обмен смены на \${shiftDateStr} принят\`);\n    if (req.requestedBy !== userId) {\n      await notificationsService.create({\n        orgId,\n        userId: req.requestedBy,\n        kind: "SWAP_ACCEPTED",`,
-  "swaps.service.ts (resolveActionable при принятии)"
-);
-patchFile(
-  "src/modules/swaps/swaps.service.ts",
-  `    if (req.requestedBy !== userId) {\n      await notificationsService.create({\n        orgId,\n        userId: req.requestedBy,\n        kind: "SWAP_DECLINED",`,
-  `    await notificationsService.resolveActionable(id, "swap_request", "REJECTED", decliner?.name ?? "Сотрудник", \`обмен смены на \${shiftDateStr} отклонён\`);\n    if (req.requestedBy !== userId) {\n      await notificationsService.create({\n        orgId,\n        userId: req.requestedBy,\n        kind: "SWAP_DECLINED",`,
-  "swaps.service.ts (resolveActionable при отклонении)"
-);
-
-// Изменения смен
-patchFile(
-  "src/modules/shift-change-requests/shift-change-requests.service.ts",
-  `      await notificationsService.create({\n        orgId: req.orgId,\n        userId: req.requestedBy,\n        kind: "SHIFT_CHANGE_APPROVED",`,
-  `      await notificationsService.resolveActionable(id, "shift_change_request", "APPROVED", resolver?.name ?? "Сотрудник", \`смена изменена\`);\n      await notificationsService.create({\n        orgId: req.orgId,\n        userId: req.requestedBy,\n        kind: "SHIFT_CHANGE_APPROVED",`,
-  "shift-change-requests.service.ts (resolveActionable при одобрении)"
-);
-patchFile(
-  "src/modules/shift-change-requests/shift-change-requests.service.ts",
-  `    await notificationsService.create({\n      orgId: req.orgId,\n      userId: req.requestedBy,\n      kind: "SHIFT_CHANGE_REJECTED",`,
-  `    await notificationsService.resolveActionable(id, "shift_change_request", "REJECTED", resolver?.name ?? "Сотрудник", \`смена отклонена\`);\n    await notificationsService.create({\n      orgId: req.orgId,\n      userId: req.requestedBy,\n      kind: "SHIFT_CHANGE_REJECTED",`,
-  "shift-change-requests.service.ts (resolveActionable при отклонении)"
-);
-
-
-// ═══════════════════════════════════════════════════════════════
-// 2. Оранжевые точки на странице "Недели" (из предыдущего патча)
-// ═══════════════════════════════════════════════════════════════
+// 1. Переименовываем стейт (разделяем точки отгулов и изменения смен)
 patchFile(
   "frontend/src/pages/WeeksPage.tsx",
-  `import { useOrganization } from "../store/organization";`,
-  `import { useOrganization } from "../store/organization";\nimport { useTimeOff } from "../store/timeOff";`,
-  "WeeksPage.tsx (импорт useTimeOff)"
+  `  const [pendingDates, setPendingDates] = useState<Set<string>>(new Set());`,
+  `  const [shiftChangeDates, setShiftChangeDates] = useState<Set<string>>(new Set());`,
+  "WeeksPage.tsx (переименование стейта)"
 );
+
+// 2. Исправляем перезапись в Promise.all
 patchFile(
   "frontend/src/pages/WeeksPage.tsx",
-  `  const { items: positions, fetch: fetchPositions } = usePositions();`,
-  `  const { items: positions, fetch: fetchPositions } = usePositions();\n  const { items: timeOffs, fetch: fetchTimeOffs } = useTimeOff();`,
-  "WeeksPage.tsx (хук useTimeOff)"
+  `      setPendingDates(set);`,
+  `      setShiftChangeDates(set);`,
+  "WeeksPage.tsx (защита от перезаписи)"
 );
+
+// 3. Заменяем useEffect на useMemo (объединяем источники)
 patchFile(
   "frontend/src/pages/WeeksPage.tsx",
-  `    fetchAreas();\n    fetchPositions();\n    Promise.all([`,
-  `    fetchAreas();\n    fetchPositions();\n    fetchTimeOffs();\n    Promise.all([`,
-  "WeeksPage.tsx (вызов fetchTimeOffs)"
-);
-patchFile(
-  "frontend/src/pages/WeeksPage.tsx",
-  `  // ═════════════════════════════════════════════════════════\n  // СВОДКА: только активная точка`,
   `  useEffect(() => {
     if (timeOffs.length > 0) {
       setPendingDates((prev) => {
@@ -124,12 +58,27 @@ patchFile(
         return next;
       });
     }
-  }, [timeOffs]);
-
-  // ═════════════════════════════════════════════════════════
-  // СВОДКА: только активная точка`,
-  "WeeksPage.tsx (добавлен useEffect для отгулов)"
+  }, [timeOffs]);`,
+  `  const pendingDates = useMemo(() => {
+    const set = new Set(shiftChangeDates);
+    for (const t of timeOffs) {
+      if (t.status === "PENDING" && t.date) {
+        set.add(String(t.date).slice(0, 10));
+      }
+    }
+    return set;
+  }, [shiftChangeDates, timeOffs]);`,
+  "WeeksPage.tsx (useMemo для объединения точек)"
 );
+
+// 4. Добавляем useMemo в импорты (на всякий случай)
+patchFile(
+  "frontend/src/pages/WeeksPage.tsx",
+  `import { useEffect, useState } from "react";`,
+  `import { useEffect, useState, useMemo } from "react";`,
+  "WeeksPage.tsx (импорт useMemo)"
+);
+
 
 console.log("\n──────────────────────────────────────");
 if (touched > 0) {
