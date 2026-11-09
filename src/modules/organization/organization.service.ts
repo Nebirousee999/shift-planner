@@ -88,10 +88,10 @@ export const organizationService = {
         const { data: botInfo } = await axios.get("https://botapi.max.ru/me", {
           headers: { Authorization: input.maxBotToken },
         });
-        if (!botInfo || !botInfo.id) {
+        if (!botInfo || !botInfo.user_id) {
           throw new Error("API MAX не вернул ID бота");
         }
-        botId = botInfo.id.toString();
+        botId = botInfo.user_id.toString();
 
         // Автоматически подписываем бота на наш вебхук
         try {
