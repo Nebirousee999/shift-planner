@@ -580,6 +580,9 @@ function MessengerSection({ userId }: { userId: string }) {
     setSavingToken(true);
     try {
       const updated = await organizationApi.update({ maxBotToken: botToken.trim() });
+      if (!updated.maxBotId) {
+        throw new Error("Токен сохранен, но ID бота не получен. Проверьте правильность токена.");
+      }
       setOrg(updated);
       await alertDialog("Токен сохранен, вебхук настроен", { variant: "success" });
     } catch (e: any) {
