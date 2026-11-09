@@ -51,7 +51,7 @@ const ROLE_BADGES: Record<string, string> = {
 // ─── Разделы ───────────────────────────────────────
 type SectionId =
   | "profile" | "messenger"
-  | "requisites" | "modules" | "approval" | "overtime" | "tax" | "appearance";
+  | "requisites" | "modules" | "approval" | "overtime" | "tax" | "appearance" | "passwords";
 
 type Section = {
   id: SectionId;

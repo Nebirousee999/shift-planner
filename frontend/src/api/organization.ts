@@ -42,6 +42,8 @@ export const organizationApi = {
     positionHeaderOpacity?: number;
     positionRowOpacity?: number;
     taxRate?: string;
+    maxBotLink?: string | null;
+    maxBotToken?: string | null;
   }): Promise<Organization> => {
     const { data } = await api.patch<Organization>("/organization", input);
     return data;
