@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { eq, isNotNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import axios from "axios";
 import { db } from "../../../db/client.js";
 import { payments, organizations } from "../../../db/schema.js";
@@ -23,7 +23,6 @@ export async function webhooksRoutes(app: FastifyInstance) {
 
     try {
       if (event.event === "payment.succeeded") {
-        // 🛡️ БЕЗОПАСНОСТЬ: Проверяем статус платежа напрямую в API ЮKassa
         try {
           const realPayment = await yookassaService.getPayment(event.object.id);
           if (!realPayment || realPayment.status !== "succeeded" || !realPayment.paid) {
@@ -35,14 +34,11 @@ export async function webhooksRoutes(app: FastifyInstance) {
           return reply.code(500).send({ error: "Verification failed" });
         }
 
-        // 1. Обновляем статус платежа в нашей БД
         await db
           .update(payments)
           .set({ status: "succeeded", updatedAt: new Date() })
           .where(eq(payments.yookassaId, event.object.id));
 
-        // 2. Выдаем доступ (опционально, если нужно обновить тариф организации)
-        // Достаем платеж, чтобы узнать, какой тариф был куплен
         const [payment] = await db
           .select()
           .from(payments)
@@ -51,7 +47,6 @@ export async function webhooksRoutes(app: FastifyInstance) {
         if (payment && payment.metadata) {
           const meta = payment.metadata as { orgId: string; tariffId: string };
           
-          // Пример логики: если купили Business, даем 5 точек, иначе 1.
           if (meta.orgId) {
            const days = Number(meta.periodDays) || 30;
            const expiresAt = new Date();
@@ -66,7 +61,7 @@ export async function webhooksRoutes(app: FastifyInstance) {
               trialEndsAt: null
             })
             .where(eq(organizations.id, meta.orgId));
-        }
+          }
         }
       } 
       else if (event.event === "payment.canceled") {
@@ -76,29 +71,27 @@ export async function webhooksRoutes(app: FastifyInstance) {
           .where(eq(payments.yookassaId, event.object.id));
       }
 
-      // Обязательно подтверждаем получение, иначе ЮKassa будет слать повторно
       return reply.send({ ok: true });
     } catch (e: any) {
       app.log.error(e);
-      // Даже при ошибке БД лучше вернуть 200, чтобы ЮKassa не спамила,
-      // либо 500, если хотим, чтобы она повторила попытку позже.
       return reply.code(500).send({ error: "Internal Error" });
     }
   });
-
-
 
   // ─── MAX Bot Webhook ──────────────────────────────
   app.post("/max", async (req, reply) => {
     try {
       const body = req.body as any;
-      app.log.info({ maxPayload: body }, "🔥 MAX webhook payload received");
-      // MAX передает ID бота в корне или в recipient
-      const botId = (body.bot_id || body.recipient?.bot_id || body.message?.recipient?.bot_id)?.toString();
-      const senderId = body.message?.sender?.user_id?.toString();
+      const updateType = body.update_type;
+      const message = body.message;
+      const sender = message?.sender || body.user;
+      const recipient = message?.recipient;
 
-      if (body.update_type === "message_created" && senderId && botId) {
-        // Ищем организацию по ID бота
+      const senderId = sender?.user_id?.toString();
+      // В message_created получатель (recipient) — это бот
+      const botId = recipient?.user_id?.toString() || body.bot_id?.toString();
+
+      if (updateType === "message_created" && senderId && botId) {
         const [org] = await db
           .select({ token: organizations.maxBotToken })
           .from(organizations)
@@ -111,8 +104,9 @@ export async function webhooksRoutes(app: FastifyInstance) {
             { text: replyText },
             { headers: { Authorization: org.token } }
           );
+          app.log.info({ botId, senderId }, "✅ Отправлено приветственное сообщение в MAX");
         } else {
-          app.log.warn({ botId }, "Бот с таким ID не найден в БД или не имеет токена");
+          app.log.warn({ botId }, "❌ Бот не найден в БД или отсутствует токен");
         }
       }
       return reply.send({ ok: true });
@@ -121,5 +115,4 @@ export async function webhooksRoutes(app: FastifyInstance) {
       return reply.code(500).send({ error: "Internal Error" });
     }
   });
-
 }
