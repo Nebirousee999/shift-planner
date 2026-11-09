@@ -50,7 +50,7 @@ function elapsedSince(iso: string): string {
 export default function TimePage() {
 
   const org = useOrganization((s) => s.org);
-  const timeTrackingOn = org?.timeTrackingEnabled !== false;
+  const timeTrackingOn = org?.timeTrackingEnabled === true;
 
   const {
     items,

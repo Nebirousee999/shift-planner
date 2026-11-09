@@ -20,6 +20,8 @@ export type Organization = {
   tariffId?: "free" | "pro" | "business";
   tariffExpiresAt?: string | null;
   disciplineEditWindowDays?: number;
+  maxBotLink?: string | null;
+  maxBotToken?: string | null;
 };
 
 export const organizationApi = {

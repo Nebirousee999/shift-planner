@@ -3,7 +3,7 @@ import {
   UserPlus, Search, Trash2, X, Check, Pencil, Save,
   MapPin, Briefcase, Layers, ChevronDown,
   FileSpreadsheet, Upload, Users as UsersIcon,
-  LayoutList, LayoutGrid, HelpCircle, Send,
+  LayoutList, LayoutGrid, HelpCircle, Send, Info,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useUsers } from "../store/users";
@@ -1015,6 +1015,12 @@ export default function TeamPage() {
               >
                 ОК
               </button>
+            </div>
+            <div className="mt-4 bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-start gap-2.5 animate-fade-in">
+              <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+              <p className="text-[13px] text-blue-900 font-medium leading-relaxed">
+                Временные пароли всех сотрудников всегда можно посмотреть в настройках профиля в разделе <b>«Доступы и пароли»</b>.
+              </p>
             </div>
           </div>
         </div>

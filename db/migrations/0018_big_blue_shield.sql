@@ -1,0 +1,1 @@
+ALTER TABLE "organizations" ALTER COLUMN "time_tracking_enabled" SET DEFAULT false;

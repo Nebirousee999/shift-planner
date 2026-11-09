@@ -110,35 +110,11 @@ export const swapsService = {
   },
 
   // Доступные мне (открытые + адресные, где я не автор)
-  async available(userId: string) {
-    const rows = await db
-      .select()
-      .from(shiftSwapRequests)
-      .where(
-        ne(shiftSwapRequests.requestedBy, userId)
-      )
-      .orderBy(desc(shiftSwapRequests.createdAt));
+  async available(userId: string, orgId: string) {
+    // Получаем список всех сотрудников этой организации
+    const orgUsers = await db.select({ id: users.id }).from(users).where(eq(users.orgId, orgId));
+    const orgUserIds = new Set(orgUsers.map((u) => u.id));
 
-    const filtered = rows.filter(
-      (r) => !r.swapWithUserId || r.swapWithUserId === userId
-    );
-    return enrichSwaps(filtered);
-  },
-
-  async incomingCount(userId: string) {
-    const rows = await db
-      .select({ id: shiftSwapRequests.id })
-      .from(shiftSwapRequests)
-      .where(
-        and(
-          eq(shiftSwapRequests.status, "PENDING"),
-          eq(shiftSwapRequests.swapWithUserId, userId)
-        )
-      );
-    return { count: rows.length };
-  },
-
-  async availableCount(userId: string) {
     const rows = await db
       .select()
       .from(shiftSwapRequests)
@@ -147,11 +123,19 @@ export const swapsService = {
           eq(shiftSwapRequests.status, "PENDING"),
           ne(shiftSwapRequests.requestedBy, userId)
         )
-      );
+      )
+      .orderBy(desc(shiftSwapRequests.createdAt));
+
+    // Оставляем только обмены от коллег из этой же организации
     const filtered = rows.filter(
-      (r) => !r.swapWithUserId || r.swapWithUserId === userId
+      (r) => orgUserIds.has(r.requestedBy) && (!r.swapWithUserId || r.swapWithUserId === userId)
     );
-    return { count: filtered.length };
+    return enrichSwaps(filtered);
+  },
+
+  async availableCount(userId: string, orgId: string) {
+    const all = await this.available(userId, orgId);
+    return { count: all.length };
   },
 
   async create(input: {

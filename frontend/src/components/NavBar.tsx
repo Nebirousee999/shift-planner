@@ -84,7 +84,7 @@ export default function NavBar() {
   const org = useOrganization((s) => s.org);
 
   const isAdmin = user?.role === "OWNER" || user?.role === "MANAGER";
-  const timeTrackingOn = org?.timeTrackingEnabled !== false;
+  const timeTrackingOn = org?.timeTrackingEnabled === true;
 
   const visibleCategories = CATEGORIES.map((cat) => ({
     ...cat,

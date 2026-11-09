@@ -17,6 +17,8 @@ const updateSchema = z.object({
   taxRate: z.string().optional(),
   requireShiftApproval: z.boolean().optional(),
   disciplineEditWindowDays: z.number().int().min(0).max(90).optional(),
+  maxBotLink: z.string().max(255).nullable().optional(),
+  maxBotToken: z.string().max(255).nullable().optional(),
 });
 
 export async function organizationRoutes(app: FastifyInstance) {

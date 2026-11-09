@@ -18,6 +18,7 @@ export const messengerService = {
         trialEndsAt: organizations.trialEndsAt,
         tariffId: organizations.tariffId,
         tariffExpiresAt: organizations.tariffExpiresAt,
+        maxBotToken: organizations.maxBotToken,
       })
       .from(users)
       .innerJoin(organizations, eq(organizations.id, users.orgId))

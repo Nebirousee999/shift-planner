@@ -34,7 +34,7 @@ export const organizations = pgTable("organizations", {
   inn: varchar("inn", { length: 20 }),
   legalAddress: varchar("legal_address", { length: 500 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-  timeTrackingEnabled: boolean("time_tracking_enabled").default(true).notNull(),
+  timeTrackingEnabled: boolean("time_tracking_enabled").default(false).notNull(),
   overtimeMultiplier1: numeric("overtime_multiplier_1").default("1.5").notNull(),
   overtimeMultiplier2: numeric("overtime_multiplier_2").default("2.0").notNull(),
   maxLocations: integer("max_locations").default(1).notNull(),
@@ -46,6 +46,8 @@ export const organizations = pgTable("organizations", {
   trialEndsAt: timestamp("trial_ends_at"),
   tariffId: varchar("tariff_id", { length: 20 }).default("free").notNull(),
   tariffExpiresAt: timestamp("tariff_expires_at"),
+  maxBotLink: varchar("max_bot_link", { length: 255 }),
+  maxBotToken: varchar("max_bot_token", { length: 255 }),
 });
 
 // ─── LOCATIONS ─────────────────────────────────────────

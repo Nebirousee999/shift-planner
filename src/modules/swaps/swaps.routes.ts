@@ -41,13 +41,13 @@ export async function swapsRoutes(app: FastifyInstance) {
 
   // Создать запрос — любой
     app.get("/available", async (req) => {
-    const { sub: userId } = req.user!;
-    return swapsService.available(userId);
+    const { sub: userId, orgId } = req.user!;
+    return swapsService.available(userId, orgId);
   });
 
   app.get("/available/count", async (req) => {
-    const { sub: userId } = req.user!;
-    return swapsService.availableCount(userId);
+    const { sub: userId, orgId } = req.user!;
+    return swapsService.availableCount(userId, orgId);
   });
 
   // Создать запрос — любой

@@ -51,6 +51,13 @@ export default function TemplatesPage() {
   const initialTab: Tab = (urlTab === "areas" || urlTab === "positions") ? urlTab : "shifts";
   const [tab, setTab] = useState<Tab>(initialTab);
 
+  // Синхронизируем вкладку при изменении URL (например, при клике на ссылки в виджете)
+  useEffect(() => {
+    if (urlTab === "areas" || urlTab === "positions" || urlTab === "shifts") {
+      setTab(urlTab);
+    }
+  }, [urlTab]);
+
   // Смены
   const { items: shifts, fetch: fetchShifts, create: createShift, remove: removeShift } = useShiftTemplates();
   const [showShiftForm, setShowShiftForm] = useState(false);

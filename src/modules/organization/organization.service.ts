@@ -28,6 +28,21 @@ export const organizationService = {
       sickLeaves: orgSick,
     };
   },
+  async broadcastBotLink(orgId: string) {
+    const [org] = await db.select().from(organizations).where(eq(organizations.id, orgId));
+    if (!org || !org.maxBotLink) throw new Error("Ссылка на бота не указана в настройках");
+
+    const orgUsers = await db.select({ id: users.id, email: users.email, name: users.name }).from(users).where(eq(users.orgId, orgId));
+    
+    const { mailerService } = await import("../../lib/mailer.service.js");
+    let sent = 0;
+    for (const u of orgUsers) {
+      const ok = await mailerService.sendBotLinkEmail(u.email, u.name, org.maxBotLink);
+      if (ok) sent++;
+    }
+    return { sent };
+  },
+
   async get(orgId: string) {
     const [org] = await db
       .select()
@@ -51,6 +66,8 @@ export const organizationService = {
     positionRowOpacity?: number;
     requireShiftApproval?: boolean;
     disciplineEditWindowDays?: number;
+    maxBotLink?: string | null;
+    maxBotToken?: string | null;
   }) {
     const [before] = await db
       .select()
@@ -73,6 +90,8 @@ export const organizationService = {
         ...(input.positionRowOpacity !== undefined && { positionRowOpacity: input.positionRowOpacity }),
         ...(input.requireShiftApproval !== undefined && { requireShiftApproval: input.requireShiftApproval }),
         ...(input.disciplineEditWindowDays !== undefined && { disciplineEditWindowDays: input.disciplineEditWindowDays }),
+        ...(input.maxBotLink !== undefined && { maxBotLink: input.maxBotLink }),
+        ...(input.maxBotToken !== undefined && { maxBotToken: input.maxBotToken }),
       })
       .where(eq(organizations.id, input.orgId))
       .returning();

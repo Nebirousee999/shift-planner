@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "is_temp_password_sent" boolean DEFAULT false NOT NULL;

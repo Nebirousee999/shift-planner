@@ -53,7 +53,7 @@ function elapsedSince(iso: string): string {
 export default function MySchedulePage() {
   const { user } = useAuth();
   const org = useOrganization((s) => s.org);
-  const timeTrackingOn = org?.timeTrackingEnabled !== false;
+  const timeTrackingOn = org?.timeTrackingEnabled === true;
 
   const [tab, setTab] = useState<Tab>("schedule");
   const [shifts, setShifts] = useState<MyShift[]>([]);
