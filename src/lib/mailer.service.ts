@@ -57,4 +57,40 @@ export const mailerService = {
       return false;
     }
   },
+
+  async sendBotLinkEmail(to: string, name: string, link: string) {
+    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+      console.log(`⚠️ SMTP не настроен. Письмо для ${to} не отправлено.`);
+      return false;
+    }
+
+    // Форматируем ссылку, если передан никнейм (@username)
+    let formattedLink = link.startsWith("@") ? `https://max.ru/${link.slice(1)}` : link;
+    if (!formattedLink.startsWith("http")) {
+      formattedLink = `https://max.ru/${formattedLink}`;
+    }
+
+    try {
+      await transporter.sendMail({
+        from: `"Планировщик смен" <help@shift-planner.ru>`,
+        to,
+        subject: "Ссылка на бота MAX",
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.6;">
+            <h2 style="color: #2563eb; margin-bottom: 16px;">Привет, ${name}!</h2>
+            <p style="font-size: 16px;">Руководитель настроил бота в мессенджере MAX для вашей компании.</p>
+            <p style="font-size: 16px;">Перейдите по ссылке и нажмите «Начать», чтобы получать уведомления о ваших сменах:</p>
+            <div style="margin: 24px 0;">
+              <a href="${formattedLink}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Открыть бота в MAX</a>
+            </div>
+            <p style="font-size: 12px; color: #64748b;">Если кнопка не работает, скопируйте ссылку: <br/> <a href="${formattedLink}" style="color: #2563eb;">${formattedLink}</a></p>
+          </div>
+        `,
+      });
+      return true;
+    } catch (e) {
+      console.error("❌ [SMTP ОШИБКА] Не удалось отправить ссылку на бота:", e);
+      return false;
+    }
+  },
 };

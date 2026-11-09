@@ -27,40 +27,79 @@ function patchFile(relPath, search, replace, label) {
   }
 }
 
-// 1. Добавляем импорт organizations в me.routes.ts
+// 1. Добавляем метод sendBotLinkEmail в mailer.service.ts
 patchFile(
-  "src/modules/me/me.routes.ts",
-  `import { userMessengers } from "../../../db/schema.js";`,
-  `import { userMessengers, organizations } from "../../../db/schema.js";`,
-  "me.routes.ts (добавлен импорт organizations)"
+  "src/lib/mailer.service.ts",
+  `      return false;
+    }
+  },
+};`,
+  `      return false;
+    }
+  },
+
+  async sendBotLinkEmail(to: string, name: string, link: string) {
+    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+      console.log(\`⚠️ SMTP не настроен. Письмо для \${to} не отправлено.\`);
+      return false;
+    }
+
+    // Форматируем ссылку, если передан никнейм (@username)
+    let formattedLink = link.startsWith("@") ? \`https://max.ru/\${link.slice(1)}\` : link;
+    if (!formattedLink.startsWith("http")) {
+      formattedLink = \`https://max.ru/\${formattedLink}\`;
+    }
+
+    try {
+      await transporter.sendMail({
+        from: \`"Планировщик смен" <help@shift-planner.ru>\`,
+        to,
+        subject: "Ссылка на бота MAX",
+        html: \`
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.6;">
+            <h2 style="color: #2563eb; margin-bottom: 16px;">Привет, \${name}!</h2>
+            <p style="font-size: 16px;">Руководитель настроил бота в мессенджере MAX для вашей компании.</p>
+            <p style="font-size: 16px;">Перейдите по ссылке и нажмите «Начать», чтобы получать уведомления о ваших сменах:</p>
+            <div style="margin: 24px 0;">
+              <a href="\${formattedLink}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Открыть бота в MAX</a>
+            </div>
+            <p style="font-size: 12px; color: #64748b;">Если кнопка не работает, скопируйте ссылку: <br/> <a href="\${formattedLink}" style="color: #2563eb;">\${formattedLink}</a></p>
+          </div>
+        \`,
+      });
+      return true;
+    } catch (e) {
+      console.error("❌ [SMTP ОШИБКА] Не удалось отправить ссылку на бота:", e);
+      return false;
+    }
+  },
+};`,
+  "mailer.service.ts (добавлен метод sendBotLinkEmail)"
 );
 
-// 2. Делаем обработку ошибок на бэкенде более понятной
+// 2. Добавляем роут broadcast-bot-link в organization.routes.ts
 patchFile(
-  "src/modules/me/me.routes.ts",
-  `    } catch (e: any) {
+  "src/modules/organization/organization.routes.ts",
+  `  app.get("/export-json", { preHandler: app.requireRole(["OWNER"]) }, async (req, reply) => {`,
+  `  app.post("/broadcast-bot-link", { preHandler: app.requireRole(["OWNER"]) }, async (req, reply) => {
+    try {
+      const { orgId } = req.user!;
+      const result = await organizationService.broadcastBotLink(orgId);
+      return result;
+    } catch (e: any) {
       app.log.error(e);
-      return reply.code(500).send({ error: "Ошибка привязки мессенджера" });
-    }`,
-  `    } catch (e: any) {
-      app.log.error(e);
-      return reply.code(500).send({ error: e.message || "Ошибка привязки мессенджера" });
-    }`,
-  "me.routes.ts (отправка текста ошибки на фронтенд)"
-);
+      return reply.code(400).send({ error: e.message || "Ошибка рассылки" });
+    }
+  });
 
-// 3. На фронтенде защищаемся от вывода объекта вместо текста
-patchFile(
-  "frontend/src/pages/ProfilePage.tsx",
-  `      await alertDialog(e.response?.data?.error ?? "Ошибка привязки", { variant: "error" });`,
-  `      const errMsg = e.response?.data?.error;
-      await alertDialog(typeof errMsg === "string" ? errMsg : "Ошибка привязки", { variant: "error" });`,
-  "ProfilePage.tsx (безопасный вывод ошибки привязки)"
+  app.get("/export-json", { preHandler: app.requireRole(["OWNER"]) }, async (req, reply) => {`,
+  "organization.routes.ts (добавлен роут broadcast-bot-link)"
 );
 
 console.log("\n──────────────────────────────────────");
 if (touched > 0) {
   console.log(`🎉 Готово! Внесено изменений: ${touched}`);
+  console.log("Теперь можно коммитить и пушить.");
 } else {
   console.log("⚠️ Изменений не внесено.");
 }

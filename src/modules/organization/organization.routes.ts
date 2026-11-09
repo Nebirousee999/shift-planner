@@ -24,6 +24,17 @@ const updateSchema = z.object({
 export async function organizationRoutes(app: FastifyInstance) {
   app.addHook("preHandler", app.authenticate);
 
+  app.post("/broadcast-bot-link", { preHandler: app.requireRole(["OWNER"]) }, async (req, reply) => {
+    try {
+      const { orgId } = req.user!;
+      const result = await organizationService.broadcastBotLink(orgId);
+      return result;
+    } catch (e: any) {
+      app.log.error(e);
+      return reply.code(400).send({ error: e.message || "Ошибка рассылки" });
+    }
+  });
+
   app.get("/export-json", { preHandler: app.requireRole(["OWNER"]) }, async (req, reply) => {
     const { orgId } = req.user!;
     try {
