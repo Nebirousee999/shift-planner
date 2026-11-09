@@ -57,7 +57,7 @@ export const messengerService = {
           sent = true;
         } else if (conn.provider === "max") {
           console.log(`[Messenger] Отправка в MAX (user_id: ${conn.externalId})...`);
-          await this.sendMax(conn.externalId, text);
+          await this.sendMax(conn.externalId, text, orgInfo.maxBotToken);
           sent = true;
         }
         console.log(`✅ [Messenger] Успешно отправлено в ${conn.provider}`);
@@ -88,8 +88,8 @@ export const messengerService = {
   },
 
   // ─── MAX (Рабочая версия) ─────────────────────────
-  async sendMax(userId: string, text: string) {
-    const token = process.env.MAX_BOT_TOKEN;
+  async sendMax(userId: string, text: string, customToken?: string | null) {
+    const token = customToken || process.env.MAX_BOT_TOKEN;
     if (!token) throw new Error("MAX_BOT_TOKEN не задан");
 
     // ID получателя передаем в URL, токен — в заголовке (без Bearer)

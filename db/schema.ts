@@ -47,6 +47,7 @@ export const organizations = pgTable("organizations", {
   tariffId: varchar("tariff_id", { length: 20 }).default("free").notNull(),
   tariffExpiresAt: timestamp("tariff_expires_at"),
   maxBotLink: varchar("max_bot_link", { length: 255 }),
+  maxBotId: varchar("max_bot_id", { length: 255 }),
   maxBotToken: varchar("max_bot_token", { length: 255 }),
 });
 

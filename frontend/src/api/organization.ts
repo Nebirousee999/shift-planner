@@ -22,6 +22,7 @@ export type Organization = {
   disciplineEditWindowDays?: number;
   maxBotLink?: string | null;
   maxBotToken?: string | null;
+  maxBotId?: string | null;
 };
 
 export const organizationApi = {

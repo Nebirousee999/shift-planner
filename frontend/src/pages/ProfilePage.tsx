@@ -690,7 +690,7 @@ function MessengerSection({ userId }: { userId: string }) {
               <input
                 value={botLink}
                 onChange={(e) => setBotLink(e.target.value)}
-                placeholder="https://max.ru/id..."
+                placeholder="@username или https://max.ru/..."
                 className="flex-1 !text-sm"
               />
               <button onClick={saveBotSettings} disabled={savingLink || (botLink === org?.maxBotLink && botToken === org?.maxBotToken)} className="px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800 disabled:opacity-50">

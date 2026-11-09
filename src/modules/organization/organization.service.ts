@@ -1,3 +1,4 @@
+import axios from "axios";
 import { eq } from "drizzle-orm";
 import { db } from "../../../db/client.js";
 import { organizations, users, locations, areas, scheduledShifts, scheduleWeeks, vacations, sickLeaves } from "../../../db/schema.js";
@@ -37,7 +38,13 @@ export const organizationService = {
     const { mailerService } = await import("../../lib/mailer.service.js");
     let sent = 0;
     for (const u of orgUsers) {
-      const ok = await mailerService.sendBotLinkEmail(u.email, u.name, org.maxBotLink);
+      let formattedLink = org.maxBotLink;
+      if (formattedLink.startsWith('@')) {
+        formattedLink = `https://max.ru/${formattedLink.slice(1)}`;
+      } else if (!formattedLink.startsWith('http')) {
+        formattedLink = `https://max.ru/${formattedLink}`;
+      }
+      const ok = await mailerService.sendBotLinkEmail(u.email, u.name, formattedLink);
       if (ok) sent++;
     }
     return { sent };
@@ -74,9 +81,25 @@ export const organizationService = {
       .from(organizations)
       .where(eq(organizations.id, input.orgId));
 
+    // 🤖 Если передан токен, получаем ID бота
+    let botId = undefined;
+    if (input.maxBotToken) {
+      try {
+        const { data } = await axios.get("https://platform-api2.max.ru/me", {
+          headers: { Authorization: input.maxBotToken },
+        });
+        botId = data.id?.toString();
+      } catch (e) {
+        console.error("Ошибка получения ID бота MAX (проверьте токен):", e.message);
+      }
+    } else if (input.maxBotToken === null) {
+      botId = null; // Сброс при удалении токена
+    }
+
     const [updated] = await db
       .update(organizations)
       .set({
+        ...(botId !== undefined && { maxBotId: botId }),
         ...(input.name !== undefined && { name: input.name }),
         ...(input.city !== undefined && { city: input.city }),
         ...(input.directorName !== undefined && { directorName: input.directorName }),
