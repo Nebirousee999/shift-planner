@@ -4,7 +4,6 @@ import path from "node:path";
 const ROOT = process.cwd();
 let touched = 0;
 
-// ─── Утилита для безопасной замены (с поддержкой CRLF/LF) ───
 function patchFile(relPath, search, replace, label) {
   const filePath = path.join(ROOT, relPath);
   if (!fs.existsSync(filePath)) {
@@ -32,75 +31,42 @@ function patchFile(relPath, search, replace, label) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 1. ИСПРАВЛЕНИЕ ОШИБОК TYPESCRIPT (чтобы tsc пропустил сборку)
+// 1. Скрываем OnboardingWidget для неавторизованных пользователей
 // ═══════════════════════════════════════════════════════════════
-
-// 1.1. Добавляем "passwords" в тип SectionId (ProfilePage.tsx)
 patchFile(
-  "frontend/src/pages/ProfilePage.tsx",
-  `type SectionId =
-  | "profile" | "messenger"
-  | "requisites" | "modules" | "approval" | "overtime" | "tax" | "appearance";`,
-  `type SectionId =
-  | "profile" | "messenger"
-  | "requisites" | "modules" | "approval" | "overtime" | "tax" | "appearance" | "passwords";`,
-  "ProfilePage.tsx (тип SectionId)"
-);
-
-// 1.2. Добавляем maxBotLink и maxBotToken в тип update (organization.ts)
-patchFile(
-  "frontend/src/api/organization.ts",
-  `    taxRate?: string;
-  }): Promise<Organization> => {`,
-  `    taxRate?: string;
-    maxBotLink?: string | null;
-    maxBotToken?: string | null;
-  }): Promise<Organization> => {`,
-  "organization.ts (тип update)"
+  "frontend/src/components/OnboardingWidget.tsx",
+  `  // Показываем только владельцам и менеджерам
+  if (user?.role === "EMPLOYEE" || isDismissed) return null;`,
+  `  // Показываем только авторизованным владельцам и менеджерам
+  if (!user || user.role === "EMPLOYEE" || isDismissed) return null;`,
+  "OnboardingWidget.tsx (скрыть для гостей)"
 );
 
 // ═══════════════════════════════════════════════════════════════
-// 2. ИСПРАВЛЕНИЕ NGINX (чтобы /api/ проксировался на бэкенд в Docker)
+// 2. Убираем жесткий редирект на /login при 401 ошибке
 // ═══════════════════════════════════════════════════════════════
-const nginxPath = path.join(ROOT, "frontend/nginx.conf");
-if (fs.existsSync(nginxPath)) {
-  const nginxContent = fs.readFileSync(nginxPath, "utf-8");
-  if (!nginxContent.includes("location /api/")) {
-    const newNginx = `server {
-    listen 80;
-    server_name localhost;
-
-    root /usr/share/nginx/html;
-    index index.html;
-
-    # Проксируем все запросы к API на бэкенд
-    location /api/ {
-        proxy_pass http://api:3001/api/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    # Обработка React (SPA)
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-}
-`;
-    fs.writeFileSync(nginxPath, newNginx, "utf-8");
-    touched++;
-    console.log("✅ [nginx.conf] Добавлено проксирование /api/ на бэкенд.");
-  } else {
-    console.log("⏭  [nginx.conf] Проксирование /api/ уже есть.");
-  }
-}
+patchFile(
+  "frontend/src/api/client.ts",
+  `    if (error.response?.status === 401) {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      if (window.location.pathname !== "/login") {
+        window.location.href = "/login";
+      }
+    }`,
+  `    if (error.response?.status === 401) {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      // Жесткий редирект убран, чтобы не выкидывать с лендинга на логин
+    }`,
+  "client.ts (удален жесткий редирект на логин)"
+);
 
 // ═══════════════════════════════════════════════════════════════
 console.log("\n──────────────────────────────────────");
 if (touched > 0) {
   console.log(`🎉 Готово! Внесено изменений: ${touched}`);
-  console.log("Теперь сборка фронтенда пройдет успешно, а Nginx будет корректно проксировать API.");
+  console.log("Теперь можно коммитить и пушить.");
 } else {
   console.log("⚠️ Изменений не внесено (возможно, всё уже исправлено).");
 }

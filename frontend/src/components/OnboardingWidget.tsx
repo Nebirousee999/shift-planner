@@ -42,8 +42,8 @@ export default function OnboardingWidget() {
     }
   }, [user, isDismissed, users.length, areas.length, templates.length, weeks.length, fetchUsers, fetchAreas, fetchTemplates, fetchWeeks]);
 
-  // Показываем только владельцам и менеджерам
-  if (user?.role === "EMPLOYEE" || isDismissed) return null;
+  // Показываем только авторизованным владельцам и менеджерам
+  if (!user || user.role === "EMPLOYEE" || isDismissed) return null;
 
   const hasUsers = users.length > 0;
   const hasAreas = areas.length > 0;
