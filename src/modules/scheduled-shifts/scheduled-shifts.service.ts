@@ -280,7 +280,8 @@ export const scheduledShiftsService = {
     const nowStr = new Date().toLocaleString("ru-RU");
     await messengerService.sendToUser(
       targetUserId,
-      `<b>Новая смена</b>\n\nРуководитель предлагает вам смену на ${input.shiftDate} (${input.startTime}–${input.endTime}).\n\nСоздано: ${nowStr}\n\nЗайдите в приложение, чтобы подтвердить.`
+      `<b>Новая смена</b>\n\nРуководитель предлагает вам смену на ${input.shiftDate} (${input.startTime}–${input.endTime}).\n\nСоздано: ${nowStr}\n\nЗайдите в приложение, чтобы подтвердить.`,
+      "shiftChangeApproval"
     );
 
     return { kind: "requested", request };
@@ -441,7 +442,8 @@ export const scheduledShiftsService = {
 
         await messengerService.sendToUser(
           shift.userId,
-          `<b>Смена изменена</b>\n\nРуководитель изменил вашу смену.\nБыло: ${oldStr}\nСтало: ${newStr}\n\nСоздано: ${nowStr}\n\nНажмите «ОК», чтобы подтвердить.`
+          `<b>Смена изменена</b>\n\nРуководитель изменил вашу смену.\nБыло: ${oldStr}\nСтало: ${newStr}\n\nСоздано: ${nowStr}\n\nНажмите «ОК», чтобы подтвердить.`,
+          "shiftChanged"
         );
       }
 

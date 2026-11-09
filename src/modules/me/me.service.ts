@@ -27,6 +27,10 @@ export const meService = {
     return u ?? null;
   },
 
+  async updateNotifications(userId: string, settings: any) {
+    await db.update(users).set({ notificationSettings: settings }).where(eq(users.id, userId));
+  },
+
   async changePassword(userId: string, oldPassword: string, newPassword: string) {
     const [user] = await db.select().from(users).where(eq(users.id, userId));
     if (!user) throw new Error("USER_NOT_FOUND");

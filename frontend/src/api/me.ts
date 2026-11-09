@@ -93,6 +93,10 @@ export const meApi = {
     return data;
   },
 
+  updateNotifications: async (settings: any): Promise<void> => {
+    await api.patch("/me/notifications", { settings });
+  },
+
   testMessenger: async (): Promise<{ success: boolean }> => {
     const { data } = await api.get<{ success: boolean }>("/me/test-messenger");
     return data;

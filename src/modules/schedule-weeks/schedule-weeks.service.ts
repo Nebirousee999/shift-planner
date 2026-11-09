@@ -161,7 +161,8 @@ export const scheduleWeeksService = {
     for (const userId of userIds) {
       await messengerService.sendToUser(
         userId,
-        `<b>Новый график!</b>\n\nОпубликовано расписание на неделю с ${week.weekStartDate}.\nПроверьте свои смены в приложении.`
+        `<b>Новый график!</b>\n\nОпубликовано расписание на неделю с ${week.weekStartDate}.\nПроверьте свои смены в приложении.`,
+        "newSchedule"
       );
     }
 

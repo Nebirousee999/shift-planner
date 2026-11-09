@@ -69,7 +69,8 @@ export const sickLeavesService = {
 
     await messengerService.sendToUser(
       input.userId,
-      `<b>Больничный</b>\n\n${who} добавил(а) вам больничный с <b>${input.startDate}</b> по <b>${input.endDate}</b>.\n${input.comment ? `Комментарий: ${input.comment}\n` : ""}\nСоздано: ${nowStr}\n\nНажмите «ОК», чтобы подтвердить.`
+      `<b>Больничный</b>\n\n${who} добавил(а) вам больничный с <b>${input.startDate}</b> по <b>${input.endDate}</b>.\n${input.comment ? `Комментарий: ${input.comment}\n` : ""}\nСоздано: ${nowStr}\n\nНажмите «ОК», чтобы подтвердить.`,
+      "sickLeave"
     );
 
     if (input.userId !== input.createdById) {

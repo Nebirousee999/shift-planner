@@ -75,6 +75,13 @@ export async function meRoutes(app: FastifyInstance) {
     }
   });
 
+  app.patch("/notifications", async (req, reply) => {
+    const { sub: userId } = req.user!;
+    const { settings } = req.body as { settings: any };
+    await meService.updateNotifications(userId, settings);
+    return { success: true };
+  });
+
   app.get("/colleagues", async (req) => {
     const { orgId } = req.user!;
     return meService.colleagues(orgId);

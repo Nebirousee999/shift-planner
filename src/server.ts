@@ -85,6 +85,9 @@ await app.register(timeOffRoutes, { prefix: "/api/time-off" });
 await app.register(historyRoutes, { prefix: "/api/history" });
            await app.register(notificationsRoutes, { prefix: "/api/notifications" });
 
+import { startScheduler } from "./lib/scheduler.js";
+
 const port = Number(process.env.PORT ?? 3001);
 await app.listen({ port, host: "0.0.0.0" });
+startScheduler();
 console.log(`🚀 API ready at http://localhost:${port}`);

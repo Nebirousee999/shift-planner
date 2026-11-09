@@ -533,11 +533,7 @@ function MessengerSection({ userId }: { userId: string }) {
     if (raw) { try { return JSON.parse(raw); } catch {} }
     return { max: "" };
   });
-  const [settings, setSettings] = useState<NotificationSettings>(() => {
-    const raw = localStorage.getItem(`notif_settings_${userId}`);
-    if (raw) { try { return { ...DEFAULT_NOTIFICATION_SETTINGS, ...JSON.parse(raw) }; } catch {} }
-    return DEFAULT_NOTIFICATION_SETTINGS;
-  });
+  const [settings, setSettings] = useState<NotificationSettings>(DEFAULT_NOTIFICATION_SETTINGS);
   const [draftMax, setDraftMax] = useState(bindings.max);
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -562,8 +558,12 @@ function MessengerSection({ userId }: { userId: string }) {
     : null;
 
   useEffect(() => {
-    localStorage.setItem(`notif_settings_${userId}`, JSON.stringify(settings));
-  }, [settings, userId]);
+    meApi.profile().then((p: any) => {
+      if (p?.notificationSettings && Object.keys(p.notificationSettings).length > 0) {
+        setSettings({ ...DEFAULT_NOTIFICATION_SETTINGS, ...p.notificationSettings });
+      }
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (org) {
@@ -572,8 +572,11 @@ function MessengerSection({ userId }: { userId: string }) {
     }
   }, [org?.maxBotToken, org?.maxBotLink]);
 
-  const toggle = (key: keyof NotificationSettings) =>
-    setSettings((s) => ({ ...s, [key]: !s[key] }));
+  const toggle = async (key: keyof NotificationSettings) => {
+    const newSettings = { ...settings, [key]: !settings[key] };
+    setSettings(newSettings);
+    try { await meApi.updateNotifications(newSettings); } catch (e) { console.error(e); }
+  };
 
   const handleSaveToken = async () => {
     if (!botToken.trim()) return;

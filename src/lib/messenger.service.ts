@@ -8,7 +8,7 @@ import { SocksProxyAgent } from "socks-proxy-agent";
 export type MessengerProvider = "telegram" | "max";
 
 export const messengerService = {
-  async sendToUser(userId: string, text: string): Promise<boolean> {
+  async sendToUser(userId: string, text: string, settingKey?: string): Promise<boolean> {
     console.log(`\n📨 [Messenger] Попытка отправки для userId: ${userId}`);
 
     // ─── Проверка тарифа: мессенджеры только на Pro и Business ───
@@ -30,6 +30,15 @@ export const messengerService = {
     const isTrial = orgInfo.trialEndsAt && new Date(orgInfo.trialEndsAt) > now;
     const isPaid = orgInfo.tariffExpiresAt && new Date(orgInfo.tariffExpiresAt) > now;
     const effectiveTariff = isTrial ? "pro" : (isPaid ? orgInfo.tariffId : "free");
+
+    if (settingKey) {
+      const [userSettings] = await db.select({ ns: users.notificationSettings }).from(users).where(eq(users.id, userId));
+      const s = userSettings?.ns as any;
+      if (s && s[settingKey] === false) {
+        console.log(`⏭️ [Messenger] Пропуск: отключено "${settingKey}"`);
+        return false;
+      }
+    }
 
     if (effectiveTariff === "free") {
       console.log(`⏭️ [Messenger] Пропуск: организация на Free тарифе`);

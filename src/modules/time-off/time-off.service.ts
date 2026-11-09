@@ -49,7 +49,7 @@ export const timeOffService = {
       description: `${reviewer?.name} одобрил(а) отгул сотруднику на ${req.date} (смена снята)`,
     });
 
-    await messengerService.sendToUser(req.userId, `<b>Отгул одобрен</b>\n\nВаш запрос на отгул на ${req.date} одобрен. Смена снята.`);
+    await messengerService.sendToUser(req.userId, `<b>Отгул одобрен</b>\n\nВаш запрос на отгул на ${req.date} одобрен. Смена снята.`, "timeOffReviewed");
 
     await notificationsService.create({
       orgId,
