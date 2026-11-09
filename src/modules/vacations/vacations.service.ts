@@ -302,21 +302,30 @@ export const vacationsService = {
     if (!vac) throw new Error("NOT_FOUND");
     if (vac.status !== "PENDING") throw new Error("NOT_PENDING");
 
-    const [updated] = await db
-      .update(vacations)
-      .set({
-        startDate: vac.previousStartDate ?? vac.startDate,
-        endDate: vac.previousEndDate ?? vac.endDate,
-        comment: vac.previousComment ?? vac.comment,
-        status: "APPROVED",
-        previousStartDate: null,
-        previousEndDate: null,
-        previousComment: null,
-        reviewedBy: reviewerId,
-        reviewedAt: new Date(),
-      })
-      .where(eq(vacations.id, id))
-      .returning();
+    let updated;
+
+    if (vac.previousStartDate) {
+      // Это было изменение существующего отпуска — откатываем старые даты
+      [updated] = await db
+        .update(vacations)
+        .set({
+          startDate: vac.previousStartDate,
+          endDate: vac.previousEndDate ?? vac.endDate,
+          comment: vac.previousComment ?? vac.comment,
+          status: "APPROVED",
+          previousStartDate: null,
+          previousEndDate: null,
+          previousComment: null,
+          reviewedBy: reviewerId,
+          reviewedAt: new Date(),
+        })
+        .where(eq(vacations.id, id))
+        .returning();
+    } else {
+      // Это был новый запрос на отпуск — просто удаляем его
+      await db.delete(vacations).where(eq(vacations.id, id));
+      updated = vac;
+    }
 
     const [reviewer] = await db
                  .select({ name: users.name })
