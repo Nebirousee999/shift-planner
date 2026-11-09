@@ -89,29 +89,28 @@ export async function meRoutes(app: FastifyInstance) {
 
   // ─── ПРИВЯЗКА МЕССЕНДЖЕРОВ ───────────────────────
   app.post("/messengers/bind", async (req, reply) => {
-    const parsed = bindMessengerSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return reply.code(400).send({ error: parsed.error.flatten() });
-    }
-
-    const { sub: userId, orgId } = req.user!;
-
-    // ─── Проверка тарифа: мессенджеры только на Pro и Business ───
-    const [org] = await db.select().from(organizations).where(eq(organizations.id, orgId));
-    const now = new Date();
-    const isTrial = org?.trialEndsAt && new Date(org.trialEndsAt) > now;
-    const isPaid = org?.tariffExpiresAt && new Date(org.tariffExpiresAt) > now;
-    const effectiveTariff = isTrial ? "pro" : (isPaid ? org?.tariffId : "free");
-
-    if (effectiveTariff === "free") {
-      return reply.code(403).send({
-        error: "Уведомления в Telegram и MAX доступны на тарифе Pro. Обновите тариф в разделе «Кошелек».",
-        code: "MESSENGER_NOT_AVAILABLE",
-      });
-    }
-    const { provider, externalId } = parsed.data;
-
     try {
+      const parsed = bindMessengerSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: parsed.error.flatten() });
+      }
+
+      const { sub: userId, orgId } = req.user!;
+
+      // ─── Проверка тарифа: мессенджеры только на Pro и Business ───
+      const [org] = await db.select().from(organizations).where(eq(organizations.id, orgId));
+      const now = new Date();
+      const isTrial = org?.trialEndsAt && new Date(org.trialEndsAt) > now;
+      const isPaid = org?.tariffExpiresAt && new Date(org.tariffExpiresAt) > now;
+      const effectiveTariff = isTrial ? "pro" : (isPaid ? org?.tariffId : "free");
+
+      if (effectiveTariff === "free") {
+        return reply.code(403).send({
+          error: "Уведомления в Telegram и MAX доступны на тарифе Pro. Обновите тариф в разделе «Кошелек».",
+          code: "MESSENGER_NOT_AVAILABLE",
+        });
+      }
+      const { provider, externalId } = parsed.data;
       // Проверяем, не привязан ли этот аккаунт к другому пользователю
       const existing = await db
         .select()

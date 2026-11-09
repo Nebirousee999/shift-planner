@@ -21,6 +21,7 @@ export const meService = {
         position: users.position,       // ← НОВОЕ
         hourlyRate: users.hourlyRate,
         createdAt: users.createdAt,
+        notificationSettings: users.notificationSettings,
       })
       .from(users)
       .where(and(eq(users.id, userId), eq(users.orgId, orgId)));
