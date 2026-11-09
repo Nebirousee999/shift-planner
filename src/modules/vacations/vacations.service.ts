@@ -213,6 +213,7 @@ export const vacationsService = {
     if (!isAdmin && vac.userId !== input.requesterId) throw new Error("FORBIDDEN");
 
     await db.delete(vacations).where(eq(vacations.id, input.id));
+    await notificationsService.dismissActionable(input.id, "vacation_request");
     return { success: true };
   },
 

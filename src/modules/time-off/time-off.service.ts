@@ -142,6 +142,7 @@ export const timeOffService = {
       .where(and(eq(timeOffRequests.id, id), eq(timeOffRequests.orgId, orgId)));
     if (!req || req.status !== "PENDING" || req.userId !== userId) throw new Error("INVALID_REQUEST");
     await db.delete(timeOffRequests).where(eq(timeOffRequests.id, id));
+    await notificationsService.dismissActionable(id, "time_off_request");
     return { success: true };
   }
 };
