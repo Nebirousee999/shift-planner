@@ -278,6 +278,7 @@ export const vacationsService = {
                  `отпуск ${String(updated.startDate).slice(0, 10)} — ${String(updated.endDate).slice(0, 10)} одобрен`
                );
 
+    await notificationsService.resolveActionable(id, "vacation_request", "APPROVED", reviewer?.name ?? "Руководитель", `отпуск одобрен`);
     await notificationsService.create({
       orgId,
       userId: vac.userId,
@@ -329,6 +330,7 @@ export const vacationsService = {
                  "изменение отпуска отклонено"
                );
 
+    await notificationsService.resolveActionable(id, "vacation_request", "REJECTED", reviewer?.name ?? "Руководитель", `отпуск отклонён`);
     await notificationsService.create({
       orgId,
       userId: vac.userId,

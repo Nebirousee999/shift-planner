@@ -338,6 +338,7 @@ export const swapsService = {
       `принял(а) обмен смены на ${shiftDateStr}`
     );
 
+    await notificationsService.resolveActionable(id, "swap_request", "APPROVED", accepter?.name ?? "Сотрудник", `обмен смены на ${shiftDateStr} принят`);
     if (req.requestedBy !== userId) {
       await notificationsService.create({
         orgId,
@@ -405,6 +406,7 @@ export const swapsService = {
     );
 
     // Уведомляем автора (если это не он сам)
+    await notificationsService.resolveActionable(id, "swap_request", "REJECTED", decliner?.name ?? "Сотрудник", `обмен смены на ${shiftDateStr} отклонён`);
     if (req.requestedBy !== userId) {
       await notificationsService.create({
         orgId,

@@ -87,6 +87,7 @@ export const timeOffService = {
       description: `${reviewer?.name} отклонил(а) отгул на ${req.date}`,
     });
 
+    await notificationsService.resolveActionable(id, "time_off_request", "REJECTED", reviewer?.name ?? "Руководитель", `отгул на ${req.date} отклонён`);
     await messengerService.sendToUser(req.userId, `<b>Отгул отклонён</b>\n\nЗапрос на ${req.date} отклонён.`);
 
     await notificationsService.create({

@@ -133,6 +133,7 @@ export const shiftChangeRequestsService = {
         `<b>Смена согласована</b>\n\nСотрудник согласовал назначение смены на ${req.newShiftDate}.\n\nСоздано: ${createdStr}\nСогласовано: ${nowStr}`
       );
 
+      await notificationsService.resolveActionable(id, "shift_change_request", "APPROVED", resolver?.name ?? "Сотрудник", `смена изменена`);
       await notificationsService.create({
         orgId: req.orgId,
         userId: req.requestedBy,
@@ -237,6 +238,7 @@ export const shiftChangeRequestsService = {
       `<b>Изменение отклонено</b>\n\nСотрудник отклонил изменение смены на ${req.newShiftDate}.\n\nСоздано: ${createdStr}\nОтклонено: ${nowStr}`
     );
 
+    await notificationsService.resolveActionable(id, "shift_change_request", "REJECTED", resolver?.name ?? "Сотрудник", `смена отклонена`);
     await notificationsService.create({
       orgId: req.orgId,
       userId: req.requestedBy,

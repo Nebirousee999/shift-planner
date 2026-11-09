@@ -21,7 +21,8 @@ import { useSickLeaves } from "../store/sickLeaves";
 import { useLocations } from "../store/locations";
 import { useAreas } from "../store/areas";
 import { usePositions } from "../store/positions";
-import { useOrganization } from "../store/organization"; // 👈 ИЗМЕНЕНО
+import { useOrganization } from "../store/organization";
+import { useTimeOff } from "../store/timeOff"; // 👈 ИЗМЕНЕНО
 import { shiftChangeRequestsApi } from "../api/shiftChangeRequests";
 import { confirmDialog, alertDialog } from "../store/dialogs";
 import NavBar from "../components/NavBar";
@@ -157,6 +158,7 @@ export default function WeeksPage() {
   } = useLocations();
   const { items: areas, fetch: fetchAreas } = useAreas();
   const { items: positions, fetch: fetchPositions } = usePositions();
+  const { items: timeOffs, fetch: fetchTimeOffs } = useTimeOff();
   // 👇 ИЗМЕНЕНО: настройки прозрачности из организации
   const org = useOrganization((s) => s.org);
 
@@ -187,6 +189,7 @@ export default function WeeksPage() {
     fetchSickLeaves();
     fetchAreas();
     fetchPositions();
+    fetchTimeOffs();
     Promise.all([
       shiftChangeRequestsApi.incoming().catch(() => []),
       shiftChangeRequestsApi.outgoing().catch(() => []),
@@ -203,6 +206,20 @@ export default function WeeksPage() {
     activeLocationId, fetchWeeks, fetchTemplates, fetchUsers,
     fetchVacations, fetchSickLeaves, fetchAreas, fetchPositions,
   ]);
+
+  useEffect(() => {
+    if (timeOffs.length > 0) {
+      setPendingDates((prev) => {
+        const next = new Set(prev);
+        for (const t of timeOffs) {
+          if (t.status === "PENDING") {
+            next.add(String(t.date).slice(0, 10));
+          }
+        }
+        return next;
+      });
+    }
+  }, [timeOffs]);
 
   // ═════════════════════════════════════════════════════════
   // СВОДКА: только активная точка
