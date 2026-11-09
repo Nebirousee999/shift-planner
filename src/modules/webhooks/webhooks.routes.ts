@@ -92,6 +92,7 @@ export async function webhooksRoutes(app: FastifyInstance) {
   app.post("/max", async (req, reply) => {
     try {
       const body = req.body as any;
+      app.log.info({ maxPayload: body }, "🔥 MAX webhook payload received");
       // MAX передает ID бота в корне или в recipient
       const botId = (body.bot_id || body.recipient?.bot_id || body.message?.recipient?.bot_id)?.toString();
       const senderId = body.message?.sender?.user_id?.toString();
