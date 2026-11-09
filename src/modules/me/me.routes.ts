@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import { db } from "../../../db/client.js";
-import { userMessengers } from "../../../db/schema.js";
+import { userMessengers, organizations } from "../../../db/schema.js";
 import { meService } from "./me.service.js";
 import { messengerService } from "../../lib/messenger.service.js"; // <--- ДОБАВЛЕН ИМПОРТ
 
@@ -138,7 +138,7 @@ export async function meRoutes(app: FastifyInstance) {
       return { success: true };
     } catch (e: any) {
       app.log.error(e);
-      return reply.code(500).send({ error: "Ошибка привязки мессенджера" });
+      return reply.code(500).send({ error: e.message || "Ошибка привязки мессенджера" });
     }
   });
 

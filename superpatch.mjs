@@ -4,90 +4,63 @@ import path from "node:path";
 const ROOT = process.cwd();
 let touched = 0;
 
-const webhookPath = path.join(ROOT, "src/modules/webhooks/webhooks.routes.ts");
-if (fs.existsSync(webhookPath)) {
-  let content = fs.readFileSync(webhookPath, "utf-8");
+function patchFile(relPath, search, replace, label) {
+  const filePath = path.join(ROOT, relPath);
+  if (!fs.existsSync(filePath)) return;
+  let content = fs.readFileSync(filePath, "utf-8");
   const hadCRLF = content.includes("\r\n");
   let normalized = hadCRLF ? content.replace(/\r\n/g, "\n") : content;
 
-  // 1. Добавляем isNotNull в импорты, если его нет
-  if (!normalized.includes("isNotNull")) {
-    normalized = normalized.replace(
-      `import { eq } from "drizzle-orm";`,
-      `import { eq, isNotNull } from "drizzle-orm";`
-    );
+  if (normalized.includes(replace)) {
+    console.log(`⏭  [${label}] Уже исправлено.`);
+    return;
   }
 
-  // 2. Полностью заменяем роут /max
-  const startMarker = `  // ─── MAX Bot Webhook ──────────────────────────────`;
-  const endMarker = `}`; // Конец функции webhooksRoutes
-
-  const startIndex = normalized.indexOf(startMarker);
-  const endIndex = normalized.lastIndexOf(endMarker);
-
-  if (startIndex !== -1 && endIndex !== -1) {
-    const newMaxRoute = `  // ─── MAX Bot Webhook ──────────────────────────────
-  app.post("/max", async (req, reply) => {
-    try {
-      const body = req.body as any;
-      const updateType = body.update_type;
-      const message = body.message;
-      
-      const sender = message?.sender || body.user;
-      const senderId = sender?.user_id?.toString();
-      
-      const recipient = message?.recipient;
-      let botId = recipient?.user_id?.toString() || body.bot_id?.toString();
-
-      // Если событие bot_started и MAX не передал ID бота, берем его из базы
-      if (updateType === "bot_started" && !botId) {
-        const [org] = await db.select({ id: organizations.maxBotId }).from(organizations).where(isNotNull(organizations.maxBotId)).limit(1);
-        botId = org?.id || undefined;
-      }
-
-      // Обрабатываем и нажатие кнопки "Начать", и отправку сообщений
-      if ((updateType === "message_created" || updateType === "bot_started") && senderId && botId) {
-        const [org] = await db
-          .select({ token: organizations.maxBotToken })
-          .from(organizations)
-          .where(eq(organizations.maxBotId, botId));
-
-        if (org && org.token) {
-          // Красивый текст без HTML-тегов и с переносом строки
-          const replyText = \`Привет! Твой ID в MAX:\\n\\n\${senderId}\\n\\nСкопируй его и вставь в настройках профиля на сайте (Профиль -> Мессенджер), чтобы получать уведомления.\`;
-          
-          await axios.post(
-            \`https://botapi.max.ru/messages?user_id=\${senderId}\`,
-            { text: replyText },
-            { headers: { Authorization: org.token } }
-          );
-          app.log.info({ botId, senderId }, "✅ Отправлено приветственное сообщение в MAX");
-        } else {
-          app.log.warn({ botId }, "❌ Бот не найден в БД или отсутствует токен");
-        }
-      }
-      return reply.send({ ok: true });
-    } catch (e: any) {
-      app.log.error(e);
-      return reply.code(500).send({ error: "Internal Error" });
-    }
-  });
-`;
-    normalized = normalized.slice(0, startIndex) + newMaxRoute + normalized.slice(endIndex);
-    
+  if (normalized.includes(search)) {
+    normalized = normalized.replace(search, replace);
     const finalContent = hadCRLF ? normalized.replace(/\n/g, "\r\n") : normalized;
-    fs.writeFileSync(webhookPath, finalContent, "utf-8");
+    fs.writeFileSync(filePath, finalContent, "utf-8");
     touched++;
-    console.log("✅ [webhooks.routes.ts] Вебхук MAX полностью переписан (кнопка Начать + форматирование).");
+    console.log(`✅ [${label}] Успешно применено.`);
   } else {
-    console.log("❌ Не удалось найти блок вебхука /max в файле.");
+    console.log(`❌ [${label}] Не найдена строка для замены.`);
   }
 }
+
+// 1. Добавляем импорт organizations в me.routes.ts
+patchFile(
+  "src/modules/me/me.routes.ts",
+  `import { userMessengers } from "../../../db/schema.js";`,
+  `import { userMessengers, organizations } from "../../../db/schema.js";`,
+  "me.routes.ts (добавлен импорт organizations)"
+);
+
+// 2. Делаем обработку ошибок на бэкенде более понятной
+patchFile(
+  "src/modules/me/me.routes.ts",
+  `    } catch (e: any) {
+      app.log.error(e);
+      return reply.code(500).send({ error: "Ошибка привязки мессенджера" });
+    }`,
+  `    } catch (e: any) {
+      app.log.error(e);
+      return reply.code(500).send({ error: e.message || "Ошибка привязки мессенджера" });
+    }`,
+  "me.routes.ts (отправка текста ошибки на фронтенд)"
+);
+
+// 3. На фронтенде защищаемся от вывода объекта вместо текста
+patchFile(
+  "frontend/src/pages/ProfilePage.tsx",
+  `      await alertDialog(e.response?.data?.error ?? "Ошибка привязки", { variant: "error" });`,
+  `      const errMsg = e.response?.data?.error;
+      await alertDialog(typeof errMsg === "string" ? errMsg : "Ошибка привязки", { variant: "error" });`,
+  "ProfilePage.tsx (безопасный вывод ошибки привязки)"
+);
 
 console.log("\n──────────────────────────────────────");
 if (touched > 0) {
   console.log(`🎉 Готово! Внесено изменений: ${touched}`);
-  console.log("Теперь можно коммитить и пушить.");
 } else {
   console.log("⚠️ Изменений не внесено.");
 }

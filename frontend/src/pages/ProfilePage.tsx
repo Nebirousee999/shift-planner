@@ -620,7 +620,8 @@ function MessengerSection({ userId }: { userId: string }) {
       localStorage.setItem(`messengers_${userId}`, JSON.stringify(next));
       await alertDialog("Мессенджер привязан", { variant: "success" });
     } catch (e: any) {
-      await alertDialog(e.response?.data?.error ?? "Ошибка привязки", { variant: "error" });
+      const errMsg = e.response?.data?.error;
+      await alertDialog(typeof errMsg === "string" ? errMsg : "Ошибка привязки", { variant: "error" });
     } finally {
       setBusy(false);
     }
