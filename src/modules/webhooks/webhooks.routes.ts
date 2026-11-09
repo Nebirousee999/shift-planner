@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { eq } from "drizzle-orm";
+import { eq, isNotNull } from "drizzle-orm";
 import axios from "axios";
 import { db } from "../../../db/client.js";
 import { payments, organizations } from "../../../db/schema.js";
@@ -84,21 +84,30 @@ export async function webhooksRoutes(app: FastifyInstance) {
       const body = req.body as any;
       const updateType = body.update_type;
       const message = body.message;
+      
       const sender = message?.sender || body.user;
-      const recipient = message?.recipient;
-
       const senderId = sender?.user_id?.toString();
-      // В message_created получатель (recipient) — это бот
-      const botId = recipient?.user_id?.toString() || body.bot_id?.toString();
+      
+      const recipient = message?.recipient;
+      let botId = recipient?.user_id?.toString() || body.bot_id?.toString();
 
-      if (updateType === "message_created" && senderId && botId) {
+      // Если событие bot_started и MAX не передал ID бота, берем его из базы
+      if (updateType === "bot_started" && !botId) {
+        const [org] = await db.select({ id: organizations.maxBotId }).from(organizations).where(isNotNull(organizations.maxBotId)).limit(1);
+        botId = org?.id || undefined;
+      }
+
+      // Обрабатываем и нажатие кнопки "Начать", и отправку сообщений
+      if ((updateType === "message_created" || updateType === "bot_started") && senderId && botId) {
         const [org] = await db
           .select({ token: organizations.maxBotToken })
           .from(organizations)
           .where(eq(organizations.maxBotId, botId));
 
         if (org && org.token) {
-          const replyText = `Привет! Твой ID в MAX: <b>${senderId}</b>\n\nСкопируй его и вставь в настройках профиля на сайте (Профиль -> Мессенджер), чтобы получать уведомления.`;
+          // Красивый текст без HTML-тегов и с переносом строки
+          const replyText = `Привет! Твой ID в MAX:\n\n${senderId}\n\nСкопируй его и вставь в настройках профиля на сайте (Профиль -> Мессенджер), чтобы получать уведомления.`;
+          
           await axios.post(
             `https://botapi.max.ru/messages?user_id=${senderId}`,
             { text: replyText },
