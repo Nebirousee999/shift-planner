@@ -35,7 +35,6 @@ export const organizations = pgTable("organizations", {
   legalAddress: varchar("legal_address", { length: 500 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   timeTrackingEnabled: boolean("time_tracking_enabled").default(false).notNull(),
-  notificationSettings: jsonb("notification_settings").default({}).notNull(),
   overtimeMultiplier1: numeric("overtime_multiplier_1").default("1.5").notNull(),
   overtimeMultiplier2: numeric("overtime_multiplier_2").default("2.0").notNull(),
   maxLocations: integer("max_locations").default(1).notNull(),
@@ -89,6 +88,8 @@ export const users = pgTable("users", {
   paymentType: paymentTypeEnum("payment_type").default("HOURLY").notNull(),
   employmentType: employmentTypeEnum("employment_type").default("SHTAT").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+
+  notificationSettings: jsonb("notification_settings").default({}).notNull(),
 });
 
 // ─── USER LOCATIONS ────────────────────────────────────
