@@ -2,91 +2,93 @@ import fs from "node:fs";
 import path from "node:path";
 
 const ROOT = process.cwd();
-const filePath = path.join(ROOT, "src/modules/vacations/vacations.service.ts");
+let touched = 0;
 
-if (!fs.existsSync(filePath)) {
-  console.log("❌ Файл vacations.service.ts не найден!");
-  process.exit(1);
-}
+function patchFile(relPath, search, replace, label) {
+  const filePath = path.join(ROOT, relPath);
+  if (!fs.existsSync(filePath)) return;
+  let content = fs.readFileSync(filePath, "utf-8");
+  const hadCRLF = content.includes("\r\n");
+  let normalized = hadCRLF ? content.replace(/\r\n/g, "\n") : content;
 
-let content = fs.readFileSync(filePath, "utf-8");
-const hadCRLF = content.includes("\r\n");
-let normalized = hadCRLF ? content.replace(/\r\n/g, "\n") : content;
+  if (normalized.includes(replace)) {
+    console.log(`⏭  [${label}] Уже исправлено.`);
+    return;
+  }
 
-// Ищем метод reject и полностью его заменяем
-const searchBlock = `  async reject(id: string, orgId: string, reviewerId: string) {
-    const [vac] = await db
-      .select()
-      .from(vacations)
-      .where(and(eq(vacations.id, id), eq(vacations.orgId, orgId)));
-    if (!vac) throw new Error("NOT_FOUND");
-    if (vac.status !== "PENDING") throw new Error("NOT_PENDING");
-
-    const [updated] = await db
-      .update(vacations)
-      .set({
-        startDate: vac.previousStartDate ?? vac.startDate,
-        endDate: vac.previousEndDate ?? vac.endDate,
-        comment: vac.previousComment ?? vac.comment,
-        status: "APPROVED",
-        previousStartDate: null,
-        previousEndDate: null,
-        previousComment: null,
-        reviewedBy: reviewerId,
-        reviewedAt: new Date(),
-      })
-      .where(eq(vacations.id, id))
-      .returning();`;
-
-const replaceBlock = `  async reject(id: string, orgId: string, reviewerId: string) {
-    const [vac] = await db
-      .select()
-      .from(vacations)
-      .where(and(eq(vacations.id, id), eq(vacations.orgId, orgId)));
-    if (!vac) throw new Error("NOT_FOUND");
-    if (vac.status !== "PENDING") throw new Error("NOT_PENDING");
-
-    let updated;
-
-    if (vac.previousStartDate) {
-      // Это было изменение существующего отпуска — откатываем старые даты
-      [updated] = await db
-        .update(vacations)
-        .set({
-          startDate: vac.previousStartDate,
-          endDate: vac.previousEndDate ?? vac.endDate,
-          comment: vac.previousComment ?? vac.comment,
-          status: "APPROVED",
-          previousStartDate: null,
-          previousEndDate: null,
-          previousComment: null,
-          reviewedBy: reviewerId,
-          reviewedAt: new Date(),
-        })
-        .where(eq(vacations.id, id))
-        .returning();
-    } else {
-      // Это был новый запрос на отпуск — просто удаляем его
-      await db.delete(vacations).where(eq(vacations.id, id));
-      updated = vac;
-    }`;
-
-if (normalized.includes(replaceBlock)) {
-  console.log("⏭  [vacations.service.ts] Логика отклонения уже исправлена.");
-} else if (normalized.includes(searchBlock)) {
-  normalized = normalized.replace(searchBlock, replaceBlock);
-  const finalContent = hadCRLF ? normalized.replace(/\n/g, "\r\n") : normalized;
-  fs.writeFileSync(filePath, finalContent, "utf-8");
-  console.log("✅ [vacations.service.ts] Логика отклонения обновлена (удаление новых запросов).");
-} else {
-  // Если точное совпадение не найдено (например, другие пробелы), делаем хитрую замену
-  const regex = /async reject\(id: string, orgId: string, reviewerId: string\) \{[\s\S]*?const \[updated\] = await db[\s\S]*?\.returning\(\);/;
-  if (regex.test(normalized)) {
-    normalized = normalized.replace(regex, replaceBlock);
+  if (normalized.includes(search)) {
+    normalized = normalized.replace(search, replace);
     const finalContent = hadCRLF ? normalized.replace(/\n/g, "\r\n") : normalized;
     fs.writeFileSync(filePath, finalContent, "utf-8");
-    console.log("✅ [vacations.service.ts] Логика отклонения обновлена (через Regex).");
+    touched++;
+    console.log(`✅ [${label}] Успешно применено.`);
   } else {
-    console.log("❌ Не удалось найти метод reject в файле.");
+    console.log(`❌ [${label}] Не найдена строка для замены.`);
   }
+}
+
+// 1. Бэкенд: умное удаление/отмена отпуска
+patchFile(
+  "src/modules/vacations/vacations.service.ts",
+  `        await db.delete(vacations).where(eq(vacations.id, input.id));
+        await notificationsService.dismissActionable(input.id, "vacation_request");
+        return { success: true };
+      },`,
+  `        if (vac.status === "PENDING") {
+          if (vac.previousStartDate) {
+            // Это было изменение отпуска — откатываем старые даты
+            await db
+              .update(vacations)
+              .set({
+                startDate: vac.previousStartDate,
+                endDate: vac.previousEndDate ?? vac.endDate,
+                comment: vac.previousComment ?? vac.comment,
+                status: "APPROVED",
+                previousStartDate: null,
+                previousEndDate: null,
+                previousComment: null,
+              })
+              .where(eq(vacations.id, input.id));
+          } else {
+            // Это был новый запрос — просто удаляем
+            await db.delete(vacations).where(eq(vacations.id, input.id));
+          }
+        } else {
+          // Обычное удаление одобренного отпуска
+          await db.delete(vacations).where(eq(vacations.id, input.id));
+        }
+
+        await notificationsService.dismissActionable(input.id, "vacation_request");
+        return { success: true };
+      },`,
+  "vacations.service.ts (умная отмена pending-запросов)"
+);
+
+// 2. Фронтенд: добавление иконки Undo2 в импорты
+patchFile(
+  "frontend/src/pages/MySchedulePage.tsx",
+  `  Pencil, Bell, CalendarX2, Stethoscope
+} from "lucide-react";`,
+  `  Pencil, Bell, CalendarX2, Stethoscope, Undo2
+} from "lucide-react";`,
+  "MySchedulePage.tsx (добавлен Undo2)"
+);
+
+// 3. Фронтенд: замена кнопки удаления на отмену, если есть статус PENDING
+patchFile(
+  "frontend/src/pages/MySchedulePage.tsx",
+  `                        <button onClick={() => onDeleteVacation(v.id)} className="text-slate-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-colors" title="Удалить"><X className="w-3.5 h-3.5" /></button>`,
+  `                        {isPending ? (
+                          <button onClick={() => onDeleteVacation(v.id)} className="text-amber-500 hover:text-amber-700 hover:bg-amber-50 p-1.5 rounded-lg transition-colors" title="Отменить запрос"><Undo2 className="w-3.5 h-3.5" /></button>
+                        ) : (
+                          <button onClick={() => onDeleteVacation(v.id)} className="text-slate-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-colors" title="Удалить"><X className="w-3.5 h-3.5" /></button>
+                        )}`,
+  "MySchedulePage.tsx (кнопка отмены для PENDING)"
+);
+
+console.log("\n──────────────────────────────────────");
+if (touched > 0) {
+  console.log(`🎉 Готово! Внесено изменений: ${touched}`);
+} else {
+  console.log("⚠️ Изменений не внесено.");
 }

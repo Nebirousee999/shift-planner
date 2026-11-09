@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Play, Square, Activity, CalendarDays, Clock, ArrowRightLeft,
   Check, X, Inbox, Send, XCircle, Palmtree, Plus, AlertCircle,
-  Pencil, Bell, CalendarX2, Stethoscope
+  Pencil, Bell, CalendarX2, Stethoscope, Undo2
 } from "lucide-react";
 import { meApi, type MyShift, type Colleague } from "../api/me";
 import type { Vacation } from "../api/vacations";
@@ -739,7 +739,11 @@ export default function MySchedulePage() {
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
                         {!isPast && <button onClick={() => openEditForm(v)} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 p-1.5 rounded-lg transition-colors" title="Редактировать"><Pencil className="w-3.5 h-3.5" /></button>}
-                        <button onClick={() => onDeleteVacation(v.id)} className="text-slate-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-colors" title="Удалить"><X className="w-3.5 h-3.5" /></button>
+                        {isPending ? (
+                          <button onClick={() => onDeleteVacation(v.id)} className="text-amber-500 hover:text-amber-700 hover:bg-amber-50 p-1.5 rounded-lg transition-colors" title="Отменить запрос"><Undo2 className="w-3.5 h-3.5" /></button>
+                        ) : (
+                          <button onClick={() => onDeleteVacation(v.id)} className="text-slate-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-colors" title="Удалить"><X className="w-3.5 h-3.5" /></button>
+                        )}
                       </div>
                     </div>
                   );
