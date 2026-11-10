@@ -24,32 +24,42 @@ function patchFile(relPath, search, replace, label) {
   }
 }
 
-// ═══ 1. Фикс выхода из профиля (очищаем токен чата) ═══
+// ═══ 1. Бэкенд: разделяем гостя и юзера ═══
+// В POST запросе запрещаем привязывать гостевой тикет к юзеру
 patchFile(
-  "frontend/src/store/auth.ts",
-  `  logout: () => {\n    localStorage.removeItem("token");\n    localStorage.removeItem("user");`,
-  `  logout: () => {\n    localStorage.removeItem("token");\n    localStorage.removeItem("user");\n    localStorage.removeItem("support_session_token"); // Очищаем сессию чата`,
-  "auth.ts (очистка сессии при выходе)"
+  "src/modules/support/support.routes.ts",
+  `    if (!ticket) {\n      const found = await db\n        .select()\n        .from(supportTickets)\n        .where(eq(supportTickets.sessionToken, sessionToken));\n      if (found.length > 0) ticket = found[0];\n    }`,
+  `    if (!ticket && !userId) {\n      const found = await db\n        .select()\n        .from(supportTickets)\n        .where(eq(supportTickets.sessionToken, sessionToken));\n      if (found.length > 0) ticket = found[0];\n    }`,
+  "support.routes.ts (POST fallback)"
 );
 
-// ═══ 2. Фикс виджета (показываем почту, если она пустая) ═══
+// В GET запросе запрещаем юзеру подтягивать гостевой тикет
 patchFile(
-  "frontend/src/components/SupportChat.tsx",
-  `  const [email, setEmail] = useState(user?.email || "");`,
-  `  const [email, setEmail] = useState(user?.email || "");\n\n  useEffect(() => {\n    if (user?.email) setEmail(user.email);\n  }, [user?.email]);`,
-  "SupportChat.tsx (обновление email при смене юзера)"
+  "src/modules/support/support.routes.ts",
+  `    if (!ticket && sessionToken) {\n      const found = await db\n        .select()\n        .from(supportTickets)\n        .where(eq(supportTickets.sessionToken, sessionToken));\n      if (found.length > 0) ticket = found[0];\n    }`,
+  `    if (!ticket && sessionToken && !userId) {\n      const found = await db\n        .select()\n        .from(supportTickets)\n        .where(eq(supportTickets.sessionToken, sessionToken));\n      if (found.length > 0) ticket = found[0];\n    }`,
+  "support.routes.ts (GET fallback)"
 );
 
+// ═══ 2. Фронтенд: сбрасываем UI при смене юзера ═══
 patchFile(
   "frontend/src/components/SupportChat.tsx",
-  `        {messages.length === 0 && (`,
-  `        {(!email || messages.length === 0) && (`,
-  "SupportChat.tsx (показ почты, если пустая)"
+  `  useEffect(() => {\n    if (user?.email) setEmail(user.email);\n  }, [user?.email]);`,
+  `  // Сбрасываем сообщения и почту при смене пользователя (вход/выход)\n  useEffect(() => {\n    if (user?.email) {\n      setEmail(user.email);\n    } else {\n      setEmail("");\n    }\n    setMessages([]);\n    setFetching(true);\n  }, [user?.id]);`,
+  "SupportChat.tsx (сброс при смене юзера)"
+);
+
+// Добавляем user?.id в зависимости для загрузки сообщений
+patchFile(
+  "frontend/src/components/SupportChat.tsx",
+  `  useEffect(() => {\n    loadMessages();\n    const interval = setInterval(loadMessages, 5000); // Опрос каждые 5 сек\n    return () => clearInterval(interval);\n  }, [sessionToken]);`,
+  `  useEffect(() => {\n    if (!sessionToken) return;\n    loadMessages();\n    const interval = setInterval(loadMessages, 5000); // Опрос каждые 5 сек\n    return () => clearInterval(interval);\n  }, [sessionToken, user?.id]);`,
+  "SupportChat.tsx (перезагрузка при смене юзера)"
 );
 
 console.log("\n──────────────────────────────────────");
 if (touched > 0) {
-  console.log("🎉 Готово! Чат очищается при выходе, почта всегда запрашивается.");
+  console.log("🎉 Готово! Гостевой и пользовательский чаты разделены.");
 } else {
   console.log("⚠️ Изменений не внесено.");
 }

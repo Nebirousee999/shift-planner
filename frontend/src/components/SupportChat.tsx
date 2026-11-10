@@ -8,9 +8,16 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
   const [sessionToken, setSessionToken] = useState<string>("");
   const [email, setEmail] = useState(user?.email || "");
 
+  // Сбрасываем сообщения и почту при смене пользователя (вход/выход)
   useEffect(() => {
-    if (user?.email) setEmail(user.email);
-  }, [user?.email]);
+    if (user?.email) {
+      setEmail(user.email);
+    } else {
+      setEmail("");
+    }
+    setMessages([]);
+    setFetching(true);
+  }, [user?.id]);
   const [message, setMessage] = useState("");
   const [images, setImages] = useState<string[]>([]);
   const [messages, setMessages] = useState<SupportMessage[]>([]);
@@ -43,10 +50,11 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
   };
 
   useEffect(() => {
+    if (!sessionToken) return;
     loadMessages();
     const interval = setInterval(loadMessages, 5000); // Опрос каждые 5 сек
     return () => clearInterval(interval);
-  }, [sessionToken]);
+  }, [sessionToken, user?.id]);
 
   // Прокрутка вниз при новом сообщении
   useEffect(() => {

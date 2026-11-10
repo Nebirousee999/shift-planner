@@ -44,7 +44,7 @@ export async function supportRoutes(app: FastifyInstance) {
     }
 
     // 2. Если не нашли (или гость) — ищем по сессии
-    if (!ticket) {
+    if (!ticket && !userId) {
       const found = await db
         .select()
         .from(supportTickets)
@@ -120,7 +120,7 @@ export async function supportRoutes(app: FastifyInstance) {
       if (found.length > 0) ticket = found[0];
     }
 
-    if (!ticket && sessionToken) {
+    if (!ticket && sessionToken && !userId) {
       const found = await db
         .select()
         .from(supportTickets)
