@@ -7,6 +7,10 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
   const { user } = useAuth();
   const [sessionToken, setSessionToken] = useState<string>("");
   const [email, setEmail] = useState(user?.email || "");
+
+  useEffect(() => {
+    if (user?.email) setEmail(user.email);
+  }, [user?.email]);
   const [message, setMessage] = useState("");
   const [images, setImages] = useState<string[]>([]);
   const [messages, setMessages] = useState<SupportMessage[]>([]);
@@ -153,7 +157,7 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
           </div>
         )}
 
-        {messages.length === 0 && (
+        {(!email || messages.length === 0) && (
           <div className="mb-2">
             <input
               type="email"

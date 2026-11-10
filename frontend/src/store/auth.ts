@@ -93,6 +93,7 @@ export const useAuth = create<AuthState>((set) => ({
   logout: () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
+    localStorage.removeItem("support_session_token"); // Очищаем сессию чата
     // Сбрасываем кэш организации, чтобы при следующем входе под другим
     // пользователем NavBar не мигал чужой организацией
     resetOrganizationStore();
