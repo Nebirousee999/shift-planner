@@ -13,7 +13,7 @@ function writeFile(relPath, content, label) {
   console.log("✅ [" + label + "] Перезаписан");
 }
 
-// ═══ Правильный Nginx: быстро + без ошибок в Docker ═══
+// ═══ Возвращаем СТАНДАРТНЫЙ, быстрый Nginx ═══
 writeFile(
   "frontend/nginx.conf",
   `server {
@@ -23,27 +23,6 @@ writeFile(
     root /usr/share/nginx/html;
     index index.html;
 
-    # 🔥 Лечим баг Docker с обрывом соединения, но возвращаем скорость
-    sendfile off;
-
-    # 🔥 Включаем сжатие обратно (сайт будет грузиться за 1 секунду)
-    gzip on;
-    gzip_vary on;
-    gzip_proxied any;
-    gzip_comp_level 6;
-    gzip_min_length 1000;
-    gzip_types
-        text/plain
-        text/css
-        application/json
-        application/javascript
-        application/x-javascript
-        text/xml
-        application/xml
-        application/xml+rss
-        text/javascript
-        image/svg+xml;
-
     # Проксируем все запросы к API на бэкенд
     location /api/ {
         proxy_pass http://api:3001/api/;
@@ -51,9 +30,6 @@ writeFile(
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        
-        # Отключаем буферизацию для API, чтобы избежать обрывов
-        proxy_buffering off;
     }
 
     # Обработка React (SPA)
@@ -67,7 +43,7 @@ writeFile(
 
 console.log("\n──────────────────────────────────────");
 if (touched > 0) {
-  console.log("🎉 Готово! Настройки Nginx оптимизированы.");
+  console.log("🎉 Готово! Nginx восстановлен до стандартной быстрой конфигурации.");
 } else {
   console.log("⚠️ Изменений не внесено.");
 }
