@@ -73,7 +73,7 @@ export default function FAQSection() {
           <p className="text-lg text-slate-600">
             Не нашли ответ? Напишите на{" "}
             <a
-              href="mailto:help@shift-planner.ru"
+              href="mailto:prihodko999@inbox.ru"
               className="text-brand-600 hover:underline"
             >
               help@shift-planner.ru

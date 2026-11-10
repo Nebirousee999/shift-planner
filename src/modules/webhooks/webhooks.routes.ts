@@ -105,15 +105,32 @@ export async function webhooksRoutes(app: FastifyInstance) {
           .where(eq(organizations.maxBotId, botId));
 
         if (org && org.token) {
-          // Красивый текст без HTML-тегов и с переносом строки
-          const replyText = `Привет! Твой ID в MAX:\n\n${senderId}\n\nСкопируй его и вставь в настройках профиля на сайте (Профиль -> Мессенджер), чтобы получать уведомления.`;
-          
-          await axios.post(
-            `https://botapi.max.ru/messages?user_id=${senderId}`,
-            { text: replyText },
-            { headers: { Authorization: org.token } }
-          );
-          app.log.info({ botId, senderId }, "✅ Отправлено приветственное сообщение в MAX");
+          const text = message?.body?.text || "";
+          const ADMIN_ID = "141744495"; // Твой личный ID в MAX
+
+          // Если пишет сам админ, бот просто сохраняет ID (для привязки)
+          if (senderId === ADMIN_ID) {
+            const replyText = `Привет! Твой ID в MAX:\n\n${senderId}\n\nСкопируй его и вставь в настройках профиля на сайте (Профиль -> Мессенджер), чтобы получать уведомления.`;
+            await axios.post(`https://botapi.max.ru/messages?user_id=${senderId}`, { text: replyText }, { headers: { Authorization: org.token } });
+          } 
+          // Если пишет клиент — пересылаем тебе в ЛС
+          else {
+            // 1. Отвечаем клиенту
+            await axios.post(
+              `https://botapi.max.ru/messages?user_id=${senderId}`,
+              { text: `Спасибо! Ваше сообщение передано в поддержку. Мы ответим вам в ближайшее время.` },
+              { headers: { Authorization: org.token } }
+            );
+
+            // 2. Пересылаем сообщение Админу
+            const forwardText = `📩 Новое сообщение в поддержку!\n\nОт: ${sender?.name || 'Пользователь'} (ID: ${senderId})\nТекст: ${text}`;
+            await axios.post(
+              `https://botapi.max.ru/messages?user_id=${ADMIN_ID}`,
+              { text: forwardText },
+              { headers: { Authorization: org.token } }
+            );
+            app.log.info({ senderId }, "✅ Сообщение клиента переслано админу");
+          }
         } else {
           app.log.warn({ botId }, "❌ Бот не найден в БД или отсутствует токен");
         }

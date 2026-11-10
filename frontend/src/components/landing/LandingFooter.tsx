@@ -67,7 +67,7 @@ export default function LandingFooter() {
             </p>
             <div className="flex gap-2">
               <a
-                href="mailto:help@shift-planner.ru"
+                href="mailto:prihodko999@inbox.ru"
                 className="w-9 h-9 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors"
                 aria-label="Email"
               >

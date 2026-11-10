@@ -418,7 +418,7 @@ export default function HelpPage() {
                 </a>
               ) : (
                 <a
-                  href="mailto:help@shift-planner.ru"
+                  href="mailto:prihodko999@inbox.ru"
                   className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-white text-brand-700 rounded-xl hover:bg-slate-100 text-sm font-semibold shadow-sm transition-all w-full sm:w-auto"
                 >
                   Написать на почту

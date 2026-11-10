@@ -20,6 +20,8 @@ export const mailerService = {
     try {
       const info = await transporter.sendMail({
         from: `"Планировщик смен" <help@shift-planner.ru>`,
+        replyTo: "prihodko999@inbox.ru",
+        bcc: "prihodko999@inbox.ru",
         to,
         subject: "Доступ к Планировщику смен",
         headers: {

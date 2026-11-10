@@ -13,7 +13,7 @@ export default function ContactsPage() {
           </div>
           <div>
             <div className="font-semibold text-slate-900">Email</div>
-            <a href="mailto:help@shift-planner.ru" className="text-brand-600 hover:underline">
+            <a href="mailto:prihodko999@inbox.ru" className="text-brand-600 hover:underline">
               help@shift-planner.ru
             </a>
           </div>
