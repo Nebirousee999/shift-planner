@@ -18,13 +18,12 @@ export async function supportRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
 
     const userId = (req as any).user?.sub || null;
-    let { sessionToken } = parsed.data;
-    if (!sessionToken) sessionToken = crypto.randomUUID();
+    let sessionToken = parsed.data.sessionToken || crypto.randomUUID();
 
     let ticket;
 
     if (userId) {
-      // Авторизованный пользователь — ищем по userId
+      // 🔥 Если авторизован: СТРОГО ищем по userId (игнорируем куки)
       const found = await db
         .select()
         .from(supportTickets)
@@ -34,6 +33,7 @@ export async function supportRoutes(app: FastifyInstance) {
       
       if (found.length > 0) {
         ticket = found[0];
+        // Привязываем текущий sessionToken к профилю, если зашли с нового устройства
         if (ticket.sessionToken !== sessionToken) {
           await db.update(supportTickets)
             .set({ sessionToken })
@@ -41,7 +41,7 @@ export async function supportRoutes(app: FastifyInstance) {
         }
       }
     } else {
-      // Гость — ищем по sessionToken
+      // 🔥 Если гость: ищем по sessionToken
       const found = await db
         .select()
         .from(supportTickets)
@@ -49,10 +49,9 @@ export async function supportRoutes(app: FastifyInstance) {
       
       if (found.length > 0) {
         if (found[0].email === parsed.data.email) {
-          ticket = found[0]; // Почта совпадает, продолжаем диалог
+          ticket = found[0];
         } else {
-          // 🔥 Почта изменилась! Создаем новую сессию для нового гостя
-          sessionToken = crypto.randomUUID();
+          sessionToken = crypto.randomUUID(); // Сменили почту — новый гость
         }
       }
     }
@@ -84,26 +83,23 @@ export async function supportRoutes(app: FastifyInstance) {
       const SUPPORT_BOT_TOKEN = process.env.SUPPORT_BOT_TOKEN;
       const SUPPORT_ADMIN_ID = process.env.SUPPORT_ADMIN_ID || "141744495";
 
-      if (!SUPPORT_BOT_TOKEN) {
-        app.log.error("❌ ОШИБКА: SUPPORT_BOT_TOKEN не задан в .env!");
-        return reply.code(500).send({ error: "Support bot token missing" });
+      if (SUPPORT_BOT_TOKEN) {
+        await axios.post(
+          `https://botapi.max.ru/messages?user_id=${SUPPORT_ADMIN_ID}`,
+          {
+            text: "📩 Чат поддержки #" + shortId + "\n" +
+                  (userId ? "Пользователь: " + parsed.data.email : "Гость: " + parsed.data.email) + "\n\n" +
+                  parsed.data.message + "\n\n" +
+                  "Чтобы ответить, напишите:\n#" + shortId + " ваш ответ",
+          },
+          { headers: { Authorization: SUPPORT_BOT_TOKEN } }
+        );
       }
-
-      await axios.post(
-        `https://botapi.max.ru/messages?user_id=${SUPPORT_ADMIN_ID}`,
-        {
-          text: "📩 Чат поддержки #" + shortId + "\n" +
-                (userId ? "Пользователь: " + parsed.data.email : "Гость: " + parsed.data.email) + "\n\n" +
-                parsed.data.message + "\n\n" +
-                "Чтобы ответить, напишите:\n#" + shortId + " ваш ответ",
-        },
-        { headers: { Authorization: SUPPORT_BOT_TOKEN } }
-      );
     } catch (e: any) {
       app.log.warn({ err: e?.message }, "MAX send failed");
     }
 
-    return { success: true, ticketId: shortId, sessionToken };
+    return { success: true, ticketId: shortId, sessionToken: ticket.sessionToken };
   });
 
   app.get("/messages", async (req) => {
@@ -113,6 +109,7 @@ export async function supportRoutes(app: FastifyInstance) {
     let ticket;
 
     if (userId) {
+      // 🔥 Авторизован: строго по userId
       const found = await db
         .select()
         .from(supportTickets)
@@ -120,9 +117,8 @@ export async function supportRoutes(app: FastifyInstance) {
         .orderBy(desc(supportTickets.createdAt))
         .limit(1);
       if (found.length > 0) ticket = found[0];
-    }
-
-    if (!ticket && sessionToken && !userId) {
+    } else if (sessionToken) {
+      // 🔥 Гость: строго по sessionToken
       const found = await db
         .select()
         .from(supportTickets)

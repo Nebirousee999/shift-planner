@@ -15,7 +15,7 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Инициализация сессии
+  // 🔥 Следим за входом/выходом, обновляем токен и сбрасываем UI
   useEffect(() => {
     let token = localStorage.getItem("support_session_token");
     if (!token) {
@@ -23,21 +23,19 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
       localStorage.setItem("support_session_token", token);
     }
     setSessionToken(token);
-  }, []);
-
-  // Сброс при смене пользователя
-  useEffect(() => {
+    
     if (user?.email) {
       setEmail(user.email);
     } else {
       setEmail("");
     }
+    
     setMessages([]);
     setFetching(true);
   }, [user?.id]);
 
   const loadMessages = async () => {
-    if (!sessionToken) return;
+    if (!sessionToken && !user?.id) return;
     try {
       const msgs = await supportApi.getMessages(sessionToken);
       setMessages(msgs);
@@ -94,17 +92,12 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
     if (!email || (!message && images.length === 0)) return;
     setLoading(true);
     try {
-      // Отправляем и получаем ответ
       const res = await supportApi.send({ email, message, images, sessionToken });
-      
-      // Если бэкенд выдал новый токен (смена почты у гостя) — сохраняем его
       if (res.sessionToken && res.sessionToken !== sessionToken) {
         setSessionToken(res.sessionToken);
         localStorage.setItem("support_session_token", res.sessionToken);
-      } else {
-        await loadMessages();
       }
-      
+      await loadMessages();
       setMessage("");
       setImages([]);
     } catch (err) {
@@ -170,7 +163,8 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
           </div>
         )}
 
-        {(!email || messages.length === 0) && (
+        {/* 🔥 Поле почты скрыто, если пользователь авторизован */}
+        {!user && (
           <div className="mb-2">
             <input
               type="email"

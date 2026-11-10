@@ -13,6 +13,151 @@ function writeFile(relPath, content, label) {
   console.log("✅ [" + label + "] Перезаписан");
 }
 
+// ═══ 1. Бэкенд: Жесткая привязка к userId ═══
+writeFile(
+  "src/modules/support/support.routes.ts",
+  `import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import { eq, desc } from "drizzle-orm";
+import { db } from "../../../db/client.js";
+import { supportTickets, supportMessages } from "../../../db/schema.js";
+import axios from "axios";
+import crypto from "node:crypto";
+
+export async function supportRoutes(app: FastifyInstance) {
+  app.post("/", async (req, reply) => {
+    const parsed = z.object({
+      email: z.string().email(),
+      message: z.string().min(1),
+      images: z.array(z.string()).optional().default([]),
+      sessionToken: z.string().optional(),
+    }).safeParse(req.body);
+
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+
+    const userId = (req as any).user?.sub || null;
+    let sessionToken = parsed.data.sessionToken || crypto.randomUUID();
+
+    let ticket;
+
+    if (userId) {
+      // 🔥 Если авторизован: СТРОГО ищем по userId (игнорируем куки)
+      const found = await db
+        .select()
+        .from(supportTickets)
+        .where(eq(supportTickets.userId, userId))
+        .orderBy(desc(supportTickets.createdAt))
+        .limit(1);
+      
+      if (found.length > 0) {
+        ticket = found[0];
+        // Привязываем текущий sessionToken к профилю, если зашли с нового устройства
+        if (ticket.sessionToken !== sessionToken) {
+          await db.update(supportTickets)
+            .set({ sessionToken })
+            .where(eq(supportTickets.id, ticket.id));
+        }
+      }
+    } else {
+      // 🔥 Если гость: ищем по sessionToken
+      const found = await db
+        .select()
+        .from(supportTickets)
+        .where(eq(supportTickets.sessionToken, sessionToken));
+      
+      if (found.length > 0) {
+        if (found[0].email === parsed.data.email) {
+          ticket = found[0];
+        } else {
+          sessionToken = crypto.randomUUID(); // Сменили почту — новый гость
+        }
+      }
+    }
+
+    if (!ticket) {
+      const inserted = await db
+        .insert(supportTickets)
+        .values({
+          userId,
+          email: parsed.data.email,
+          sessionToken,
+          status: "OPEN",
+          message: parsed.data.message,
+        })
+        .returning();
+      ticket = inserted[0];
+    }
+
+    await db.insert(supportMessages).values({
+      ticketId: ticket.id,
+      sender: "USER",
+      text: parsed.data.message,
+      images: parsed.data.images,
+    });
+
+    const shortId = ticket.id.slice(0, 6).toUpperCase();
+
+    try {
+      const SUPPORT_BOT_TOKEN = process.env.SUPPORT_BOT_TOKEN;
+      const SUPPORT_ADMIN_ID = process.env.SUPPORT_ADMIN_ID || "141744495";
+
+      if (SUPPORT_BOT_TOKEN) {
+        await axios.post(
+          \`https://botapi.max.ru/messages?user_id=\${SUPPORT_ADMIN_ID}\`,
+          {
+            text: "📩 Чат поддержки #" + shortId + "\\n" +
+                  (userId ? "Пользователь: " + parsed.data.email : "Гость: " + parsed.data.email) + "\\n\\n" +
+                  parsed.data.message + "\\n\\n" +
+                  "Чтобы ответить, напишите:\\n#" + shortId + " ваш ответ",
+          },
+          { headers: { Authorization: SUPPORT_BOT_TOKEN } }
+        );
+      }
+    } catch (e: any) {
+      app.log.warn({ err: e?.message }, "MAX send failed");
+    }
+
+    return { success: true, ticketId: shortId, sessionToken: ticket.sessionToken };
+  });
+
+  app.get("/messages", async (req) => {
+    const { sessionToken } = req.query as { sessionToken?: string };
+    const userId = (req as any).user?.sub || null;
+
+    let ticket;
+
+    if (userId) {
+      // 🔥 Авторизован: строго по userId
+      const found = await db
+        .select()
+        .from(supportTickets)
+        .where(eq(supportTickets.userId, userId))
+        .orderBy(desc(supportTickets.createdAt))
+        .limit(1);
+      if (found.length > 0) ticket = found[0];
+    } else if (sessionToken) {
+      // 🔥 Гость: строго по sessionToken
+      const found = await db
+        .select()
+        .from(supportTickets)
+        .where(eq(supportTickets.sessionToken, sessionToken));
+      if (found.length > 0) ticket = found[0];
+    }
+
+    if (!ticket) return [];
+
+    return db
+      .select()
+      .from(supportMessages)
+      .where(eq(supportMessages.ticketId, ticket.id))
+      .orderBy(supportMessages.createdAt);
+  });
+}
+`,
+  "src/modules/support/support.routes.ts"
+);
+
+// ═══ 2. Фронтенд: Обновляем sessionToken при смене юзера и скрываем поле почты для своих ═══
 writeFile(
   "frontend/src/components/SupportChat.tsx",
   `import { useState, useRef, useEffect } from "react";
@@ -32,7 +177,7 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Инициализация сессии
+  // 🔥 Следим за входом/выходом, обновляем токен и сбрасываем UI
   useEffect(() => {
     let token = localStorage.getItem("support_session_token");
     if (!token) {
@@ -40,21 +185,19 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
       localStorage.setItem("support_session_token", token);
     }
     setSessionToken(token);
-  }, []);
-
-  // Сброс при смене пользователя
-  useEffect(() => {
+    
     if (user?.email) {
       setEmail(user.email);
     } else {
       setEmail("");
     }
+    
     setMessages([]);
     setFetching(true);
   }, [user?.id]);
 
   const loadMessages = async () => {
-    if (!sessionToken) return;
+    if (!sessionToken && !user?.id) return;
     try {
       const msgs = await supportApi.getMessages(sessionToken);
       setMessages(msgs);
@@ -111,17 +254,12 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
     if (!email || (!message && images.length === 0)) return;
     setLoading(true);
     try {
-      // Отправляем и получаем ответ
       const res = await supportApi.send({ email, message, images, sessionToken });
-      
-      // Если бэкенд выдал новый токен (смена почты у гостя) — сохраняем его
       if (res.sessionToken && res.sessionToken !== sessionToken) {
         setSessionToken(res.sessionToken);
         localStorage.setItem("support_session_token", res.sessionToken);
-      } else {
-        await loadMessages();
       }
-      
+      await loadMessages();
       setMessage("");
       setImages([]);
     } catch (err) {
@@ -187,7 +325,8 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
           </div>
         )}
 
-        {(!email || messages.length === 0) && (
+        {/* 🔥 Поле почты скрыто, если пользователь авторизован */}
+        {!user && (
           <div className="mb-2">
             <input
               type="email"
@@ -237,9 +376,9 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
   "frontend/src/components/SupportChat.tsx"
 );
 
-console.log("\\n──────────────────────────────────────");
+console.log("\n──────────────────────────────────────");
 if (touched > 0) {
-  console.log("🎉 Готово! SupportChat.tsx полностью перезаписан.");
+  console.log("🎉 Готово! Логика чатов полностью переписана (разделение гостя и профиля).");
 } else {
   console.log("⚠️ Изменений не внесено.");
 }
