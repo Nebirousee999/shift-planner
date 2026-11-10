@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, desc } from "drizzle-orm";
 import { db } from "../../../db/client.js";
-import { supportTickets, organizations } from "../../../db/schema.js";
+import { supportTickets } from "../../../db/schema.js";
 import { mailerService } from "../../lib/mailer.service.js";
 import axios from "axios";
 
@@ -35,10 +35,12 @@ export async function supportRoutes(app: FastifyInstance) {
       .catch((e) => app.log.error(e));
 
     try {
-      const [org] = await db.select().from(organizations).limit(1);
-      if (org?.maxBotToken) {
+      const SUPPORT_BOT_TOKEN = process.env.SUPPORT_BOT_TOKEN;
+      const SUPPORT_ADMIN_ID = process.env.SUPPORT_ADMIN_ID || "141744495";
+
+      if (SUPPORT_BOT_TOKEN) {
         await axios.post(
-          "https://botapi.max.ru/messages?user_id=141744495",
+          `https://botapi.max.ru/messages?user_id=${SUPPORT_ADMIN_ID}`,
           {
             text:
               "📩 Обращение #" + shortId + "\n" +
@@ -46,19 +48,19 @@ export async function supportRoutes(app: FastifyInstance) {
               parsed.data.message + "\n\n" +
               "Чтобы ответить, напишите:\n#" + shortId + " ваш ответ",
           },
-          { headers: { Authorization: org.maxBotToken } }
+          { headers: { Authorization: SUPPORT_BOT_TOKEN } }
         );
 
         if (parsed.data.images.length > 0) {
           await axios.post(
-            "https://botapi.max.ru/messages?user_id=141744495",
+            `https://botapi.max.ru/messages?user_id=${SUPPORT_ADMIN_ID}`,
             { text: "📎 Клиент прикрепил " + parsed.data.images.length + " фото. Они отправлены вам на почту." },
-            { headers: { Authorization: org.maxBotToken } }
+            { headers: { Authorization: SUPPORT_BOT_TOKEN } }
           );
         }
       }
     } catch (e: any) {
-      app.log.warn({ err: e?.message }, "MAX send failed");
+      app.log.warn({ err: e?.message }, "MAX support send failed");
     }
 
     return { success: true, ticketId: shortId };
