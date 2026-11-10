@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   ChevronLeft, Copy, CheckCircle2, Plus, X, Trash2, Clock, CalendarDays,
-  AlertCircle, Pencil, Check, ClipboardPaste, Clipboard, GripVertical,
+  AlertCircle, Pencil, Check, ClipboardPaste, CopyPlus, GripVertical,
   Maximize2, Minimize2, Bell, Wallet, CalendarX2, Stethoscope,
 } from "lucide-react";
 import { useWeeks } from "../store/weeks";
@@ -461,7 +461,6 @@ export default function WeekDetailPage() {
   const onPasteShift = async (date: string) => {
     if (!clipboardShift) return;
     await onAddShift(date, clipboardShift);
-    setClipboardShift(null);
   };
 
   const onDragStart = (e: React.DragEvent, shiftId: string) => {
@@ -938,7 +937,7 @@ export default function WeekDetailPage() {
                           className="p-1 text-slate-400 hover:text-brand-600 hover:bg-brand-50 disabled:opacity-30 transition-colors"
                           title="Скопировать весь день"
                         >
-                          <Clipboard className="w-3.5 h-3.5" />
+                          <Copy className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={(e) => {
@@ -966,7 +965,7 @@ export default function WeekDetailPage() {
                               className="p-1 text-emerald-600 hover:bg-emerald-50 transition-colors"
                               title="Вставить одну смену"
                             >
-                              <Plus className="w-3.5 h-3.5" />
+                              <CopyPlus className="w-3.5 h-3.5" />
                             </button>
                           </>
                         )}
@@ -1299,14 +1298,14 @@ export default function WeekDetailPage() {
                       })}
                     </select>
 
-                    <div className="flex gap-1">
+                    <div className="grid grid-cols-2 gap-1">
                       <input
                         type="time"
                         value={form.startTime}
                         onChange={(e) =>
                           setForm((f) => ({ ...f, startTime: e.target.value }))
                         }
-                        className="!text-xs !px-1.5 !py-1"
+                        className="!text-[11px] !px-0.5 !py-1 !w-full min-w-0 text-center"
                       />
                       <input
                         type="time"
@@ -1314,7 +1313,7 @@ export default function WeekDetailPage() {
                         onChange={(e) =>
                           setForm((f) => ({ ...f, endTime: e.target.value }))
                         }
-                        className="!text-xs !px-1.5 !py-1"
+                        className="!text-[11px] !px-0.5 !py-1 !w-full min-w-0 text-center"
                       />
                     </div>
 

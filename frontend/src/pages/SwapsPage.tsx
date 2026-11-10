@@ -10,10 +10,12 @@ import {
   CalendarDays,
   Check,
   X,
-  Trash2
+  Trash2,
+  Eye
 } from "lucide-react";
 import { useSwaps } from "../store/swaps";
 import { useAuth } from "../store/auth";
+import { useNavigate } from "react-router-dom";
 import { useNotifications } from "../store/notifications";
 import { swapsApi } from "../api/swaps";
 import { alertDialog, confirmDialog } from "../store/dialogs";
@@ -82,6 +84,7 @@ function initials(name: string | null | undefined): string {
 }
 
 export default function SwapsPage() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const isAdmin = user?.role === "OWNER" || user?.role === "MANAGER";
   const {
@@ -148,16 +151,23 @@ export default function SwapsPage() {
   };
 
   const onDecline = async (id: string) => {
-    const ok = await confirmDialog("Отклонить запрос на обмен?", {
-      title: "Отклонение",
+    const req = all.find(r => r.id === id);
+    if (!req) return;
+    const isOpen = !req.swapWithUserId;
+
+    const ok = await confirmDialog(isOpen ? "Скрыть этот обмен из списка?" : "Отклонить запрос на обмен?", {
+      title: isOpen ? "Скрыть" : "Отклонение",
       variant: "danger",
+      confirmLabel: isOpen ? "Скрыть" : "Отклонить"
     });
     if (!ok) return;
 
     try {
       await swapsApi.decline(id);
       await reload();
-      setTab("DENIED"); // Автоматически переключаем на вкладку "Отклонены"
+      if (!isOpen) {
+        setTab("DENIED"); // Переключаем только если это был адресный обмен
+      }
     } catch (e: any) {
       await alertDialog(e.response?.data?.error ?? "Ошибка", {
         variant: "error",
@@ -310,6 +320,18 @@ export default function SwapsPage() {
                         <StatusIcon className="w-3.5 h-3.5" />
                         {meta.label}
                       </span>
+
+                      <button
+                        onClick={() => {
+                          if (r.weekId) navigate(`/weeks/${r.weekId}`);
+                          else navigate("/weeks");
+                        }}
+                        className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-lg transition-colors"
+                        title="Посмотреть в расписании"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Посмотреть</span>
+                      </button>
 
                       {canModerate && (
                         <div className="flex items-center gap-1.5">

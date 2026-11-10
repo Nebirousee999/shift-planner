@@ -6,19 +6,18 @@ const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function sickLeavesRoutes(app: FastifyInstance) {
   app.addHook("preHandler", app.authenticate);
-  app.addHook("preHandler", app.requireRole(["OWNER", "MANAGER"]));
 
   app.get("/mine", async (req) => {
     const { sub: userId } = req.user!;
     return sickLeavesService.listMine(userId);
   });
 
-  app.get("/", async (req) => {
+  app.get("/", { preHandler: app.requireRole(["OWNER", "MANAGER"]) }, async (req) => {
     const { orgId } = req.user!;
     return sickLeavesService.list(orgId);
   });
 
-  app.post("/", async (req, reply) => {
+  app.post("/", { preHandler: app.requireRole(["OWNER", "MANAGER"]) }, async (req, reply) => {
     const parsed = z.object({
       userId: z.string().uuid(),
       startDate: z.string().regex(dateRegex),
@@ -36,7 +35,7 @@ export async function sickLeavesRoutes(app: FastifyInstance) {
     });
   });
 
-  app.patch<{ Params: { id: string } }>("/:id", async (req, reply) => {
+  app.patch<{ Params: { id: string } }>("/:id", { preHandler: app.requireRole(["OWNER", "MANAGER"]) }, async (req, reply) => {
     const parsed = z.object({
       startDate: z.string().regex(dateRegex).optional(),
       endDate: z.string().regex(dateRegex).optional(),
@@ -56,7 +55,7 @@ export async function sickLeavesRoutes(app: FastifyInstance) {
     return updated;
   });
 
-  app.delete<{ Params: { id: string } }>("/:id", async (req, reply) => {
+  app.delete<{ Params: { id: string } }>("/:id", { preHandler: app.requireRole(["OWNER", "MANAGER"]) }, async (req, reply) => {
     const { orgId } = req.user!;
     await sickLeavesService.remove(req.params.id, orgId);
     return { success: true };

@@ -35,6 +35,7 @@ import LegalPage from "./pages/LegalPage";
 import DialogHost from "./components/DialogHost";
 import OnboardingWidget from "./components/OnboardingWidget";
 import CookieBanner from "./components/CookieBanner";
+import ScrollToTop from "./components/ScrollToTop";
 import PaymentSuccessPage from "./pages/PaymentSuccessPage";
 import HistoryPage from "./pages/HistoryPage";
 
@@ -78,6 +79,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <DialogHost />
       <OnboardingWidget />
       
@@ -120,6 +122,7 @@ export default function App() {
         <Route path="/documents" element={<ProtectedRoute adminOnly><DocumentsPage /></ProtectedRoute>} />
         <Route path="/timesheet" element={<ProtectedRoute adminOnly><TimesheetPage /></ProtectedRoute>} />
         <Route path="/swaps" element={<ProtectedRoute><SwapsPage /></ProtectedRoute>} />
+        <Route path="/my-analytics" element={<ProtectedRoute><AnalyticsPage /></ProtectedRoute>} />
         <Route path="/sick-leaves" element={<ProtectedRoute adminOnly><SickLeavesPage /></ProtectedRoute>} />
         <Route path="/analytics" element={<ProtectedRoute adminOnly><AnalyticsPage /></ProtectedRoute>} />
         <Route path="/wallet" element={<ProtectedRoute adminOnly><WalletPage /></ProtectedRoute>} />

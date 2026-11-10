@@ -13,13 +13,14 @@ const querySchema = z.object({
 
 export async function analyticsRoutes(app: FastifyInstance) {
   app.addHook("preHandler", app.authenticate);
-  app.addHook("preHandler", app.requireRole(["OWNER", "MANAGER"]));
+  app.addHook("preHandler", app.requireRole(["OWNER", "MANAGER", "EMPLOYEE"]));
 
   app.get("/", async (req, reply) => {
     const parsed = querySchema.safeParse(req.query);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
-    const { orgId } = req.user!;
-    return analyticsService.summary(orgId, parsed.data.from, parsed.data.to, parsed.data.locationId);
+    const { orgId, sub: userId, role } = req.user!;
+    const targetUserId = role === "EMPLOYEE" ? userId : undefined;
+    return analyticsService.summary(orgId, parsed.data.from, parsed.data.to, parsed.data.locationId, targetUserId);
   });
 
   app.get("/overtime", async (req, reply) => {
@@ -34,7 +35,8 @@ export async function analyticsRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
     const { orgId } = req.user!;
     try {
-      const data = await analyticsService.summary(orgId, parsed.data.from, parsed.data.to, parsed.data.locationId);
+      const targetUserId = req.user!.role === "EMPLOYEE" ? req.user!.sub : undefined;
+      const data = await analyticsService.summary(orgId, parsed.data.from, parsed.data.to, parsed.data.locationId, targetUserId);
       const buffer = await buildAnalyticsExcel(data);
       const filename = `Аналитика_${parsed.data.from}_${parsed.data.to}.xlsx`;
       reply
@@ -52,7 +54,8 @@ export async function analyticsRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
     const { orgId } = req.user!;
     try {
-      const data = await analyticsService.summary(orgId, parsed.data.from, parsed.data.to, parsed.data.locationId);
+      const targetUserId = req.user!.role === "EMPLOYEE" ? req.user!.sub : undefined;
+      const data = await analyticsService.summary(orgId, parsed.data.from, parsed.data.to, parsed.data.locationId, targetUserId);
       const buffer = await buildAnalyticsPdf(data);
       const filename = `Аналитика_${parsed.data.from}_${parsed.data.to}.pdf`;
       reply

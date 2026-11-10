@@ -40,7 +40,7 @@ function pctChange(current: number, prev: number): number {
 }
 
 export const analyticsService = {
-  async summary(orgId: string, from: string, to: string, locationId?: string) {
+  async summary(orgId: string, from: string, to: string, locationId?: string, targetUserId?: string) {
     // 1. Получаем настройки организации
     const [org] = await db.select().from(organizations).where(eq(organizations.id, orgId));
     const timeTrackingOn = org?.timeTrackingEnabled !== false;
@@ -48,7 +48,10 @@ export const analyticsService = {
     const mult2 = Number(org?.overtimeMultiplier2 || 2.0);
 
     // 2. Пользователи
-    const orgUsers = await db.select().from(users).where(eq(users.orgId, orgId));
+    let orgUsers = await db.select().from(users).where(eq(users.orgId, orgId));
+    if (targetUserId) {
+      orgUsers = orgUsers.filter(u => u.id === targetUserId);
+    }
     const orgUserIds = new Set(orgUsers.map((u) => u.id));
 
     // 3. Смены за период

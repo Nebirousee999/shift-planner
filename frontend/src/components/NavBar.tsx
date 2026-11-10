@@ -67,7 +67,7 @@ function isActive(pathname: string, path: string): boolean {
 function Badge({ value }: { value: number }) {
   if (value <= 0) return null;
   return (
-    <span className="absolute -top-1 -right-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white shadow-sm ring-2 ring-white">
+    <span className="absolute top-[2px] -right-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white shadow-sm ring-2 ring-white">
       {value > 99 ? "99+" : value}
     </span>
   );
@@ -133,7 +133,10 @@ export default function NavBar() {
               </button>
               <button onClick={() => navigate("/swaps")} className={`relative px-3 py-1.5 rounded-lg text-sm transition-colors ${isActive(pathname, "/swaps") ? "bg-brand-50 text-brand-700 font-medium" : "text-slate-600 hover:bg-slate-100"}`}>
                 Обмены
-                <Badge value={swapsIncoming + swapsAvailable} />
+                <Badge value={swapsAvailable} />
+              </button>
+              <button onClick={() => navigate("/my-analytics")} className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${isActive(pathname, "/my-analytics") ? "bg-brand-50 text-brand-700 font-medium" : "text-slate-600 hover:bg-slate-100"}`}>
+                Аналитика
               </button>
             </nav>
           </div>

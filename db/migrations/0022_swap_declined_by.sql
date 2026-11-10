@@ -1,0 +1,1 @@
+ALTER TABLE "shift_swap_requests" ADD COLUMN "declined_by" jsonb DEFAULT '[]'::jsonb NOT NULL;

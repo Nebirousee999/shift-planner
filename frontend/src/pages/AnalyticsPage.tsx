@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { analyticsApi } from "../api/analytics";
 import { useLocations } from "../store/locations";
+import { useAuth } from "../store/auth";
 import NavBar from "../components/NavBar";
 
 const MONTHS_RU = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
@@ -23,12 +24,14 @@ function monthRange(year: number, month: number) {
 type Tab = "overview" | "workload" | "discipline" | "details";
 
 export default function AnalyticsPage() {
+  const { user } = useAuth();
+  const isEmployee = user?.role === "EMPLOYEE";
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useState<Tab>(user?.role === "EMPLOYEE" ? "details" : "overview");
 
   const { activeLocationId, items: locations, fetch: fetchLocations } = useLocations();
   const [selectedLocationId, setSelectedLocationId] = useState<string>("");
@@ -46,11 +49,11 @@ export default function AnalyticsPage() {
   useEffect(() => {
     const { from, to } = monthRange(year, month);
     setLoading(true);
-    analyticsApi.summary(from, to, locationId)
+    analyticsApi.summary(from, to, isEmployee ? undefined : locationId, isEmployee ? user?.id : undefined)
       .then(setData)
       .catch(() => alert("Ошибка загрузки"))
       .finally(() => setLoading(false));
-  }, [year, month, locationId]);
+  }, [year, month, locationId, isEmployee, user?.id]);
 
   const prevMonth = () => { if (month === 0) { setMonth(11); setYear(y => y - 1); } else setMonth(m => m - 1); };
   const nextMonth = () => { if (month === 11) { setMonth(0); setYear(y => y + 1); } else setMonth(m => m + 1); };
@@ -111,13 +114,14 @@ export default function AnalyticsPage() {
         {/* Шапка с вкладками и фильтром точек */}
         <div className="flex items-center justify-between border-b border-slate-200 mb-6 overflow-x-auto pb-1 gap-4">
           <div className="flex items-center gap-6">
-            <button onClick={() => setTab("overview")} className={`pb-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === "overview" ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-900"}`}>Сводка и ФОТ</button>
-            <button onClick={() => setTab("workload")} className={`pb-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === "workload" ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-900"}`}>Нагрузка персонала</button>
+            {!isEmployee && <button onClick={() => setTab("overview")} className={`pb-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === "overview" ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-900"}`}>Сводка и ФОТ</button>}
+            {!isEmployee && <button onClick={() => setTab("workload")} className={`pb-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === "workload" ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-900"}`}>Нагрузка персонала</button>}
             <button onClick={() => setTab("discipline")} className={`pb-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === "discipline" ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-900"}`}>Дисциплина</button>
             <button onClick={() => setTab("details")} className={`pb-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === "details" ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-900"}`}>Детализация</button>
           </div>
 
           {/* Фильтр по точкам */}
+          {!isEmployee && (
           <div className="flex items-center gap-2 pb-3 pr-1 shrink-0">
             <MapPin className="w-4 h-4 text-slate-400" />
             <select 
@@ -129,6 +133,7 @@ export default function AnalyticsPage() {
               {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
           </div>
+          )}
         </div>
 
         {/* Панель месяца */}

@@ -90,9 +90,9 @@ async function downloadFile(url: string, fallbackName: string): Promise<void> {
 }
 
 export const analyticsApi = {
-  summary: async (from: string, to: string, locationId?: string): Promise<AnalyticsSummary> => {
+  summary: async (from: string, to: string, locationId?: string, targetUserId?: string): Promise<AnalyticsSummary> => {
     const { data } = await api.get<AnalyticsSummary>("/analytics", {
-      params: { from, to, ...(locationId ? { locationId } : {}) },
+      params: { from, to, ...(locationId ? { locationId } : {}), ...(targetUserId ? { userId: targetUserId } : {}) },
     });
     return data;
   },

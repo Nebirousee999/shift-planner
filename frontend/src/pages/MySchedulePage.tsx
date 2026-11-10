@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Play, Square, Activity, CalendarDays, Clock, ArrowRightLeft,
+  Play, Square, Activity, CalendarDays, Clock, ArrowRightLeft, ChevronLeft, ChevronRight,
   Check, X, Inbox, Send, XCircle, Palmtree, Plus, AlertCircle,
   Pencil, Bell, CalendarX2, Stethoscope, Undo2
 } from "lucide-react";
@@ -22,6 +22,8 @@ import { weekDates, dayLabel, shortDate } from "../lib/dates";
 import { validateShiftTimes } from "../lib/time";
 
 type Tab = "schedule" | "vacations" | "sick";
+
+const MONTHS_RU = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
 
 function formatDateTime(iso: string | null): string {
   if (!iso) return "—";
@@ -59,6 +61,9 @@ export default function MySchedulePage() {
   const [shifts, setShifts] = useState<MyShift[]>([]);
   const [colleagues, setColleagues] = useState<Colleague[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filterYear, setFilterYear] = useState<string>(new Date().getFullYear().toString());
+  const [filterMonthOnly, setFilterMonthOnly] = useState<string>(String(new Date().getMonth() + 1).padStart(2, "0"));
+  const [showCompleted, setShowCompleted] = useState<boolean>(false);
   const [incomingShiftRequests, setIncomingShiftRequests] = useState<ShiftChangeRequest[]>([]);
   const [outgoingShiftRequests, setOutgoingShiftRequests] = useState<ShiftChangeRequest[]>([]);
   const [myTimeOffs, setMyTimeOffs] = useState<any[]>([]);
@@ -344,11 +349,7 @@ export default function MySchedulePage() {
       virtualShifts.push({ id: `create-${r.id}`, date: String(r.newShiftDate).slice(0, 10), startTime: r.newStartTime, endTime: r.newEndTime, templateId: r.templateId ?? null, kind: "CREATE", fromName: r.requestedByName ?? "—", requestId: r.id });
     }
   }
-  for (const r of incomingActive) {
-    if (r.shiftDate && r.startTime && r.endTime) {
-      virtualShifts.push({ id: `swap-${r.id}`, date: String(r.shiftDate).slice(0, 10), startTime: r.startTime, endTime: r.endTime, templateId: r.templateId ?? null, kind: "SWAP", fromName: r.requestedByName ?? "—", requestId: r.id });
-    }
-  }
+      // Оранжевые обмены убраны, так как они уже есть в фиолетовых (dayOffers)
 
   function weekStartOf(dateStr: string): string {
     const d = new Date(dateStr + "T00:00:00Z");
@@ -380,7 +381,37 @@ export default function MySchedulePage() {
     if (!a.shiftDate) continue;
     allWeekKeys.add(weekStartOf(String(a.shiftDate).slice(0, 10)));
   }
-  const sortedWeeks = Array.from(allWeekKeys).sort();
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const uniqueYears = Array.from(new Set([
+    ...Array.from(allWeekKeys).map(ws => ws.slice(0, 4)),
+    new Date().getFullYear().toString()
+  ])).sort();
+
+  const sortedWeeks = Array.from(allWeekKeys).sort().filter(ws => {
+    const endD = new Date(ws + "T00:00:00Z");
+    endD.setUTCDate(endD.getUTCDate() + 6);
+    const weekEndStr = endD.toISOString().slice(0, 10);
+    const isPast = weekEndStr < todayStr;
+
+    if (!showCompleted && isPast) return false;
+
+    const startYear = ws.slice(0, 4);
+    const endYear = weekEndStr.slice(0, 4);
+    const startMonth = ws.slice(5, 7);
+    const endMonth = weekEndStr.slice(5, 7);
+
+    // Фильтр по году
+    if (filterYear) {
+      if (startYear !== filterYear && endYear !== filterYear) return false;
+    }
+
+    // Фильтр по месяцу
+    if (filterMonthOnly) {
+      if (startMonth !== filterMonthOnly && endMonth !== filterMonthOnly) return false;
+    }
+
+    return true;
+  });
 
   const availableByDate = useMemo(() => {
     const map = new Map<string, typeof available>();
@@ -422,6 +453,23 @@ export default function MySchedulePage() {
     { id: "vacations", label: "Отпуска", icon: Palmtree, badge: upcomingVacations.length > 0 ? upcomingVacations.length : undefined },
     { id: "sick", label: "Больничные", icon: Stethoscope, badge: mySickLeaves.length > 0 ? mySickLeaves.length : undefined },
   ];
+
+  const handlePrevYear = () => {
+    setFilterYear((parseInt(filterYear) - 1).toString());
+  };
+  const handleNextYear = () => {
+    setFilterYear((parseInt(filterYear) + 1).toString());
+  };
+  const handlePrevMonth = () => {
+    let m = parseInt(filterMonthOnly) - 1;
+    if (m < 1) m = 12;
+    setFilterMonthOnly(String(m).padStart(2, "0"));
+  };
+  const handleNextMonth = () => {
+    let m = parseInt(filterMonthOnly) + 1;
+    if (m > 12) m = 1;
+    setFilterMonthOnly(String(m).padStart(2, "0"));
+  };
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -539,11 +587,84 @@ export default function MySchedulePage() {
               </div>
             )}
 
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm animate-fade-in">
+              <div className="flex items-center gap-4 flex-wrap">
+                <div className="flex items-center gap-3 flex-wrap">
+                  {/* Блок года */}
+                  <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
+                    <button
+                      onClick={handlePrevYear}
+                      className="p-1 hover:bg-slate-100 rounded text-slate-600 transition-colors"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <div className="flex items-center px-1 text-sm font-semibold text-slate-900 min-w-[60px] justify-center">
+                      <select
+                        value={filterYear}
+                        onChange={(e) => setFilterYear(e.target.value)}
+                        className="!w-auto !p-0 !border-0 !bg-transparent focus:!ring-0 cursor-pointer text-center"
+                      >
+                        {Array.from(new Set([...uniqueYears, filterYear])).sort().map(y => (
+                          <option key={y} value={y}>{y}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <button
+                      onClick={handleNextYear}
+                      className="p-1 hover:bg-slate-100 rounded text-slate-600 transition-colors"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Блок месяца */}
+                  <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
+                    <button
+                      onClick={handlePrevMonth}
+                      className="p-1 hover:bg-slate-100 rounded text-slate-600 transition-colors"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <div className="flex items-center px-1 text-sm font-semibold text-slate-900 min-w-[100px] justify-center">
+                      <select
+                        value={filterMonthOnly}
+                        onChange={(e) => setFilterMonthOnly(e.target.value)}
+                        className="!w-auto !p-0 !border-0 !bg-transparent focus:!ring-0 cursor-pointer text-center"
+                      >
+                        {MONTHS_RU.map((m, i) => (
+                          <option key={i} value={String(i + 1).padStart(2, "0")}>{m}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <button
+                      onClick={handleNextMonth}
+                      className="p-1 hover:bg-slate-100 rounded text-slate-600 transition-colors"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={showCompleted}
+                    onChange={(e) => setShowCompleted(e.target.checked)}
+                    className="!w-4 !h-4 !p-0 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                  />
+                  <span className="text-sm text-slate-700 font-medium">Отображать завершенные недели</span>
+                </label>
+              </div>
+            </div>
+
             {sortedWeeks.map((weekStart) => {
               const weekShifts = groups.get(weekStart) ?? [];
               const weekVirtual = virtualGroups.get(weekStart) ?? [];
               const weekStatus = weekShifts[0]?.weekStatus ?? null;
               const dates = weekDates(weekStart);
+              const endD = new Date(weekStart + "T00:00:00Z");
+              endD.setUTCDate(endD.getUTCDate() + 6);
+              const isPastWeek = endD.toISOString().slice(0, 10) < todayStr;
+
               const totalHours = weekShifts.reduce((sum, s) => {
                 const [sh, sm] = s.startTime.split(":").map(Number);
                 const [eh, em] = s.endTime.split(":").map(Number);
@@ -553,7 +674,7 @@ export default function MySchedulePage() {
               }, 0);
 
               return (
-                <div key={weekStart} className="mb-8">
+                <div key={weekStart} className={`mb-8 ${isPastWeek ? "opacity-60 grayscale-[30%]" : ""}`}>
                   <div className="flex items-center gap-3 mb-3 flex-wrap">
                     <h2 className="text-lg font-semibold text-slate-900">Неделя {shortDate(dates[0])} — {shortDate(dates[6])}</h2>
                     {weekStatus === "DRAFT" && <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 ring-1 ring-slate-200 font-medium">черновик</span>}
@@ -629,7 +750,9 @@ export default function MySchedulePage() {
                                   {activeTimeOff && (
                                     <div className="mt-2 p-1.5 bg-amber-100 rounded border border-amber-200 animate-fade-in">
                                       <div className="text-[10px] font-semibold text-amber-800 mb-1">Запрос на отгул</div>
-                                      <button onClick={() => onCancelTimeOff(activeTimeOff.id)} className="w-full bg-white text-rose-600 border border-rose-200 text-[10px] py-1 rounded hover:bg-rose-50 font-medium">Отменить отгул</button>
+                                      {!isPastWeek && (
+                                        <button onClick={() => onCancelTimeOff(activeTimeOff.id)} className="w-full bg-white text-rose-600 border border-rose-200 text-[10px] py-1 rounded hover:bg-rose-50 font-medium">Отменить отгул</button>
+                                      )}
                                     </div>
                                   )}
 
@@ -637,11 +760,13 @@ export default function MySchedulePage() {
                                   {outgoingSwap && (
                                     <div className="mt-2 p-1.5 bg-slate-100 rounded border border-slate-200 animate-fade-in">
                                       <div className="text-[10px] font-semibold text-slate-700 mb-1">Обмен предложен</div>
-                                      <button onClick={() => onCancelSwap(outgoingSwap.id)} className="w-full bg-white text-rose-600 border border-rose-200 text-[10px] py-1 rounded hover:bg-rose-50 font-medium">Отменить обмен</button>
+                                      {!isPastWeek && (
+                                        <button onClick={() => onCancelSwap(outgoingSwap.id)} className="w-full bg-white text-rose-600 border border-rose-200 text-[10px] py-1 rounded hover:bg-rose-50 font-medium">Отменить обмен</button>
+                                      )}
                                     </div>
                                   )}
 
-                                  {isPublished && !outgoingSwap && !hasAnyPending && !activeTimeOff && (
+                                  {isPublished && !outgoingSwap && !hasAnyPending && !activeTimeOff && !isPastWeek && (
                                     <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-slate-100">
                                       <button onClick={() => openSwapModal(s)} className="inline-flex items-center gap-1 text-[10px] font-medium text-brand-600 hover:text-brand-700"><ArrowRightLeft className="w-3 h-3" /> Обмен</button>
                                       <button onClick={() => openEditShift(s)} className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-500 hover:text-slate-700"><Pencil className="w-3 h-3" /> Изменить</button>
@@ -672,20 +797,22 @@ export default function MySchedulePage() {
                                     <ArrowRightLeft className="w-3 h-3 shrink-0" />
                                     <span>Предлагают обмен{isTargeted ? " (вам)" : ""}</span>
                                   </div>
-                                  <div className="flex gap-1 mt-2">
-                                    <button
-                                      onClick={() => onAccept(a.id)}
-                                      className="flex-1 inline-flex items-center justify-center gap-1 bg-emerald-600 text-white text-[10px] py-1 rounded hover:bg-emerald-700 font-medium"
-                                    >
-                                      <Check className="w-3 h-3" /> Принять
-                                    </button>
-                                    <button
-                                      onClick={() => onDecline(a.id)}
-                                      className="flex-1 inline-flex items-center justify-center gap-1 bg-white text-rose-600 border border-rose-200 text-[10px] py-1 rounded hover:bg-rose-50 font-medium"
-                                    >
-                                      <X className="w-3 h-3" /> {isTargeted ? "Отклонить" : "Скрыть"}
-                                    </button>
-                                  </div>
+                                                    <div className="flex gap-1.5 mt-2">
+                    <button
+                      onClick={() => onAccept(a.id)}
+                      title="Принять"
+                      className="flex-1 inline-flex items-center justify-center bg-emerald-600 text-white py-1.5 rounded-lg hover:bg-emerald-700 shadow-sm transition-colors"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => onDecline(a.id)}
+                      title={isTargeted ? "Отклонить" : "Скрыть"}
+                      className="flex-1 inline-flex items-center justify-center bg-white text-rose-600 border border-rose-200 py-1.5 rounded-lg hover:bg-rose-50 transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                                 </div>
                               );
                             })}

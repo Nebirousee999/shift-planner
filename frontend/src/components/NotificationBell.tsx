@@ -108,7 +108,10 @@ export default function NotificationBell() {
     else if (n.relatedType === "shift_change_request") navigate("/weeks");
     else if (n.relatedType === "sick_leave") navigate("/sick-leaves");
     else if (n.relatedType === "discipline") navigate("/weeks");
-    else if (n.relatedType === "swap_request") navigate("/swaps");
+    else if (n.relatedType === "swap_request") {
+      if (n.payload?.weekId) navigate(`/weeks/${n.payload.weekId}`);
+      else navigate("/swaps");
+    }
     else navigate("/");
   };
 

@@ -172,6 +172,8 @@ export const shiftSwapRequests = pgTable("shift_swap_requests", {
   swapWithUserId: uuid("swap_with_user_id").references(() => users.id),
   status: swapStatusEnum("status").default("PENDING").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+
+  declinedBy: jsonb("declined_by").default([]).notNull(),
 });
 
 // ─── TIME ENTRIES ──────────────────────────────────────

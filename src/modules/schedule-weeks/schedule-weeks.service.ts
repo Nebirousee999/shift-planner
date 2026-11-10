@@ -9,6 +9,7 @@ import {
 } from "../../../db/schema.js";
 import { getMonday, hoursBetween, shiftsOverlap, toDateStr } from "../../lib/time.js";
 import { messengerService } from "../../lib/messenger.service.js";
+import { notificationsService } from "../notifications/notifications.service.js";
 
 export const scheduleWeeksService = {
   async list(orgId: string, locationId?: string) {
@@ -159,9 +160,22 @@ export const scheduleWeeksService = {
     // 4. Отправляем уведомления ТОЛЬКО ПОСЛЕ успешной публикации
     const userIds = [...new Set(shifts.map(s => s.userId).filter(Boolean))] as string[];
     for (const userId of userIds) {
+      // Внутреннее уведомление (в колокольчик)
+      await notificationsService.create({
+        orgId,
+        userId,
+        kind: "NEW_SCHEDULE",
+        title: "Новый график на неделю",
+        message: `Опубликовано расписание на неделю с ${String(week.weekStartDate).slice(0, 10)}. Проверьте свои смены.`,
+        relatedId: week.id,
+        relatedType: "schedule_week",
+        requiresAction: false,
+      });
+
+      // Уведомление в мессенджер
       await messengerService.sendToUser(
         userId,
-        `<b>Новый график!</b>\n\nОпубликовано расписание на неделю с ${week.weekStartDate}.\nПроверьте свои смены в приложении.`,
+        `<b>Новый график!</b>\n\nОпубликовано расписание на неделю с ${String(week.weekStartDate).slice(0, 10)}.\nПроверьте свои смены в приложении.`,
         "newSchedule"
       );
     }

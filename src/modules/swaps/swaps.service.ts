@@ -30,6 +30,7 @@ async function enrichSwaps(rows: any[]) {
       startTime: shift?.startTime ?? null,
       endTime: shift?.endTime ?? null,
       templateId: shift?.templateId ?? null,
+      weekId: shift?.weekId ?? null,
     };
   });
 }
@@ -127,9 +128,12 @@ export const swapsService = {
       .orderBy(desc(shiftSwapRequests.createdAt));
 
     // Оставляем только обмены от коллег из этой же организации
-    const filtered = rows.filter(
-      (r) => orgUserIds.has(r.requestedBy) && (!r.swapWithUserId || r.swapWithUserId === userId)
-    );
+    const filtered = rows.filter((r) => {
+      if (!orgUserIds.has(r.requestedBy)) return false;
+      if (r.swapWithUserId && r.swapWithUserId !== userId) return false;
+      if (!r.swapWithUserId && Array.isArray(r.declinedBy) && (r.declinedBy as string[]).includes(userId)) return false;
+      return true;
+    });
     return enrichSwaps(filtered);
   },
 
@@ -252,7 +256,7 @@ export const swapsService = {
         relatedId: request.id,
         relatedType: "swap_request",
         requiresAction: true,
-        payload: { shiftId: input.shiftId, date: shiftDateStr },
+        payload: { shiftId: input.shiftId, date: shiftDateStr, weekId: shift.weekId },
       });
     }
 
@@ -390,7 +394,17 @@ export const swapsService = {
       .from(users)
       .where(eq(users.id, userId));
 
-    // ВСЕГДА ставим статус DENIED (даже для открытых)
+    if (!req.swapWithUserId) {
+      // ОТКРЫТЫЙ ОБМЕН: скрываем только для этого пользователя
+      const currentDeclined = (req.declinedBy as string[]) || [];
+      if (!currentDeclined.includes(userId)) {
+        await db.update(shiftSwapRequests).set({ declinedBy: [...currentDeclined, userId] }).where(eq(shiftSwapRequests.id, id));
+      }
+      await notificationsService.dismissForUser(id, "swap_request", userId);
+      return { success: true };
+    }
+
+    // АДРЕСНЫЙ ОБМЕН: ставим статус DENIED
     const [updated] = await db
       .update(shiftSwapRequests)
       .set({ status: "DENIED" })
