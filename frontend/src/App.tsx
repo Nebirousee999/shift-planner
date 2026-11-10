@@ -35,6 +35,7 @@ import LegalPage from "./pages/LegalPage";
 import DialogHost from "./components/DialogHost";
 import OnboardingWidget from "./components/OnboardingWidget";
 import CookieBanner from "./components/CookieBanner";
+import SupportWidget from "./components/SupportWidget";
 import ScrollToTop from "./components/ScrollToTop";
 import PaymentSuccessPage from "./pages/PaymentSuccessPage";
 import HistoryPage from "./pages/HistoryPage";
@@ -85,6 +86,7 @@ export default function App() {
       
       {/* Cookie-баннер рендерим глобально, чтобы он был на всех страницах */}
       <CookieBanner />
+      <SupportWidget />
       
       <Routes>
         {/* ─── ПУБЛИЧНЫЕ (Лендинг и Авторизация) ─── */}

@@ -1,4 +1,4 @@
-import { CalendarDays, Mail, Send } from "lucide-react";
+import { CalendarDays } from "lucide-react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 
 const COLUMNS = [
@@ -65,24 +65,6 @@ export default function LandingFooter() {
             <p className="text-sm text-slate-500 mb-4">
               Смены, отпуска и документы для небольших команд.
             </p>
-            <div className="flex gap-2">
-              <a
-                href="mailto:prihodko999@inbox.ru"
-                className="w-9 h-9 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors"
-                aria-label="Email"
-              >
-                <Mail className="w-4 h-4" />
-              </a>
-              <a
-                href="https://t.me/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-9 h-9 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors"
-                aria-label="Telegram"
-              >
-                <Send className="w-4 h-4" />
-              </a>
-            </div>
           </div>
 
           {COLUMNS.map((col) => (

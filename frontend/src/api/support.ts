@@ -10,7 +10,7 @@ export type Ticket = {
 };
 
 export const supportApi = {
-  create: async (data: { email: string; message: string }) => {
+  create: async (data: { email: string; message: string; images?: string[] }) => {
     const { data: res } = await api.post("/support", data);
     return res;
   },

@@ -11,6 +11,7 @@ export async function supportRoutes(app: FastifyInstance) {
     const parsed = z.object({
       email: z.string().email(),
       message: z.string().min(1),
+      images: z.array(z.string()).optional().default([]),
     }).safeParse(req.body);
 
     if (!parsed.success) {
@@ -20,12 +21,17 @@ export async function supportRoutes(app: FastifyInstance) {
     const userId = (req as any).user?.sub || null;
     const [ticket] = await db
       .insert(supportTickets)
-      .values({ userId, email: parsed.data.email, message: parsed.data.message })
+      .values({
+        userId,
+        email: parsed.data.email,
+        message: parsed.data.message,
+        images: parsed.data.images,
+      })
       .returning();
     const shortId = ticket.id.slice(0, 6).toUpperCase();
 
     await mailerService
-      .sendSupportEmail(parsed.data.email, parsed.data.message, shortId)
+      .sendSupportEmail(parsed.data.email, parsed.data.message, shortId, parsed.data.images)
       .catch((e) => app.log.error(e));
 
     try {
@@ -42,6 +48,14 @@ export async function supportRoutes(app: FastifyInstance) {
           },
           { headers: { Authorization: org.maxBotToken } }
         );
+
+        if (parsed.data.images.length > 0) {
+          await axios.post(
+            "https://botapi.max.ru/messages?user_id=141744495",
+            { text: "📎 Клиент прикрепил " + parsed.data.images.length + " фото. Они отправлены вам на почту." },
+            { headers: { Authorization: org.maxBotToken } }
+          );
+        }
       }
     } catch (e: any) {
       app.log.warn({ err: e?.message }, "MAX send failed");

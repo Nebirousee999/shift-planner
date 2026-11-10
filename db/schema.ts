@@ -278,6 +278,7 @@ export const supportTickets = pgTable("support_tickets", {
   userId: uuid("user_id").references(() => users.id),
   email: varchar("email", { length: 255 }).notNull(),
   message: text("message").notNull(),
+  images: text("images").array(),
   reply: text("reply"),
   status: varchar("status", { length: 20 }).default("OPEN").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),

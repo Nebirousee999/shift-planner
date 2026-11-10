@@ -148,6 +148,20 @@
       "when": 1794289388234,
       "tag": "0020_shocking_darkstar",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1794296796461,
+      "tag": "0021_glorious_lake",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1794297500105,
+      "tag": "0022_public_stellaris",
+      "breakpoints": true
     }
   ]
 }

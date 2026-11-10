@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import NavBar from "../components/NavBar";
 import { useOrganization } from "../store/organization";
+import { useAuth } from "../store/auth";
 
 // ─── Типы данных ───────────────────────────────────
 type HelpArticle = {
@@ -113,7 +114,7 @@ const ARTICLES: HelpArticle[] = [
   {
     id: "swaps-1",
     category: "Обмены сменами",
-    title: "Как создать и отменить запрос на обмен (для сотрудника)",
+    title: "Как создать и отменить запрос на обмен",
     content: (
       <div className="space-y-3 text-slate-600">
         <p>1. В разделе <b>«Мой график»</b> найдите свою смену и нажмите <b>«Обмен»</b>.</p>
@@ -125,7 +126,7 @@ const ARTICLES: HelpArticle[] = [
   {
     id: "swaps-2",
     category: "Обмены сменами",
-    title: "Как принять или отклонить обмен (для сотрудника)",
+    title: "Как принять или отклонить обмен",
     content: (
       <div className="space-y-3 text-slate-600">
         <p>Если коллега предлагает вам обмен, вы увидите это в трех местах:</p>
@@ -250,6 +251,30 @@ const ARTICLES: HelpArticle[] = [
       </div>
     ),
   },
+{
+    id: "emp-1",
+    category: "Расписание и смены",
+    title: "Как посмотреть свой график",
+    content: (
+      <div className="space-y-3 text-slate-600">
+        <p>Перейдите в раздел <b>«Мой график»</b> в верхнем меню.</p>
+        <p>Вы увидите календарь со своими сменами на текущую и следующие недели.</p>
+        <p>Если график еще не опубликован руководителем, вы увидите сообщение «У вас пока нет смен».</p>
+      </div>
+    ),
+  },
+  {
+    id: "emp-2",
+    category: "Учёт времени и табель",
+    title: "Как отметиться на смене",
+    content: (
+      <div className="space-y-3 text-slate-600">
+        <p>В разделе <b>«Мой график»</b> нажмите кнопку <b>«Начать смену»</b>, когда придёте на работу.</p>
+        <p>В конце смены нажмите <b>«Закончить смену»</b>.</p>
+        <p>Ваши часы будут автоматически учтены в табеле.</p>
+      </div>
+    ),
+  },
 ];
 
 const CATEGORIES = [
@@ -267,12 +292,23 @@ const CATEGORIES = [
 
 export default function HelpPage() {
   const org = useOrganization((s) => s.org);
+  const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("all");
   const [openArticleId, setOpenArticleId] = useState<string | null>(null);
 
+  const isEmployee = user?.role === "EMPLOYEE";
+  const EMPLOYEE_CATEGORIES = ["Обмены сменами", "Уведомления", "Отпуска и больничные", "Учёт времени и табель", "Расписание и смены"];
+  const EMPLOYEE_HIDDEN_IDS = ["schedule-1", "schedule-2", "time-1", "analytics-all", "docs-1", "start-1", "start-2", "team-1", "team-2"];
+
+  const visibleCategories = isEmployee
+    ? CATEGORIES.filter((c) => c.id === "all" || EMPLOYEE_CATEGORIES.includes(c.id))
+    : CATEGORIES;
+
   const filteredArticles = useMemo(() => {
     return ARTICLES.filter((article) => {
+      if (isEmployee && (!EMPLOYEE_CATEGORIES.includes(article.category) || EMPLOYEE_HIDDEN_IDS.includes(article.id))) return false;
+      
       const matchesCategory =
         activeCategory === "all" || article.category === activeCategory;
       
@@ -282,7 +318,7 @@ export default function HelpPage() {
 
       return matchesCategory && matchesSearch;
     });
-  }, [activeCategory, searchQuery]);
+  }, [activeCategory, searchQuery, isEmployee]);
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
@@ -321,7 +357,7 @@ export default function HelpPage() {
           <aside className="w-full lg:w-64 shrink-0">
             <div className="bg-white rounded-2xl border border-slate-200 p-3 shadow-sm sticky top-24">
               <nav className="space-y-1">
-                {CATEGORIES.map((cat) => {
+                {visibleCategories.map((cat) => {
                   const Icon = cat.icon;
                   const isActive = activeCategory === cat.id;
                   return (
@@ -395,40 +431,7 @@ export default function HelpPage() {
           </div>
         </div>
 
-        {/* Блок поддержки */}
-        <div className="max-w-6xl mx-auto mt-12 bg-gradient-to-br from-brand-600 to-brand-700 rounded-3xl p-8 sm:p-12 text-center text-white shadow-xl shadow-brand-500/20 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl" />
-          <div className="relative z-10">
-            <MessageCircle className="w-10 h-10 mx-auto mb-4 text-white/80" />
-            <h2 className="text-2xl sm:text-3xl font-bold mb-3">
-              Не нашли ответ на свой вопрос?
-            </h2>
-            <p className="text-white/80 mb-8 max-w-xl mx-auto">
-              Наша команда поддержки на связи с понедельника по пятницу, с 10:00 до 19:00 (МСК). Ответим в течение пары часов.
-            </p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-              {org?.tariffId === "business" ? (
-                <a
-                  href="https://t.me/your_telegram_nick"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-white text-brand-700 rounded-xl hover:bg-slate-100 text-sm font-semibold shadow-sm transition-all w-full sm:w-auto"
-                >
-                  Написать основателю в Telegram
-                </a>
-              ) : (
-                <a
-                  href="mailto:prihodko999@inbox.ru"
-                  className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-white text-brand-700 rounded-xl hover:bg-slate-100 text-sm font-semibold shadow-sm transition-all w-full sm:w-auto"
-                >
-                  Написать на почту
-                </a>
-              )}
-            </div>
-          </div>
-        </div>
-
-      </main>
+              </main>
     </div>
   );
 }

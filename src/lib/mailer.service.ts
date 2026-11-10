@@ -60,13 +60,23 @@ export const mailerService = {
     }
   },
 
-  async sendSupportEmail(fromEmail: string, message: string, shortId: string) {
+  async sendSupportEmail(fromEmail: string, message: string, shortId: string, images: string[] = []) {
+    const attachments = images.map((b64, i) => {
+      const base64Data = b64.replace(/^data:image\/\w+;base64,/, "");
+      return {
+        filename: `image-${i + 1}.png`,
+        content: base64Data,
+        encoding: "base64" as const
+      };
+    });
+
     await transporter.sendMail({
       from: `"Поддержка" <help@shift-planner.ru>`,
       to: "prihodko999@inbox.ru",
       replyTo: fromEmail,
       subject: `Обращение в поддержку #${shortId}`,
-      html: `<p>От: ${fromEmail}</p><p>${message}</p>`
+      html: `<p>От: ${fromEmail}</p><p>${message}</p><p>${images.length > 0 ? `Прикреплено фото: ${images.length}` : ""}</p>`,
+      attachments
     });
   },
 
