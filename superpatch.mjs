@@ -5,97 +5,183 @@ import path from "node:path";
 const ROOT = process.cwd();
 let touched = 0;
 
-function patchFile(relPath, search, replace, label) {
+function writeFile(relPath, content, label) {
   const filePath = path.join(ROOT, relPath);
-  if (!fs.existsSync(filePath)) return;
-  let content = fs.readFileSync(filePath, "utf-8");
-  const hadCRLF = content.includes("\r\n");
-  let normalized = hadCRLF ? content.replace(/\r\n/g, "\n") : content;
-
-  if (normalized.includes(replace)) return;
-
-  if (normalized.includes(search)) {
-    normalized = normalized.replace(search, replace);
-    fs.writeFileSync(filePath, hadCRLF ? normalized.replace(/\n/g, "\r\n") : normalized, "utf-8");
-    touched++;
-    console.log("✅ [" + label + "] Применено");
-  } else {
-    console.log("⚠️ [" + label + "] Не найдено (возможно, уже изменено).");
-  }
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content, "utf-8");
+  touched++;
+  console.log("✅ [" + label + "] Полностью перезаписан");
 }
 
-// ═══ 1. Отключаем почту в API поддержки ═══
-patchFile(
+// ═══ 1. API Поддержки (Полностью без почты, только MAX) ═══
+writeFile(
   "src/modules/support/support.routes.ts",
-  `    await mailerService\n      .sendSupportEmail(parsed.data.email, parsed.data.message, shortId, parsed.data.images)\n      .catch((e) => app.log.error(e));\n\n`,
-  ``,
-  "support.routes.ts (удаление отправки email)"
+  `import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import { eq, desc } from "drizzle-orm";
+import { db } from "../../../db/client.js";
+import { supportTickets, supportMessages } from "../../../db/schema.js";
+import axios from "axios";
+import crypto from "node:crypto";
+
+export async function supportRoutes(app: FastifyInstance) {
+  app.post("/", async (req, reply) => {
+    const parsed = z.object({
+      email: z.string().email(),
+      message: z.string().min(1),
+      images: z.array(z.string()).optional().default([]),
+      sessionToken: z.string().optional(),
+    }).safeParse(req.body);
+
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+
+    const userId = (req as any).user?.sub || null;
+    let { sessionToken } = parsed.data;
+    if (!sessionToken) sessionToken = crypto.randomUUID();
+
+    let [ticket];
+
+    // 1. Если пользователь авторизован, ищем его последний тикет
+    if (userId) {
+      [ticket] = await db
+        .select()
+        .from(supportTickets)
+        .where(eq(supportTickets.userId, userId))
+        .orderBy(desc(supportTickets.createdAt))
+        .limit(1);
+
+      if (ticket && ticket.sessionToken !== sessionToken) {
+        await db.update(supportTickets)
+          .set({ sessionToken })
+          .where(eq(supportTickets.id, ticket.id));
+      }
+    }
+
+    // 2. Если не нашли (или гость), ищем по сессии
+    if (!ticket) {
+      [ticket] = await db
+        .select()
+        .from(supportTickets)
+        .where(eq(supportTickets.sessionToken, sessionToken));
+    }
+
+    // 3. Создаем новый, если нет
+    if (!ticket) {
+      [ticket] = await db
+        .insert(supportTickets)
+        .values({
+          userId,
+          email: parsed.data.email,
+          sessionToken,
+          status: "OPEN",
+          message: parsed.data.message, // Для совместимости со старой БД
+        })
+        .returning();
+    }
+
+    // Сохраняем сообщение в историю
+    await db.insert(supportMessages).values({
+      ticketId: ticket.id,
+      sender: "USER",
+      text: parsed.data.message,
+      images: parsed.data.images,
+    });
+
+    const shortId = ticket.id.slice(0, 6).toUpperCase();
+
+    // Отправляем уведомление в MAX (только через бота поддержки!)
+    try {
+      const SUPPORT_BOT_TOKEN = process.env.SUPPORT_BOT_TOKEN;
+      const SUPPORT_ADMIN_ID = process.env.SUPPORT_ADMIN_ID || "141744495";
+
+      if (!SUPPORT_BOT_TOKEN) {
+        app.log.error("❌ ОШИБКА: SUPPORT_BOT_TOKEN не задан в .env!");
+        return reply.code(500).send({ error: "Support bot token missing" });
+      }
+
+      await axios.post(
+        \`https://botapi.max.ru/messages?user_id=\${SUPPORT_ADMIN_ID}\`,
+        {
+          text: "📩 Чат поддержки #" + shortId + "\\n" +
+                (userId ? "Пользователь: " + parsed.data.email : "Гость: " + parsed.data.email) + "\\n\\n" +
+                parsed.data.message + "\\n\\n" +
+                "Чтобы ответить, напишите:\\n#" + shortId + " ваш ответ",
+        },
+        { headers: { Authorization: SUPPORT_BOT_TOKEN } }
+      );
+    } catch (e: any) {
+      app.log.warn({ err: e?.message }, "MAX send failed");
+    }
+
+    return { success: true, ticketId: shortId, sessionToken };
+  });
+
+  app.get("/messages", async (req) => {
+    const { sessionToken } = req.query as { sessionToken?: string };
+    const userId = (req as any).user?.sub || null;
+
+    let [ticket];
+
+    if (userId) {
+      [ticket] = await db
+        .select()
+        .from(supportTickets)
+        .where(eq(supportTickets.userId, userId))
+        .orderBy(desc(supportTickets.createdAt))
+        .limit(1);
+    }
+
+    if (!ticket && sessionToken) {
+      [ticket] = await db
+        .select()
+        .from(supportTickets)
+        .where(eq(supportTickets.sessionToken, sessionToken));
+    }
+
+    if (!ticket) return [];
+
+    return db
+      .select()
+      .from(supportMessages)
+      .where(eq(supportMessages.ticketId, ticket.id))
+      .orderBy(supportMessages.createdAt);
+  });
+}
+`,
+  "support.routes.ts"
 );
 
-// Обновляем текст сообщения в MAX, чтобы туда падала почта гостя
-patchFile(
-  "src/modules/support/support.routes.ts",
-  `            text: "📩 Чат поддержки #" + shortId + "\\nОт: " + parsed.data.email + "\\n\\n" + parsed.data.message + "\\n\\nЧтобы ответить, напишите:\\n#" + shortId + " ваш ответ",`,
-  `            text: "📩 Чат поддержки #" + shortId + "\\n" +\n              (userId ? "Пользователь: " + parsed.data.email : "Гость: " + parsed.data.email) + "\\n\\n" +\n              parsed.data.message + "\\n\\n" +\n              "Чтобы ответить, напишите:\\n#" + shortId + " ваш ответ",`,
-  "support.routes.ts (добавление почты в MAX)"
-);
+// ═══ 2. Webhook (Обработка ответов админа без почты) ═══
+// Мы не перезаписываем весь файл, так как там еще ЮKassa, 
+// поэтому точечно вырезаем почту и правим отправку.
+const webhookPath = path.join(ROOT, "src/modules/webhooks/webhooks.routes.ts");
+if (fs.existsSync(webhookPath)) {
+  let content = fs.readFileSync(webhookPath, "utf-8");
+  
+  // Убираем вызов mailerService, если он там есть
+  content = content.replace(/await mailerService\.sendSupportReply\([\s\S]*?\)\.catch\(\(\) => \{\}\);/g, "");
 
-// ═══ 2. Отключаем почту в вебхуке (ответы админа) ═══
-patchFile(
-  "src/modules/webhooks/webhooks.routes.ts",
-  `          await mailerService.sendSupportReply(ticket.email, replyText).catch(() => {});\n`,
-  ``,
-  "webhooks.routes.ts (удаление отправки email)"
-);
+  // Обновляем отправку сообщения обратно клиенту (гарантируем использование SUPPORT_BOT_TOKEN)
+  content = content.replace(
+    /await axios\s*\.post\(\s*`https:\/\/botapi\.max\.ru\/messages\?user_id=\$\{ticket\.userId\}`,\s*\{ text: "Ответ поддержки:\\\\n\\\\n" \+ replyText \},\s*\{ headers: \{ Authorization: org\.token \} \}\s*\)\s*\.catch\(\(\) => \{\}\);/g,
+    `await axios\n              .post(\n                \`https://botapi.max.ru/messages?user_id=\${ticket.userId}\`,\n                { text: "Ответ поддержки:\\n\\n" + replyText },\n                { headers: { Authorization: process.env.SUPPORT_BOT_TOKEN } }\n              )\n              .catch(() => {});`
+  );
 
-// ═══ 3. Убираем страницу Контактов из App.tsx ═══
-patchFile(
-  "frontend/src/App.tsx",
-  `import ContactsPage from "./pages/ContactsPage";\n`,
-  ``,
-  "App.tsx (удаление импорта ContactsPage)"
-);
+  // Обновляем уведомление админу об успешной отправке
+  content = content.replace(
+    /await axios\s*\.post\(\s*`https:\/\/botapi\.max\.ru\/messages\?user_id=\$\{SUPPORT_ADMIN_ID\}`,\s*\{ text: "✅ Ответ на #" \+ shortId \+ " отправлен клиенту!" \},\s*\{ headers: \{ Authorization: org\.token \} \}\s*\)\s*\.catch\(\(\) => \{\}\);/g,
+    `await axios\n            .post(\n              \`https://botapi.max.ru/messages?user_id=\${SUPPORT_ADMIN_ID}\`,\n              { text: "✅ Ответ на #" + shortId + " отправлен клиенту!" },\n              { headers: { Authorization: process.env.SUPPORT_BOT_TOKEN } }\n            )\n            .catch(() => {});`
+  );
 
-patchFile(
-  "frontend/src/App.tsx",
-  `<Route path="/contacts" element={<ContactsPage />} />`,
-  `<Route path="/contacts" element={<Navigate to="/" replace />} />`,
-  "App.tsx (редирект /contacts на главную)"
-);
-
-// ═══ 4. Обновляем футер: "Контакты" открывают виджет ═══
-patchFile(
-  "frontend/src/components/landing/LandingFooter.tsx",
-  `{ label: "Контакты", href: "/contacts" },`,
-  `{ label: "Контакты", href: "#support" },`,
-  "LandingFooter.tsx (замена href контактов)"
-);
-
-patchFile(
-  "frontend/src/components/landing/LandingFooter.tsx",
-  `  const scrollTo = (href: string) => {\n    if (href.startsWith("#") && href.length > 1) {`,
-  `  const scrollTo = (href: string) => {\n    if (href === "#support") {\n      window.dispatchEvent(new Event("open-support-chat"));\n      return;\n    }\n    if (href.startsWith("#") && href.length > 1) {`,
-  "LandingFooter.tsx (обработка клика по контактам)"
-);
-
-// ═══ 5. Заставляем виджет слушать событие открытия ═══
-patchFile(
-  "frontend/src/components/SupportWidget.tsx",
-  `import { useState } from "react";`,
-  `import { useState, useEffect } from "react";`,
-  "SupportWidget.tsx (импорт useEffect)"
-);
-
-patchFile(
-  "frontend/src/components/SupportWidget.tsx",
-  `  const [isOpen, setIsOpen] = useState(false);\n\n  // Сотрудники не видят эту форму\n  if (user?.role === "EMPLOYEE") return null;`,
-  `  const [isOpen, setIsOpen] = useState(false);\n\n  // Слушаем событие открытия (из футера)\n  useEffect(() => {\n    const handleOpen = () => setIsOpen(true);\n    window.addEventListener("open-support-chat", handleOpen);\n    return () => window.removeEventListener("open-support-chat", handleOpen);\n  }, []);\n\n  // Сотрудники не видят эту форму\n  if (user?.role === "EMPLOYEE") return null;`,
-  "SupportWidget.tsx (слушатель события)"
-);
+  fs.writeFileSync(webhookPath, content, "utf-8");
+  touched++;
+  console.log("✅ [webhooks.routes.ts] Очищен от почты и переведен на SUPPORT_BOT_TOKEN");
+}
 
 console.log("\n──────────────────────────────────────");
 if (touched > 0) {
   console.log("🎉 Готово! Внесено изменений: " + touched);
+  console.log("⚠️ ВАЖНО: Убедись, что на сервере в .env есть SUPPORT_BOT_TOKEN!");
 } else {
   console.log("⚠️ Изменений не внесено.");
 }

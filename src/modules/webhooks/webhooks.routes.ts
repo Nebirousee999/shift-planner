@@ -117,7 +117,7 @@ export async function webhooksRoutes(app: FastifyInstance) {
             .update(supportTickets)
             .set({ status: "ANSWERED" })
             .where(eq(supportTickets.id, ticket.id));
-          await mailerService.sendSupportReply(ticket.email, replyText).catch(() => {});
+          
           
           if (ticket.userId) {
             await axios
@@ -169,7 +169,7 @@ export async function webhooksRoutes(app: FastifyInstance) {
                 .update(supportTickets)
                 .set({ reply: replyText, status: "ANSWERED" })
                 .where(eq(supportTickets.id, ticket.id));
-              await mailerService.sendSupportReply(ticket.email, replyText).catch(() => {});
+              
               if (ticket.userId) {
                 await axios
                   .post(
