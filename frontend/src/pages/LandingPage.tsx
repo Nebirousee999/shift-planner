@@ -1,21 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
-  LayoutDashboard,
-  Bell,
-  Calendar,
-  Palmtree,
-  BarChart3,
-  ArrowRightLeft,
-  FileText,
-  FileSpreadsheet,
-  Sparkles,
+  LayoutDashboard, Bell, Calendar, Palmtree, BarChart3,
+  ArrowRightLeft, FileText, FileSpreadsheet, Sparkles, Loader2,
 } from "lucide-react";
 
 import { trackEvent } from "../lib/metrika";
 import Reveal from "../components/ui/Reveal";
+import LazySection from "../components/ui/LazySection";
 
-// Базовые компоненты
+// Базовые компоненты (Загружаются сразу)
 import TopBar from "../components/landing/TopBar";
 import TrustBar from "../components/landing/TrustBar";
 import LandingHeader from "../components/landing/LandingHeader";
@@ -32,60 +26,52 @@ import FinalCTA from "../components/landing/FinalCTA";
 import LandingFooter from "../components/landing/LandingFooter";
 import SeoLandingBlock from "../components/landing/SeoLandingBlock";
 
-// Демо-виджеты
-import DashboardDemo from "../components/landing/demos/DashboardDemo";
-import NotificationsDemo from "../components/landing/demos/NotificationsDemo";
-import WeekDemo from "../components/landing/demos/WeekDemo";
-import VacationsDemo from "../components/landing/demos/VacationsDemo";
-import AnalyticsDemo from "../components/landing/demos/AnalyticsDemo";
-import TimesheetDemo from "../components/landing/demos/TimesheetDemo";
-import SwapsDemo from "../components/landing/demos/SwapsDemo";
-import DocumentsDemo from "../components/landing/demos/DocumentsDemo";
+// Демо-виджеты (Ленивая загрузка: скачиваются только при скролле)
+const DashboardDemo = lazy(() => import("../components/landing/demos/DashboardDemo"));
+const NotificationsDemo = lazy(() => import("../components/landing/demos/NotificationsDemo"));
+const WeekDemo = lazy(() => import("../components/landing/demos/WeekDemo"));
+const VacationsDemo = lazy(() => import("../components/landing/demos/VacationsDemo"));
+const AnalyticsDemo = lazy(() => import("../components/landing/demos/AnalyticsDemo"));
+const TimesheetDemo = lazy(() => import("../components/landing/demos/TimesheetDemo"));
+const SwapsDemo = lazy(() => import("../components/landing/demos/SwapsDemo"));
+const DocumentsDemo = lazy(() => import("../components/landing/demos/DocumentsDemo"));
+
+const FallbackLoader = () => (
+  <div className="h-[500px] flex items-center justify-center">
+    <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
+  </div>
+);
 
 export default function LandingPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [interactions, setInteractions] = useState(0);
 
-  // 1. Эффект для прокрутки к блоку при переходе с других страниц (О нас, Политика и т.д.)
   useEffect(() => {
     if (location.state?.scrollTo) {
       const href = location.state.scrollTo;
-      
-      // Небольшая задержка, чтобы React успел отрендерить все секции
       const timer = setTimeout(() => {
         const el = document.querySelector(href);
         el?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 100);
-
-      // Очищаем state, чтобы при обновлении страницы (F5) не скроллило каждый раз
       window.history.replaceState({}, document.title);
-      
       return () => clearTimeout(timer);
     }
   }, [location]);
 
-  // 2. SEO-настройки
   useEffect(() => {
     const prevTitle = document.title;
     document.title = "Планировщик смен — график для кафе и магазинов";
-
-    let meta = document.querySelector(
-      'meta[name="description"]'
-    ) as HTMLMetaElement | null;
+    let meta = document.querySelector('meta[name="description"]') as HTMLMetaElement | null;
     let created = false;
-    
     if (!meta) {
       meta = document.createElement("meta");
       meta.name = "description";
       document.head.appendChild(meta);
       created = true;
     }
-    
     const prevDesc = meta.content;
-    meta.content =
-      "Планируйте смены за 5 минут, согласовывайте отпуска и генерируйте приказы по ТК. Бесплатно для команд до 3 человек.";
-
+    meta.content = "Планируйте смены за 5 минут, согласовывайте отпуска и генерируйте приказы по ТК. Бесплатно для команд до 3 человек.";
     return () => {
       document.title = prevTitle;
       if (created && meta) document.head.removeChild(meta);
@@ -94,9 +80,7 @@ export default function LandingPage() {
   }, []);
 
   const handleInteract = () => {
-    if (interactions === 0) {
-      trackEvent("Demo_interact"); // Фиксируем только первое касание
-    }
+    if (interactions === 0) trackEvent("Demo_interact");
     setInteractions((n) => n + 1);
   };
 
@@ -111,15 +95,13 @@ export default function LandingPage() {
       <LandingHeader />
 
       <main>
-        {/* 1. Hero */}
+        {/* 1. Hero (Мгновенная загрузка) */}
         <HeroSection onCtaClick={() => handleRegisterClick("hero")} />
         <Reveal><TrustBar /></Reveal>
-        
-        {/* 2. Соцдоказательства и обзор */}
         <Reveal><SocialProof /></Reveal>
         <Reveal><FeaturesOverview /></Reveal>
 
-        {/* 3. Демо-секции (чередование фонов light / tinted) */}
+        {/* 2. Демо-секции (Отложенная загрузка при скролле) */}
         <Reveal>
           <FeatureSection
             id="dashboard-demo"
@@ -128,12 +110,14 @@ export default function LandingPage() {
             icon={LayoutDashboard}
             title="Кто на смене прямо сейчас"
             description="Таймлайн дня с сменами всех сотрудников. Наведите на смену — увидите опоздания, ранний уход и переработки. Кликните — поставьте в один клик."
-            bullets={[
-              "Всё в реальном времени",
-              "Опоздания и переработки подсвечены",
-              "Дисциплина — в 2 клика",
-            ]}
-            demo={<DashboardDemo onInteract={handleInteract} />}
+            bullets={["Всё в реальном времени", "Опоздания и переработки подсвечены", "Дисциплина — в 2 клика"]}
+            demo={
+              <LazySection height="500px">
+                <Suspense fallback={<FallbackLoader />}>
+                  <DashboardDemo onInteract={handleInteract} />
+                </Suspense>
+              </LazySection>
+            }
           />
         </Reveal>
 
@@ -145,12 +129,14 @@ export default function LandingPage() {
             icon={Bell}
             title="Сотрудники всегда в курсе"
             description="Больше не нужно звонить и писать каждому. Бот в MAX напомнит о смене, сообщит об изменениях в графике и предложит обменяться — в один клик."
-            bullets={[
-              "Уведомления прямо в MAX",
-              "Напоминания за N часов до смены",
-              "Кнопки «Принять» / «Отклонить» прямо в чате",
-            ]}
-            demo={<NotificationsDemo onInteract={handleInteract} />}
+            bullets={["Уведомления прямо в MAX", "Напоминания за N часов до смены", "Кнопки «Принять» / «Отклонить» прямо в чате"]}
+            demo={
+              <LazySection height="500px">
+                <Suspense fallback={<FallbackLoader />}>
+                  <NotificationsDemo onInteract={handleInteract} />
+                </Suspense>
+              </LazySection>
+            }
           />
         </Reveal>
 
@@ -162,12 +148,14 @@ export default function LandingPage() {
             icon={Calendar}
             title="Планируйте неделю за 5 минут"
             description="Перетаскивайте смены между днями, копируйте целые дни одной кнопкой, проверяйте 40-часовую норму и пересечения."
-            bullets={[
-              "Drag-and-drop и копирование смен/дней",
-              "Проверка ТК РФ при публикации",
-              "Удаление в один клик",
-            ]}
-            demo={<WeekDemo onInteract={handleInteract} />}
+            bullets={["Drag-and-drop и копирование смен/дней", "Проверка ТК РФ при публикации", "Удаление в один клик"]}
+            demo={
+              <LazySection height="500px">
+                <Suspense fallback={<FallbackLoader />}>
+                  <WeekDemo onInteract={handleInteract} />
+                </Suspense>
+              </LazySection>
+            }
           />
         </Reveal>
 
@@ -179,12 +167,14 @@ export default function LandingPage() {
             icon={Palmtree}
             title="Гант-календарь отпусков"
             description="Сотрудник запрашивает отпуск — руководитель видит пересечения по календарю и согласовывает в один клик. Полосы отпусков можно перетаскивать и растягивать."
-            bullets={[
-              "Перетаскивание и растягивание полос",
-              "Согласование заявок в один клик",
-              "Видно сразу все отпуска команды",
-            ]}
-            demo={<VacationsDemo onInteract={handleInteract} />}
+            bullets={["Перетаскивание и растягивание полос", "Согласование заявок в один клик", "Видно сразу все отпуска команды"]}
+            demo={
+              <LazySection height="500px">
+                <Suspense fallback={<FallbackLoader />}>
+                  <VacationsDemo onInteract={handleInteract} />
+                </Suspense>
+              </LazySection>
+            }
           />
         </Reveal>
 
@@ -196,12 +186,14 @@ export default function LandingPage() {
             icon={BarChart3}
             title="ФОТ, переработки и пики нагрузки"
             description="Переключайте месяцы — цифры меняются плавно. Сравнение с прошлым месяцем, структура ФОТ по сотрудникам и должностям, нагрузка по дням недели."
-            bullets={[
-              "MoM-динамика по всем метрикам",
-              "Пики нагрузки — куда ставить больше людей",
-              "Кто и сколько «съедает» из бюджета",
-            ]}
-            demo={<AnalyticsDemo onInteract={handleInteract} />}
+            bullets={["MoM-динамика по всем метрикам", "Пики нагрузки — куда ставить больше людей", "Кто и сколько «съедает» из бюджета"]}
+            demo={
+              <LazySection height="500px">
+                <Suspense fallback={<FallbackLoader />}>
+                  <AnalyticsDemo onInteract={handleInteract} />
+                </Suspense>
+              </LazySection>
+            }
           />
         </Reveal>
 
@@ -213,12 +205,14 @@ export default function LandingPage() {
             icon={FileSpreadsheet}
             title="Табель, готовый для бухгалтерии"
             description="Забудьте про ручной подсчёт часов в Excel. Система сама соберёт отработанное время, учтёт отпуска и больничные, посчитает зарплату и выгрузит табель в один клик."
-            bullets={[
-              "Автоматический подсчёт часов",
-              "Учёт отпусков (ОТ) и больничных (Б)",
-              "Выгрузка в Excel для бухгалтера",
-            ]}
-            demo={<TimesheetDemo onInteract={handleInteract} />}
+            bullets={["Автоматический подсчёт часов", "Учёт отпусков (ОТ) и больничных (Б)", "Выгрузка в Excel для бухгалтера"]}
+            demo={
+              <LazySection height="500px">
+                <Suspense fallback={<FallbackLoader />}>
+                  <TimesheetDemo onInteract={handleInteract} />
+                </Suspense>
+              </LazySection>
+            }
           />
         </Reveal>
 
@@ -230,12 +224,14 @@ export default function LandingPage() {
             icon={ArrowRightLeft}
             title="Сотрудники меняются сами"
             description="Сотрудник предлагает смену — коллеги откликаются. Вы видите всё в одном месте: кто кому, какая смена, что принято, что отклонено. Без звонков и мессенджеров."
-            bullets={[
-              "Открытые и адресные предложения",
-              "Принять / отклонить в один клик",
-              "История всех обменов",
-            ]}
-            demo={<SwapsDemo onInteract={handleInteract} />}
+            bullets={["Открытые и адресные предложения", "Принять / отклонить в один клик", "История всех обменов"]}
+            demo={
+              <LazySection height="500px">
+                <Suspense fallback={<FallbackLoader />}>
+                  <SwapsDemo onInteract={handleInteract} />
+                </Suspense>
+              </LazySection>
+            }
           />
         </Reveal>
 
@@ -247,12 +243,14 @@ export default function LandingPage() {
             icon={FileText}
             title="Приказы и журналы за 30 секунд"
             description="Выберите шаблон, сотрудника — должность подтянется автоматически. Получите готовый DOCX с реквизитами. Или загрузите свой шаблон с плейсхолдерами."
-            bullets={[
-              "Готовые формы: приёмы, отпуска, инструктажи",
-              "Свой шаблон через .docx с {плейсхолдерами}",
-              "Массовая генерация из Excel → ZIP",
-            ]}
-            demo={<DocumentsDemo onInteract={handleInteract} />}
+            bullets={["Готовые формы: приёмы, отпуска, инструктажи", "Свой шаблон через .docx с {плейсхолдерами}", "Массовая генерация из Excel → ZIP"]}
+            demo={
+              <LazySection height="500px">
+                <Suspense fallback={<FallbackLoader />}>
+                  <DocumentsDemo onInteract={handleInteract} />
+                </Suspense>
+              </LazySection>
+            }
           />
         </Reveal>
 
@@ -272,7 +270,6 @@ export default function LandingPage() {
       <SeoLandingBlock />
       <LandingFooter />
 
-      {/* Плавающая кнопка (появляется после взаимодействия с демо) */}
       {interactions > 0 && (
         <div className="fixed bottom-6 right-6 z-50 animate-fade-in">
           <button

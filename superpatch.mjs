@@ -13,135 +13,335 @@ function writeFile(relPath, content, label) {
   console.log("✅ [" + label + "] Перезаписан");
 }
 
-// ═══ 1. Исправляем Vite: оставляем в vendor ТОЛЬКО React ═══
+// ═══ 1. Создаем компонент LazySection (Загружает контент при скролле) ═══
 writeFile(
-  "frontend/vite.config.ts",
-  `import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-import tailwindcss from "@tailwindcss/vite";
-import { VitePWA } from "vite-plugin-pwa";
+  "frontend/src/components/ui/LazySection.tsx",
+  `import { useEffect, useRef, useState } from "react";
 
-export default defineConfig({
-  plugins: [
-    react(),
-    tailwindcss(),
-    VitePWA({
-      registerType: "autoUpdate",
-      includeAssets: ["favicon.ico", "apple-touch-icon.png"],
-      manifest: {
-        name: "Планировщик смен",
-        short_name: "Смены",
-        description: "Планирование смен, учёт рабочего времени и отпусков для микробизнеса",
-        theme_color: "#2563eb",
-        background_color: "#f8fafc",
-        display: "standalone",
-        orientation: "portrait",
-        start_url: "/",
-        scope: "/",
-        lang: "ru",
-        icons: [
-          { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
-          { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
-          { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" },
-        ],
+export default function LazySection({ children, height = "400px" }: { children: React.ReactNode, height?: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
       },
-      workbox: {
-        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
-        navigateFallbackDenylist: [/^\\/api/],
-      },
-      devOptions: { enabled: false },
-    }),
-  ],
-  build: {
-    outDir: "dist",
-    sourcemap: false,
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (id.includes("node_modules")) {
-            // В vendor кладем ТОЛЬКО ядро React
-            if (
-              id.includes("react") ||
-              id.includes("react-dom") ||
-              id.includes("react-router-dom") ||
-              id.includes("zustand")
-            ) {
-              return "react-vendor";
-            }
-            // Остальное (docx, axios, lucide и т.д.) Rollup сам разобьет на чанки
-          }
-        },
-      },
-    },
-  },
-});
-`,
-  "frontend/vite.config.ts"
-);
+      { rootMargin: "400px" } // Начинаем загрузку за 400px до появления на экране
+    );
+    if (ref.current) observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, []);
 
-// ═══ 2. Починяем Nginx (подключаем mime.types, чтобы Gzip заработал) ═══
-writeFile(
-  "frontend/nginx.conf",
-  `server {
-    listen 80;
-    server_name localhost;
+  if (!isVisible) {
+    return <div ref={ref} style={{ minHeight: height }} className="w-full flex items-center justify-center text-slate-300 bg-slate-50/50 rounded-2xl border border-slate-100/50">Загрузка...</div>;
+  }
 
-    root /usr/share/nginx/html;
-    index index.html;
-
-    # 🔥 Подключаем типы файлов (без этого gzip не понимает, что сжимать)
-    include /etc/nginx/mime.types;
-    default_type application/octet-stream;
-
-    # 🔥 Лечим баг Docker
-    sendfile off;
-
-    # 🔥 Включаем сжатие
-    gzip on;
-    gzip_vary on;
-    gzip_proxied any;
-    gzip_comp_level 6;
-    gzip_min_length 1000;
-    gzip_types
-        text/plain
-        text/css
-        application/json
-        application/javascript
-        application/x-javascript
-        text/xml
-        application/xml
-        application/xml+rss
-        text/javascript
-        image/svg+xml;
-
-    # Кэширование статики
-    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
-
-    # API
-    location /api/ {
-        proxy_pass http://api:3001/api/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_buffering off;
-    }
-
-    # SPA
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
+  return <div ref={ref}>{children}</div>;
 }
 `,
-  "frontend/nginx.conf"
+  "LazySection.tsx"
+);
+
+// ═══ 2. Переписываем LandingPage.tsx на Lazy Loading ═══
+writeFile(
+  "frontend/src/pages/LandingPage.tsx",
+  `import { useEffect, useState, lazy, Suspense } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import {
+  LayoutDashboard, Bell, Calendar, Palmtree, BarChart3,
+  ArrowRightLeft, FileText, FileSpreadsheet, Sparkles, Loader2,
+} from "lucide-react";
+
+import { trackEvent } from "../lib/metrika";
+import Reveal from "../components/ui/Reveal";
+import LazySection from "../components/ui/LazySection";
+
+// Базовые компоненты (Загружаются сразу)
+import TopBar from "../components/landing/TopBar";
+import TrustBar from "../components/landing/TrustBar";
+import LandingHeader from "../components/landing/LandingHeader";
+import HeroSection from "../components/landing/HeroSection";
+import SocialProof from "../components/landing/SocialProof";
+import FeaturesOverview from "../components/landing/FeaturesOverview";
+import ForWhom from "../components/landing/ForWhom";
+import FeatureSection from "../components/landing/FeatureSection";
+import ProblemSolution from "../components/landing/ProblemSolution";
+import HowItWorks from "../components/landing/HowItWorks";
+import PricingSection from "../components/landing/PricingSection";
+import FAQSection from "../components/landing/FAQSection";
+import FinalCTA from "../components/landing/FinalCTA";
+import LandingFooter from "../components/landing/LandingFooter";
+import SeoLandingBlock from "../components/landing/SeoLandingBlock";
+
+// Демо-виджеты (Ленивая загрузка: скачиваются только при скролле)
+const DashboardDemo = lazy(() => import("../components/landing/demos/DashboardDemo"));
+const NotificationsDemo = lazy(() => import("../components/landing/demos/NotificationsDemo"));
+const WeekDemo = lazy(() => import("../components/landing/demos/WeekDemo"));
+const VacationsDemo = lazy(() => import("../components/landing/demos/VacationsDemo"));
+const AnalyticsDemo = lazy(() => import("../components/landing/demos/AnalyticsDemo"));
+const TimesheetDemo = lazy(() => import("../components/landing/demos/TimesheetDemo"));
+const SwapsDemo = lazy(() => import("../components/landing/demos/SwapsDemo"));
+const DocumentsDemo = lazy(() => import("../components/landing/demos/DocumentsDemo"));
+
+const FallbackLoader = () => (
+  <div className="h-[500px] flex items-center justify-center">
+    <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
+  </div>
+);
+
+export default function LandingPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [interactions, setInteractions] = useState(0);
+
+  useEffect(() => {
+    if (location.state?.scrollTo) {
+      const href = location.state.scrollTo;
+      const timer = setTimeout(() => {
+        const el = document.querySelector(href);
+        el?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 100);
+      window.history.replaceState({}, document.title);
+      return () => clearTimeout(timer);
+    }
+  }, [location]);
+
+  useEffect(() => {
+    const prevTitle = document.title;
+    document.title = "Планировщик смен — график для кафе и магазинов";
+    let meta = document.querySelector('meta[name="description"]') as HTMLMetaElement | null;
+    let created = false;
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.name = "description";
+      document.head.appendChild(meta);
+      created = true;
+    }
+    const prevDesc = meta.content;
+    meta.content = "Планируйте смены за 5 минут, согласовывайте отпуска и генерируйте приказы по ТК. Бесплатно для команд до 3 человек.";
+    return () => {
+      document.title = prevTitle;
+      if (created && meta) document.head.removeChild(meta);
+      else if (meta) meta.content = prevDesc;
+    };
+  }, []);
+
+  const handleInteract = () => {
+    if (interactions === 0) trackEvent("Demo_interact");
+    setInteractions((n) => n + 1);
+  };
+
+  const handleRegisterClick = (source: string) => {
+    trackEvent("CTA_click", { source });
+    navigate("/login?mode=register");
+  };
+
+  return (
+    <div className="min-h-screen bg-white">
+      <TopBar />
+      <LandingHeader />
+
+      <main>
+        {/* 1. Hero (Мгновенная загрузка) */}
+        <HeroSection onCtaClick={() => handleRegisterClick("hero")} />
+        <Reveal><TrustBar /></Reveal>
+        <Reveal><SocialProof /></Reveal>
+        <Reveal><FeaturesOverview /></Reveal>
+
+        {/* 2. Демо-секции (Отложенная загрузка при скролле) */}
+        <Reveal>
+          <FeatureSection
+            id="dashboard-demo"
+            variant="light"
+            eyebrow="Дашборд руководителя"
+            icon={LayoutDashboard}
+            title="Кто на смене прямо сейчас"
+            description="Таймлайн дня с сменами всех сотрудников. Наведите на смену — увидите опоздания, ранний уход и переработки. Кликните — поставьте в один клик."
+            bullets={["Всё в реальном времени", "Опоздания и переработки подсвечены", "Дисциплина — в 2 клика"]}
+            demo={
+              <LazySection height="500px">
+                <Suspense fallback={<FallbackLoader />}>
+                  <DashboardDemo onInteract={handleInteract} />
+                </Suspense>
+              </LazySection>
+            }
+          />
+        </Reveal>
+
+        <Reveal>
+          <FeatureSection
+            id="notifications-demo"
+            variant="tinted"
+            eyebrow="Уведомления"
+            icon={Bell}
+            title="Сотрудники всегда в курсе"
+            description="Больше не нужно звонить и писать каждому. Бот в MAX напомнит о смене, сообщит об изменениях в графике и предложит обменяться — в один клик."
+            bullets={["Уведомления прямо в MAX", "Напоминания за N часов до смены", "Кнопки «Принять» / «Отклонить» прямо в чате"]}
+            demo={
+              <LazySection height="500px">
+                <Suspense fallback={<FallbackLoader />}>
+                  <NotificationsDemo onInteract={handleInteract} />
+                </Suspense>
+              </LazySection>
+            }
+          />
+        </Reveal>
+
+        <Reveal>
+          <FeatureSection
+            id="weeks-demo"
+            variant="light"
+            eyebrow="Расписание смен"
+            icon={Calendar}
+            title="Планируйте неделю за 5 минут"
+            description="Перетаскивайте смены между днями, копируйте целые дни одной кнопкой, проверяйте 40-часовую норму и пересечения."
+            bullets={["Drag-and-drop и копирование смен/дней", "Проверка ТК РФ при публикации", "Удаление в один клик"]}
+            demo={
+              <LazySection height="500px">
+                <Suspense fallback={<FallbackLoader />}>
+                  <WeekDemo onInteract={handleInteract} />
+                </Suspense>
+              </LazySection>
+            }
+          />
+        </Reveal>
+
+        <Reveal>
+          <FeatureSection
+            id="vacations-demo"
+            variant="tinted"
+            eyebrow="Отпуска и больничные"
+            icon={Palmtree}
+            title="Гант-календарь отпусков"
+            description="Сотрудник запрашивает отпуск — руководитель видит пересечения по календарю и согласовывает в один клик. Полосы отпусков можно перетаскивать и растягивать."
+            bullets={["Перетаскивание и растягивание полос", "Согласование заявок в один клик", "Видно сразу все отпуска команды"]}
+            demo={
+              <LazySection height="500px">
+                <Suspense fallback={<FallbackLoader />}>
+                  <VacationsDemo onInteract={handleInteract} />
+                </Suspense>
+              </LazySection>
+            }
+          />
+        </Reveal>
+
+        <Reveal>
+          <FeatureSection
+            id="analytics-demo"
+            variant="light"
+            eyebrow="Аналитика"
+            icon={BarChart3}
+            title="ФОТ, переработки и пики нагрузки"
+            description="Переключайте месяцы — цифры меняются плавно. Сравнение с прошлым месяцем, структура ФОТ по сотрудникам и должностям, нагрузка по дням недели."
+            bullets={["MoM-динамика по всем метрикам", "Пики нагрузки — куда ставить больше людей", "Кто и сколько «съедает» из бюджета"]}
+            demo={
+              <LazySection height="500px">
+                <Suspense fallback={<FallbackLoader />}>
+                  <AnalyticsDemo onInteract={handleInteract} />
+                </Suspense>
+              </LazySection>
+            }
+          />
+        </Reveal>
+
+        <Reveal>
+          <FeatureSection
+            id="timesheet-demo"
+            variant="tinted"
+            eyebrow="Табели и зарплата"
+            icon={FileSpreadsheet}
+            title="Табель, готовый для бухгалтерии"
+            description="Забудьте про ручной подсчёт часов в Excel. Система сама соберёт отработанное время, учтёт отпуска и больничные, посчитает зарплату и выгрузит табель в один клик."
+            bullets={["Автоматический подсчёт часов", "Учёт отпусков (ОТ) и больничных (Б)", "Выгрузка в Excel для бухгалтера"]}
+            demo={
+              <LazySection height="500px">
+                <Suspense fallback={<FallbackLoader />}>
+                  <TimesheetDemo onInteract={handleInteract} />
+                </Suspense>
+              </LazySection>
+            }
+          />
+        </Reveal>
+
+        <Reveal>
+          <FeatureSection
+            id="swaps-demo"
+            variant="light"
+            eyebrow="Обмены сменами"
+            icon={ArrowRightLeft}
+            title="Сотрудники меняются сами"
+            description="Сотрудник предлагает смену — коллеги откликаются. Вы видите всё в одном месте: кто кому, какая смена, что принято, что отклонено. Без звонков и мессенджеров."
+            bullets={["Открытые и адресные предложения", "Принять / отклонить в один клик", "История всех обменов"]}
+            demo={
+              <LazySection height="500px">
+                <Suspense fallback={<FallbackLoader />}>
+                  <SwapsDemo onInteract={handleInteract} />
+                </Suspense>
+              </LazySection>
+            }
+          />
+        </Reveal>
+
+        <Reveal>
+          <FeatureSection
+            id="documents-demo"
+            variant="tinted"
+            eyebrow="Документы по ТК"
+            icon={FileText}
+            title="Приказы и журналы за 30 секунд"
+            description="Выберите шаблон, сотрудника — должность подтянется автоматически. Получите готовый DOCX с реквизитами. Или загрузите свой шаблон с плейсхолдерами."
+            bullets={["Готовые формы: приёмы, отпуска, инструктажи", "Свой шаблон через .docx с {плейсхолдерами}", "Массовая генерация из Excel → ZIP"]}
+            demo={
+              <LazySection height="500px">
+                <Suspense fallback={<FallbackLoader />}>
+                  <DocumentsDemo onInteract={handleInteract} />
+                </Suspense>
+              </LazySection>
+            }
+          />
+        </Reveal>
+
+        {/* 4. Информационные секции */}
+        <Reveal><ForWhom /></Reveal>
+        <Reveal><ProblemSolution /></Reveal>
+        <Reveal><HowItWorks /></Reveal>
+        <Reveal><PricingSection /></Reveal>
+        <Reveal><FAQSection /></Reveal>
+        
+        {/* 5. Финальный CTA */}
+        <Reveal>
+          <FinalCTA onCtaClick={() => handleRegisterClick("final_cta")} />
+        </Reveal>
+      </main>
+
+      <SeoLandingBlock />
+      <LandingFooter />
+
+      {interactions > 0 && (
+        <div className="fixed bottom-6 right-6 z-50 animate-fade-in">
+          <button
+            onClick={() => handleRegisterClick("floating_cta")}
+            className="inline-flex items-center gap-2 px-5 py-3 bg-brand-600 text-white rounded-full shadow-xl shadow-brand-500/30 hover:bg-brand-700 text-sm font-semibold transition-all"
+          >
+            <Sparkles className="w-4 h-4" />
+            Попробовать бесплатно
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+`,
+  "LandingPage.tsx (Lazy Loading)"
 );
 
 console.log("\n──────────────────────────────────────");
 if (touched > 0) {
-  console.log("🎉 Готово! Конфиги Vite и Nginx оптимизированы.");
+  console.log("🎉 Готово! Лендинг разбит на блоки. Первые секции загружаются мгновенно.");
 } else {
   console.log("⚠️ Изменений не внесено.");
 }
