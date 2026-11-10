@@ -23,8 +23,8 @@ export async function supportRoutes(app: FastifyInstance) {
 
     let ticket;
 
-    // 1. Если авторизован — ищем по userId
     if (userId) {
+      // Авторизованный пользователь — ищем по userId
       const found = await db
         .select()
         .from(supportTickets)
@@ -34,25 +34,29 @@ export async function supportRoutes(app: FastifyInstance) {
       
       if (found.length > 0) {
         ticket = found[0];
-        // Обновляем сессию, если зашли с нового устройства
         if (ticket.sessionToken !== sessionToken) {
           await db.update(supportTickets)
             .set({ sessionToken })
             .where(eq(supportTickets.id, ticket.id));
         }
       }
-    }
-
-    // 2. Если не нашли (или гость) — ищем по сессии
-    if (!ticket && !userId) {
+    } else {
+      // Гость — ищем по sessionToken
       const found = await db
         .select()
         .from(supportTickets)
         .where(eq(supportTickets.sessionToken, sessionToken));
-      if (found.length > 0) ticket = found[0];
+      
+      if (found.length > 0) {
+        if (found[0].email === parsed.data.email) {
+          ticket = found[0]; // Почта совпадает, продолжаем диалог
+        } else {
+          // 🔥 Почта изменилась! Создаем новую сессию для нового гостя
+          sessionToken = crypto.randomUUID();
+        }
+      }
     }
 
-    // 3. Если тикета нет — создаем новый
     if (!ticket) {
       const inserted = await db
         .insert(supportTickets)
@@ -67,7 +71,6 @@ export async function supportRoutes(app: FastifyInstance) {
       ticket = inserted[0];
     }
 
-    // Сохраняем сообщение в историю
     await db.insert(supportMessages).values({
       ticketId: ticket.id,
       sender: "USER",
@@ -77,7 +80,6 @@ export async function supportRoutes(app: FastifyInstance) {
 
     const shortId = ticket.id.slice(0, 6).toUpperCase();
 
-    // Отправляем уведомление в MAX (только через бота поддержки)
     try {
       const SUPPORT_BOT_TOKEN = process.env.SUPPORT_BOT_TOKEN;
       const SUPPORT_ADMIN_ID = process.env.SUPPORT_ADMIN_ID || "141744495";

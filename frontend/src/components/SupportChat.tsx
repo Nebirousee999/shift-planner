@@ -7,17 +7,6 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
   const { user } = useAuth();
   const [sessionToken, setSessionToken] = useState<string>("");
   const [email, setEmail] = useState(user?.email || "");
-
-  // Сбрасываем сообщения и почту при смене пользователя (вход/выход)
-  useEffect(() => {
-    if (user?.email) {
-      setEmail(user.email);
-    } else {
-      setEmail("");
-    }
-    setMessages([]);
-    setFetching(true);
-  }, [user?.id]);
   const [message, setMessage] = useState("");
   const [images, setImages] = useState<string[]>([]);
   const [messages, setMessages] = useState<SupportMessage[]>([]);
@@ -36,7 +25,17 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
     setSessionToken(token);
   }, []);
 
-  // Загрузка истории и поллинг
+  // Сброс при смене пользователя
+  useEffect(() => {
+    if (user?.email) {
+      setEmail(user.email);
+    } else {
+      setEmail("");
+    }
+    setMessages([]);
+    setFetching(true);
+  }, [user?.id]);
+
   const loadMessages = async () => {
     if (!sessionToken) return;
     try {
@@ -52,11 +51,10 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
   useEffect(() => {
     if (!sessionToken) return;
     loadMessages();
-    const interval = setInterval(loadMessages, 5000); // Опрос каждые 5 сек
+    const interval = setInterval(loadMessages, 5000);
     return () => clearInterval(interval);
   }, [sessionToken, user?.id]);
 
-  // Прокрутка вниз при новом сообщении
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -96,10 +94,19 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
     if (!email || (!message && images.length === 0)) return;
     setLoading(true);
     try {
+      // Отправляем и получаем ответ
       const res = await supportApi.send({ email, message, images, sessionToken });
+      
+      // Если бэкенд выдал новый токен (смена почты у гостя) — сохраняем его
+      if (res.sessionToken && res.sessionToken !== sessionToken) {
+        setSessionToken(res.sessionToken);
+        localStorage.setItem("support_session_token", res.sessionToken);
+      } else {
+        await loadMessages();
+      }
+      
       setMessage("");
       setImages([]);
-      await loadMessages();
     } catch (err) {
       alert("Ошибка отправки");
     } finally {
@@ -113,7 +120,6 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
 
   return (
     <div className="flex flex-col h-[400px] bg-slate-50">
-      {/* Сообщения */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3">
         {messages.length === 0 ? (
           <div className="text-center text-slate-400 text-sm mt-10">
@@ -147,7 +153,6 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
         )}
       </div>
 
-      {/* Форма ввода */}
       <div className="bg-white border-t border-slate-200 p-3">
         {images.length > 0 && (
           <div className="flex gap-2 overflow-x-auto pt-2 pb-2 px-1">
