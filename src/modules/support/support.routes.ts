@@ -5,6 +5,7 @@ import { db } from "../../../db/client.js";
 import { supportTickets, supportMessages } from "../../../db/schema.js";
 import { mailerService } from "../../lib/mailer.service.js";
 import axios from "axios";
+import crypto from "node:crypto";
 
 export async function supportRoutes(app: FastifyInstance) {
   // Отправка нового сообщения (создает тикет, если его нет)

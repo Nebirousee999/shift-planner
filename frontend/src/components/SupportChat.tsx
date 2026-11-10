@@ -182,8 +182,8 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
             onChange={(e) => setMessage(e.target.value)}
             onPaste={handlePaste}
             placeholder="Сообщение... (можно вставить фото из буфера)"
-            className="flex-1 !text-sm !py-2 !bg-slate-50 !border-slate-200 resize-none max-h-24"
-            rows={1}
+            className="flex-1 !text-sm !py-2 !bg-slate-50 !border-slate-200 resize-none min-h-[72px] max-h-32"
+            rows={3}
             required={images.length === 0}
           />
 
