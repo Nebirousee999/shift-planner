@@ -13,8 +13,7 @@ export default defineConfig({
       manifest: {
         name: "Планировщик смен",
         short_name: "Смены",
-        description:
-          "Планирование смен, учёт рабочего времени и отпусков для микробизнеса",
+        description: "Планирование смен, учёт рабочего времени и отпусков для микробизнеса",
         theme_color: "#2563eb",
         background_color: "#f8fafc",
         display: "standalone",
@@ -23,37 +22,28 @@ export default defineConfig({
         scope: "/",
         lang: "ru",
         icons: [
-          {
-            src: "/icon-192.png",
-            sizes: "192x192",
-            type: "image/png",
-          },
-          {
-            src: "/icon-512.png",
-            sizes: "512x512",
-            type: "image/png",
-          },
-          {
-            src: "/icon-512.png",
-            sizes: "512x512",
-            type: "image/png",
-            purpose: "any maskable",
-          },
+          { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
+          { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
+          { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" },
         ],
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
-        // Не кэшируем API вообще — Service Worker работает только для статики
         navigateFallbackDenylist: [/^\/api/],
       },
-      // ⚠️ Ключевое: PWA выключен в dev-режиме
-      devOptions: {
-        enabled: false,
-      },
+      devOptions: { enabled: false },
     }),
   ],
   build: {
     outDir: "dist",
     sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ["react", "react-dom", "react-router-dom", "zustand", "axios"],
+          icons: ["lucide-react"],
+        },
+      },
+    },
   },
 });
