@@ -2,8 +2,9 @@ import type { FastifyInstance } from "fastify";
 import { eq, isNotNull } from "drizzle-orm";
 import axios from "axios";
 import { db } from "../../../db/client.js";
-import { payments, organizations } from "../../../db/schema.js";
+import { payments, organizations, supportTickets } from "../../../db/schema.js";
 import { yookassaService } from "../../lib/yookassa.js";
+import { mailerService } from "../../lib/mailer.service.js";
 
 export async function webhooksRoutes(app: FastifyInstance) {
   app.post("/yookassa", async (req, reply) => {
@@ -107,6 +108,39 @@ export async function webhooksRoutes(app: FastifyInstance) {
         if (org && org.token) {
           const text = message?.body?.text || "";
           const ADMIN_ID = "141744495"; // Твой личный ID в MAX
+
+          // Ответ на тикет: формат "#SHORTID текст"
+          if (senderId === ADMIN_ID && text.startsWith("#")) {
+            const spaceIdx = text.indexOf(" ");
+            const shortId = text.substring(1, spaceIdx > -1 ? spaceIdx : text.length).toUpperCase();
+            const replyText = spaceIdx > -1 ? text.substring(spaceIdx + 1) : "";
+            const tickets = await db.select().from(supportTickets);
+            const ticket = tickets.find((t) => t.id.slice(0, 6).toUpperCase() === shortId);
+            if (ticket) {
+              await db
+                .update(supportTickets)
+                .set({ reply: replyText, status: "ANSWERED" })
+                .where(eq(supportTickets.id, ticket.id));
+              await mailerService.sendSupportReply(ticket.email, replyText).catch(() => {});
+              if (ticket.userId) {
+                await axios
+                  .post(
+                    "https://botapi.max.ru/messages?user_id=" + ticket.userId,
+                    { text: "Ответ поддержки:\n\n" + replyText },
+                    { headers: { Authorization: org.token } }
+                  )
+                  .catch(() => {});
+              }
+              await axios
+                .post(
+                  "https://botapi.max.ru/messages?user_id=" + ADMIN_ID,
+                  { text: "✅ Ответ на #" + shortId + " отправлен клиенту!" },
+                  { headers: { Authorization: org.token } }
+                )
+                .catch(() => {});
+            }
+            return reply.send({ ok: true });
+          }
 
           // Если пишет сам админ, бот просто сохраняет ID (для привязки)
           if (senderId === ADMIN_ID) {

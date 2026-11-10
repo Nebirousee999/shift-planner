@@ -273,6 +273,16 @@ export const sickLeaves = pgTable("sick_leaves", {
 });
 
 // ─── PAYMENTS (платежи ЮKassa) ─────────────────────────
+export const supportTickets = pgTable("support_tickets", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").references(() => users.id),
+  email: varchar("email", { length: 255 }).notNull(),
+  message: text("message").notNull(),
+  reply: text("reply"),
+  status: varchar("status", { length: 20 }).default("OPEN").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const payments = pgTable("payments", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id")

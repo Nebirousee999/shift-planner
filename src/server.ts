@@ -33,6 +33,7 @@ import { timesheetRoutes } from "./modules/timesheet/timesheet.routes.js";
 import { timeOffRoutes } from "./modules/time-off/time-off.routes.js";
 import { historyRoutes } from "./modules/history/history.routes.js";
            import { notificationsRoutes } from "./modules/notifications/notifications.routes.js";
+import { supportRoutes } from "./modules/support/support.routes.js";
 
 
 if (!process.env.JWT_SECRET) {
@@ -84,6 +85,7 @@ await app.register(timesheetRoutes, { prefix: "/api/timesheet" });
 await app.register(timeOffRoutes, { prefix: "/api/time-off" });
 await app.register(historyRoutes, { prefix: "/api/history" });
            await app.register(notificationsRoutes, { prefix: "/api/notifications" });
+await app.register(supportRoutes, { prefix: "/api/support" });
 
 import { startScheduler } from "./lib/scheduler.js";
 

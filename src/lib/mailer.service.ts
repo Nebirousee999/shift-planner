@@ -60,6 +60,25 @@ export const mailerService = {
     }
   },
 
+  async sendSupportEmail(fromEmail: string, message: string, shortId: string) {
+    await transporter.sendMail({
+      from: `"Поддержка" <help@shift-planner.ru>`,
+      to: "prihodko999@inbox.ru",
+      replyTo: fromEmail,
+      subject: `Обращение в поддержку #${shortId}`,
+      html: `<p>От: ${fromEmail}</p><p>${message}</p>`
+    });
+  },
+
+  async sendSupportReply(to: string, message: string) {
+    await transporter.sendMail({
+      from: `"Поддержка" <help@shift-planner.ru>`,
+      to,
+      subject: `Ответ службы поддержки`,
+      html: `<p>${message}</p>`
+    });
+  },
+
   async sendBotLinkEmail(to: string, name: string, link: string) {
     if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
       console.log(`⚠️ SMTP не настроен. Письмо для ${to} не отправлено.`);
