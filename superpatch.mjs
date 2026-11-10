@@ -5,163 +5,77 @@ import path from "node:path";
 const ROOT = process.cwd();
 let touched = 0;
 
-function writeFile(relPath, content, label) {
+function patchFile(relPath, search, replace, label) {
+  const filePath = path.join(ROOT, relPath);
+  if (!fs.existsSync(filePath)) return;
+  let content = fs.readFileSync(filePath, "utf-8");
+  const hadCRLF = content.includes("\r\n");
+  let normalized = hadCRLF ? content.replace(/\r\n/g, "\n") : content;
+
+  if (normalized.includes(replace)) return;
+
+  if (normalized.includes(search)) {
+    normalized = normalized.replace(search, replace);
+    fs.writeFileSync(filePath, hadCRLF ? normalized.replace(/\n/g, "\r\n") : normalized, "utf-8");
+    touched++;
+    console.log("✅ [" + label + "] Применено");
+  } else {
+    console.log("⚠️ [" + label + "] Не найдено (возможно, уже изменено).");
+  }
+}
+
+function createFile(relPath, content, label) {
   const filePath = path.join(ROOT, relPath);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content, "utf-8");
   touched++;
-  console.log("✅ [" + label + "] Полностью перезаписан");
+  console.log("✅ [" + label + "] Перезаписан");
 }
 
-// ═══ Полностью перезаписываем support.routes.ts чистым кодом ═══
-writeFile(
-  "src/modules/support/support.routes.ts",
-  `import type { FastifyInstance } from "fastify";
-import { z } from "zod";
-import { eq, desc } from "drizzle-orm";
-import { db } from "../../../db/client.js";
-import { supportTickets, supportMessages } from "../../../db/schema.js";
-import axios from "axios";
-import crypto from "node:crypto";
+// ═══ 1. Фикс Nginx для Docker (убирает ERR_CONTENT_LENGTH_MISMATCH) ═══
+createFile(
+  "frontend/nginx.conf",
+  `server {
+    listen 80;
+    server_name localhost;
 
-export async function supportRoutes(app: FastifyInstance) {
-  app.post("/", async (req, reply) => {
-    const parsed = z.object({
-      email: z.string().email(),
-      message: z.string().min(1),
-      images: z.array(z.string()).optional().default([]),
-      sessionToken: z.string().optional(),
-    }).safeParse(req.body);
+    root /usr/share/nginx/html;
+    index index.html;
 
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    # 🔥 Отключаем sendfile, чтобы Nginx не обрывал передачу файлов в Docker
+    sendfile off;
+    gzip off;
 
-    const userId = (req as any).user?.sub || null;
-    let { sessionToken } = parsed.data;
-    if (!sessionToken) sessionToken = crypto.randomUUID();
-
-    let ticket;
-
-    // 1. Если авторизован — ищем по userId
-    if (userId) {
-      const found = await db
-        .select()
-        .from(supportTickets)
-        .where(eq(supportTickets.userId, userId))
-        .orderBy(desc(supportTickets.createdAt))
-        .limit(1);
-      
-      if (found.length > 0) {
-        ticket = found[0];
-        // Обновляем сессию, если зашли с нового устройства
-        if (ticket.sessionToken !== sessionToken) {
-          await db.update(supportTickets)
-            .set({ sessionToken })
-            .where(eq(supportTickets.id, ticket.id));
-        }
-      }
+    # Проксируем все запросы к API на бэкенд
+    location /api/ {
+        proxy_pass http://api:3001/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
     }
 
-    // 2. Если не нашли (или гость) — ищем по сессии
-    if (!ticket) {
-      const found = await db
-        .select()
-        .from(supportTickets)
-        .where(eq(supportTickets.sessionToken, sessionToken));
-      if (found.length > 0) ticket = found[0];
+    # Обработка React (SPA)
+    location / {
+        try_files $uri $uri/ /index.html;
     }
-
-    // 3. Если тикета нет — создаем новый
-    if (!ticket) {
-      const inserted = await db
-        .insert(supportTickets)
-        .values({
-          userId,
-          email: parsed.data.email,
-          sessionToken,
-          status: "OPEN",
-          message: parsed.data.message,
-        })
-        .returning();
-      ticket = inserted[0];
-    }
-
-    // Сохраняем сообщение в историю
-    await db.insert(supportMessages).values({
-      ticketId: ticket.id,
-      sender: "USER",
-      text: parsed.data.message,
-      images: parsed.data.images,
-    });
-
-    const shortId = ticket.id.slice(0, 6).toUpperCase();
-
-    // Отправляем уведомление в MAX (только через бота поддержки)
-    try {
-      const SUPPORT_BOT_TOKEN = process.env.SUPPORT_BOT_TOKEN;
-      const SUPPORT_ADMIN_ID = process.env.SUPPORT_ADMIN_ID || "141744495";
-
-      if (!SUPPORT_BOT_TOKEN) {
-        app.log.error("❌ ОШИБКА: SUPPORT_BOT_TOKEN не задан в .env!");
-        return reply.code(500).send({ error: "Support bot token missing" });
-      }
-
-      await axios.post(
-        \`https://botapi.max.ru/messages?user_id=\${SUPPORT_ADMIN_ID}\`,
-        {
-          text: "📩 Чат поддержки #" + shortId + "\\n" +
-                (userId ? "Пользователь: " + parsed.data.email : "Гость: " + parsed.data.email) + "\\n\\n" +
-                parsed.data.message + "\\n\\n" +
-                "Чтобы ответить, напишите:\\n#" + shortId + " ваш ответ",
-        },
-        { headers: { Authorization: SUPPORT_BOT_TOKEN } }
-      );
-    } catch (e: any) {
-      app.log.warn({ err: e?.message }, "MAX send failed");
-    }
-
-    return { success: true, ticketId: shortId, sessionToken };
-  });
-
-  app.get("/messages", async (req) => {
-    const { sessionToken } = req.query as { sessionToken?: string };
-    const userId = (req as any).user?.sub || null;
-
-    let ticket;
-
-    if (userId) {
-      const found = await db
-        .select()
-        .from(supportTickets)
-        .where(eq(supportTickets.userId, userId))
-        .orderBy(desc(supportTickets.createdAt))
-        .limit(1);
-      if (found.length > 0) ticket = found[0];
-    }
-
-    if (!ticket && sessionToken) {
-      const found = await db
-        .select()
-        .from(supportTickets)
-        .where(eq(supportTickets.sessionToken, sessionToken));
-      if (found.length > 0) ticket = found[0];
-    }
-
-    if (!ticket) return [];
-
-    return db
-      .select()
-      .from(supportMessages)
-      .where(eq(supportMessages.ticketId, ticket.id))
-      .orderBy(supportMessages.createdAt);
-  });
 }
 `,
-  "src/modules/support/support.routes.ts"
+  "frontend/nginx.conf"
+);
+
+// ═══ 2. Фикс 401 ошибки в консоли (OnboardingWidget) ═══
+patchFile(
+  "frontend/src/components/OnboardingWidget.tsx",
+  `    if (user?.role !== "EMPLOYEE" && !isDismissed) {`,
+  `    if (user && user.role !== "EMPLOYEE" && !isDismissed) {`,
+  "OnboardingWidget.tsx (запрет запросов для гостей)"
 );
 
 console.log("\n──────────────────────────────────────");
 if (touched > 0) {
-  console.log("🎉 Готово! Файл support.routes.ts полностью перезаписан без ошибок.");
+  console.log("🎉 Готово! Внесено изменений: " + touched);
 } else {
-  console.log("⚠️ Ошибка.");
+  console.log("⚠️ Изменений не внесено.");
 }

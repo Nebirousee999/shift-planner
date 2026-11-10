@@ -34,7 +34,7 @@ export default function OnboardingWidget() {
 
   // Подгружаем данные, если их нет
   useEffect(() => {
-    if (user?.role !== "EMPLOYEE" && !isDismissed) {
+    if (user && user.role !== "EMPLOYEE" && !isDismissed) {
       if (users.length === 0) fetchUsers();
       if (areas.length === 0) fetchAreas();
       if (templates.length === 0) fetchTemplates();
