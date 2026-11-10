@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import {
   ChevronLeft, Copy, CheckCircle2, Plus, X, Trash2, Clock, CalendarDays,
   AlertCircle, Pencil, Check, ClipboardPaste, Clipboard, GripVertical,
-  Maximize2, Minimize2, Bell, Wallet, CalendarX2,
+  Maximize2, Minimize2, Bell, Wallet, CalendarX2, Stethoscope,
 } from "lucide-react";
 import { useWeeks } from "../store/weeks";
 import { useShiftTemplates } from "../store/shiftTemplates";

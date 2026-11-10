@@ -581,6 +581,16 @@ export default function MySchedulePage() {
                           <div className="space-y-2 flex-1">
                             {!hasAnything && <div className="text-xs text-slate-300 text-center py-3">—</div>}
                             
+                            {mySickLeaves.filter(sl => String(sl.startDate).slice(0,10) <= date && String(sl.endDate).slice(0,10) >= date).map(sl => (
+                              <div key={sl.id} className="text-xs p-2 rounded-lg border-l-4 border-rose-500 bg-rose-50 text-rose-900 mb-2">
+                                <div className="flex items-center gap-1.5 font-medium">
+                                  <Stethoscope className="w-3 h-3 text-rose-600 shrink-0" />
+                                  Больничный
+                                </div>
+                                {sl.comment && <div className="text-[10px] text-rose-700/80 mt-0.5 truncate">{sl.comment}</div>}
+                              </div>
+                            ))}
+
                             {dayShifts.map((s) => {
                               const outgoingSwap = outgoingActive.find((r) => r.shiftId === s.id);
                               const isPublished = weekStatus === "PUBLISHED";

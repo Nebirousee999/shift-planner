@@ -676,6 +676,12 @@ export default function WeeksPage() {
                             title="Есть запрос"
                           />
                         )}
+                        {sickLeaves.some(s => String(s.startDate).slice(0, 10) <= dateStr && String(s.endDate).slice(0, 10) >= dateStr) && (
+                          <span
+                            className="absolute top-1 left-1 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-white z-10"
+                            title="Есть больничный"
+                          />
+                        )}
                         <div className="flex items-center justify-center">
                           <div
                             className={`text-base font-semibold ${
