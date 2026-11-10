@@ -5,26 +5,7 @@ import path from "node:path";
 const ROOT = process.cwd();
 let touched = 0;
 
-function patchFile(relPath, search, replace, label) {
-  const filePath = path.join(ROOT, relPath);
-  if (!fs.existsSync(filePath)) return;
-  let content = fs.readFileSync(filePath, "utf-8");
-  const hadCRLF = content.includes("\r\n");
-  let normalized = hadCRLF ? content.replace(/\r\n/g, "\n") : content;
-
-  if (normalized.includes(replace)) return;
-
-  if (normalized.includes(search)) {
-    normalized = normalized.replace(search, replace);
-    fs.writeFileSync(filePath, hadCRLF ? normalized.replace(/\n/g, "\r\n") : normalized, "utf-8");
-    touched++;
-    console.log("✅ [" + label + "] Применено");
-  } else {
-    console.log("⚠️ [" + label + "] Не найдено (возможно, уже изменено).");
-  }
-}
-
-function createFile(relPath, content, label) {
+function writeFile(relPath, content, label) {
   const filePath = path.join(ROOT, relPath);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content, "utf-8");
@@ -32,8 +13,8 @@ function createFile(relPath, content, label) {
   console.log("✅ [" + label + "] Перезаписан");
 }
 
-// ═══ 1. Фикс Nginx для Docker (убирает ERR_CONTENT_LENGTH_MISMATCH) ═══
-createFile(
+// ═══ Правильный Nginx: быстро + без ошибок в Docker ═══
+writeFile(
   "frontend/nginx.conf",
   `server {
     listen 80;
@@ -42,9 +23,26 @@ createFile(
     root /usr/share/nginx/html;
     index index.html;
 
-    # 🔥 Отключаем sendfile, чтобы Nginx не обрывал передачу файлов в Docker
+    # 🔥 Лечим баг Docker с обрывом соединения, но возвращаем скорость
     sendfile off;
-    gzip off;
+
+    # 🔥 Включаем сжатие обратно (сайт будет грузиться за 1 секунду)
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_min_length 1000;
+    gzip_types
+        text/plain
+        text/css
+        application/json
+        application/javascript
+        application/x-javascript
+        text/xml
+        application/xml
+        application/xml+rss
+        text/javascript
+        image/svg+xml;
 
     # Проксируем все запросы к API на бэкенд
     location /api/ {
@@ -53,6 +51,8 @@ createFile(
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # Отключаем буферизацию для API, чтобы избежать обрывов
         proxy_buffering off;
     }
 
@@ -65,17 +65,9 @@ createFile(
   "frontend/nginx.conf"
 );
 
-// ═══ 2. Фикс 401 ошибки в консоли (OnboardingWidget) ═══
-patchFile(
-  "frontend/src/components/OnboardingWidget.tsx",
-  `    if (user?.role !== "EMPLOYEE" && !isDismissed) {`,
-  `    if (user && user.role !== "EMPLOYEE" && !isDismissed) {`,
-  "OnboardingWidget.tsx (запрет запросов для гостей)"
-);
-
 console.log("\n──────────────────────────────────────");
 if (touched > 0) {
-  console.log("🎉 Готово! Внесено изменений: " + touched);
+  console.log("🎉 Готово! Настройки Nginx оптимизированы.");
 } else {
   console.log("⚠️ Изменений не внесено.");
 }
