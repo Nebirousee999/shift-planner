@@ -24,30 +24,24 @@ function patchFile(relPath, search, replace, label) {
   }
 }
 
-// ═══ 1. Исправляем 500-ю ошибку на бэкенде (добавляем импорт crypto) ═══
+// 1. Патчим support.routes.ts, чтобы передавать message в тикет (обход старого NOT NULL)
 patchFile(
   "src/modules/support/support.routes.ts",
-  `import { mailerService } from "../../lib/mailer.service.js";\nimport axios from "axios";`,
-  `import { mailerService } from "../../lib/mailer.service.js";\nimport axios from "axios";\nimport crypto from "node:crypto";`,
-  "support.routes.ts (импорт crypto)"
+  `        .values({\n          userId,\n          email: parsed.data.email,\n          sessionToken,\n          status: "OPEN",\n        })`,
+  `        .values({\n          userId,\n          email: parsed.data.email,\n          sessionToken,\n          status: "OPEN",\n          message: parsed.data.message, // Передаем первое сообщение в старое поле для совместимости\n        })`,
+  "support.routes.ts (передача message в тикет)"
 );
 
-// ═══ 2. Увеличиваем поле ввода в чате (в 3 раза) ═══
-// Меняем количество строк
-patchFile(
-  "frontend/src/components/SupportChat.tsx",
-  `rows={1}`,
-  `rows={3}`,
-  "SupportChat.tsx (rows=3)"
-);
-
-// Меняем CSS-классы, чтобы поле не сжималось и не обрезалось
-patchFile(
-  "frontend/src/components/SupportChat.tsx",
-  `className="flex-1 !text-sm !py-2 !bg-slate-50 !border-slate-200 resize-none max-h-24"`,
-  `className="flex-1 !text-sm !py-2 !bg-slate-50 !border-slate-200 resize-none min-h-[72px] max-h-32"`,
-  "SupportChat.tsx (высота поля)"
-);
+// 2. Создаем миграцию на снятие NOT NULL (если ее нет)
+const migrationPath = path.join(ROOT, "db/migrations/0026_fix_support_tickets.sql");
+if (!fs.existsSync(migrationPath)) {
+  fs.writeFileSync(migrationPath, `
+ALTER TABLE "support_tickets" ALTER COLUMN "message" DROP NOT NULL;
+ALTER TABLE "support_tickets" ALTER COLUMN "images" DROP NOT NULL;
+  `);
+  touched++;
+  console.log("✅ [0026_fix_support_tickets.sql] Создана миграция");
+}
 
 console.log("\n──────────────────────────────────────");
 if (touched > 0) {

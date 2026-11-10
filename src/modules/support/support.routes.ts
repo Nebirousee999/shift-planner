@@ -37,6 +37,7 @@ export async function supportRoutes(app: FastifyInstance) {
           email: parsed.data.email,
           sessionToken,
           status: "OPEN",
+          message: parsed.data.message, // Передаем первое сообщение в старое поле для совместимости
         })
         .returning();
     }
