@@ -13,6 +13,7 @@ function writeFile(relPath, content, label) {
   console.log("✅ [" + label + "] Перезаписан");
 }
 
+// ═══ 1. Исправляем Vite: оставляем в vendor ТОЛЬКО React ═══
 writeFile(
   "frontend/vite.config.ts",
   `import { defineConfig } from "vite";
@@ -58,17 +59,16 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (id.includes("node_modules")) {
-            if (id.includes("lucide-react")) return "icons";
+            // В vendor кладем ТОЛЬКО ядро React
             if (
               id.includes("react") ||
               id.includes("react-dom") ||
               id.includes("react-router-dom") ||
-              id.includes("zustand") ||
-              id.includes("axios")
+              id.includes("zustand")
             ) {
-              return "vendor";
+              return "react-vendor";
             }
-            return "vendor";
+            // Остальное (docx, axios, lucide и т.д.) Rollup сам разобьет на чанки
           }
         },
       },
@@ -79,9 +79,69 @@ export default defineConfig({
   "frontend/vite.config.ts"
 );
 
+// ═══ 2. Починяем Nginx (подключаем mime.types, чтобы Gzip заработал) ═══
+writeFile(
+  "frontend/nginx.conf",
+  `server {
+    listen 80;
+    server_name localhost;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # 🔥 Подключаем типы файлов (без этого gzip не понимает, что сжимать)
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    # 🔥 Лечим баг Docker
+    sendfile off;
+
+    # 🔥 Включаем сжатие
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_min_length 1000;
+    gzip_types
+        text/plain
+        text/css
+        application/json
+        application/javascript
+        application/x-javascript
+        text/xml
+        application/xml
+        application/xml+rss
+        text/javascript
+        image/svg+xml;
+
+    # Кэширование статики
+    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # API
+    location /api/ {
+        proxy_pass http://api:3001/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+    }
+
+    # SPA
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+`,
+  "frontend/nginx.conf"
+);
+
 console.log("\n──────────────────────────────────────");
 if (touched > 0) {
-  console.log("🎉 Готово! vite.config.ts исправлен.");
+  console.log("🎉 Готово! Конфиги Vite и Nginx оптимизированы.");
 } else {
   console.log("⚠️ Изменений не внесено.");
 }

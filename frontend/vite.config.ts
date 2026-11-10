@@ -41,17 +41,16 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (id.includes("node_modules")) {
-            if (id.includes("lucide-react")) return "icons";
+            // В vendor кладем ТОЛЬКО ядро React
             if (
               id.includes("react") ||
               id.includes("react-dom") ||
               id.includes("react-router-dom") ||
-              id.includes("zustand") ||
-              id.includes("axios")
+              id.includes("zustand")
             ) {
-              return "vendor";
+              return "react-vendor";
             }
-            return "vendor";
+            // Остальное (docx, axios, lucide и т.д.) Rollup сам разобьет на чанки
           }
         },
       },
