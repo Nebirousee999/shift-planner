@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { eq, isNotNull } from "drizzle-orm";
 import axios from "axios";
 import { db } from "../../../db/client.js";
-import { payments, organizations, supportTickets } from "../../../db/schema.js";
+import { payments, organizations, supportTickets, supportMessages } from "../../../db/schema.js";
 import { yookassaService } from "../../lib/yookassa.js";
 import { mailerService } from "../../lib/mailer.service.js";
 
@@ -106,9 +106,16 @@ export async function webhooksRoutes(app: FastifyInstance) {
         const ticket = tickets.find((t) => t.id.slice(0, 6).toUpperCase() === shortId);
         
         if (ticket) {
+          // Записываем ответ в историю чата
+          await db.insert(supportMessages).values({
+            ticketId: ticket.id,
+            sender: "ADMIN",
+            text: replyText,
+          });
+
           await db
             .update(supportTickets)
-            .set({ reply: replyText, status: "ANSWERED" })
+            .set({ status: "ANSWERED" })
             .where(eq(supportTickets.id, ticket.id));
           await mailerService.sendSupportReply(ticket.email, replyText).catch(() => {});
           

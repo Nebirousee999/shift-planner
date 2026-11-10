@@ -277,10 +277,17 @@ export const supportTickets = pgTable("support_tickets", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").references(() => users.id),
   email: varchar("email", { length: 255 }).notNull(),
-  message: text("message").notNull(),
-  images: text("images").array(),
-  reply: text("reply"),
+  sessionToken: varchar("session_token", { length: 255 }).unique(),
   status: varchar("status", { length: 20 }).default("OPEN").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const supportMessages = pgTable("support_messages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ticketId: uuid("ticket_id").references(() => supportTickets.id, { onDelete: "cascade" }).notNull(),
+  sender: varchar("sender", { length: 20 }).notNull(),
+  text: text("text").notNull(),
+  images: text("images").array(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 

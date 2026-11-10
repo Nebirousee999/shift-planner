@@ -1,21 +1,23 @@
 import { api } from "./client";
 
-export type Ticket = {
+export type SupportMessage = {
   id: string;
-  email: string;
-  message: string;
-  reply: string | null;
-  status: string;
+  sender: "USER" | "ADMIN";
+  text: string;
+  images: string[] | null;
   createdAt: string;
 };
 
 export const supportApi = {
-  create: async (data: { email: string; message: string; images?: string[] }) => {
+  send: async (data: { email: string; message: string; images?: string[]; sessionToken?: string }) => {
     const { data: res } = await api.post("/support", data);
     return res;
   },
-  my: async (): Promise<Ticket[]> => {
-    const { data } = await api.get<Ticket[]>("/support/my");
+  getMessages: async (sessionToken: string): Promise<SupportMessage[]> => {
+    if (!sessionToken) return [];
+    const { data } = await api.get<SupportMessage[]>("/support/messages", {
+      params: { sessionToken },
+    });
     return data;
   },
 };
