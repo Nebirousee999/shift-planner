@@ -13,7 +13,7 @@ function writeFile(relPath, content, label) {
   console.log("✅ [" + label + "] Полностью перезаписан");
 }
 
-// ═══ 1. API Поддержки (Полностью без почты, только MAX) ═══
+// ═══ Полностью перезаписываем support.routes.ts чистым кодом ═══
 writeFile(
   "src/modules/support/support.routes.ts",
   `import type { FastifyInstance } from "fastify";
@@ -39,44 +39,50 @@ export async function supportRoutes(app: FastifyInstance) {
     let { sessionToken } = parsed.data;
     if (!sessionToken) sessionToken = crypto.randomUUID();
 
-    let [ticket];
+    let ticket;
 
-    // 1. Если пользователь авторизован, ищем его последний тикет
+    // 1. Если авторизован — ищем по userId
     if (userId) {
-      [ticket] = await db
+      const found = await db
         .select()
         .from(supportTickets)
         .where(eq(supportTickets.userId, userId))
         .orderBy(desc(supportTickets.createdAt))
         .limit(1);
-
-      if (ticket && ticket.sessionToken !== sessionToken) {
-        await db.update(supportTickets)
-          .set({ sessionToken })
-          .where(eq(supportTickets.id, ticket.id));
+      
+      if (found.length > 0) {
+        ticket = found[0];
+        // Обновляем сессию, если зашли с нового устройства
+        if (ticket.sessionToken !== sessionToken) {
+          await db.update(supportTickets)
+            .set({ sessionToken })
+            .where(eq(supportTickets.id, ticket.id));
+        }
       }
     }
 
-    // 2. Если не нашли (или гость), ищем по сессии
+    // 2. Если не нашли (или гость) — ищем по сессии
     if (!ticket) {
-      [ticket] = await db
+      const found = await db
         .select()
         .from(supportTickets)
         .where(eq(supportTickets.sessionToken, sessionToken));
+      if (found.length > 0) ticket = found[0];
     }
 
-    // 3. Создаем новый, если нет
+    // 3. Если тикета нет — создаем новый
     if (!ticket) {
-      [ticket] = await db
+      const inserted = await db
         .insert(supportTickets)
         .values({
           userId,
           email: parsed.data.email,
           sessionToken,
           status: "OPEN",
-          message: parsed.data.message, // Для совместимости со старой БД
+          message: parsed.data.message,
         })
         .returning();
+      ticket = inserted[0];
     }
 
     // Сохраняем сообщение в историю
@@ -89,7 +95,7 @@ export async function supportRoutes(app: FastifyInstance) {
 
     const shortId = ticket.id.slice(0, 6).toUpperCase();
 
-    // Отправляем уведомление в MAX (только через бота поддержки!)
+    // Отправляем уведомление в MAX (только через бота поддержки)
     try {
       const SUPPORT_BOT_TOKEN = process.env.SUPPORT_BOT_TOKEN;
       const SUPPORT_ADMIN_ID = process.env.SUPPORT_ADMIN_ID || "141744495";
@@ -120,22 +126,24 @@ export async function supportRoutes(app: FastifyInstance) {
     const { sessionToken } = req.query as { sessionToken?: string };
     const userId = (req as any).user?.sub || null;
 
-    let [ticket];
+    let ticket;
 
     if (userId) {
-      [ticket] = await db
+      const found = await db
         .select()
         .from(supportTickets)
         .where(eq(supportTickets.userId, userId))
         .orderBy(desc(supportTickets.createdAt))
         .limit(1);
+      if (found.length > 0) ticket = found[0];
     }
 
     if (!ticket && sessionToken) {
-      [ticket] = await db
+      const found = await db
         .select()
         .from(supportTickets)
         .where(eq(supportTickets.sessionToken, sessionToken));
+      if (found.length > 0) ticket = found[0];
     }
 
     if (!ticket) return [];
@@ -148,40 +156,12 @@ export async function supportRoutes(app: FastifyInstance) {
   });
 }
 `,
-  "support.routes.ts"
+  "src/modules/support/support.routes.ts"
 );
-
-// ═══ 2. Webhook (Обработка ответов админа без почты) ═══
-// Мы не перезаписываем весь файл, так как там еще ЮKassa, 
-// поэтому точечно вырезаем почту и правим отправку.
-const webhookPath = path.join(ROOT, "src/modules/webhooks/webhooks.routes.ts");
-if (fs.existsSync(webhookPath)) {
-  let content = fs.readFileSync(webhookPath, "utf-8");
-  
-  // Убираем вызов mailerService, если он там есть
-  content = content.replace(/await mailerService\.sendSupportReply\([\s\S]*?\)\.catch\(\(\) => \{\}\);/g, "");
-
-  // Обновляем отправку сообщения обратно клиенту (гарантируем использование SUPPORT_BOT_TOKEN)
-  content = content.replace(
-    /await axios\s*\.post\(\s*`https:\/\/botapi\.max\.ru\/messages\?user_id=\$\{ticket\.userId\}`,\s*\{ text: "Ответ поддержки:\\\\n\\\\n" \+ replyText \},\s*\{ headers: \{ Authorization: org\.token \} \}\s*\)\s*\.catch\(\(\) => \{\}\);/g,
-    `await axios\n              .post(\n                \`https://botapi.max.ru/messages?user_id=\${ticket.userId}\`,\n                { text: "Ответ поддержки:\\n\\n" + replyText },\n                { headers: { Authorization: process.env.SUPPORT_BOT_TOKEN } }\n              )\n              .catch(() => {});`
-  );
-
-  // Обновляем уведомление админу об успешной отправке
-  content = content.replace(
-    /await axios\s*\.post\(\s*`https:\/\/botapi\.max\.ru\/messages\?user_id=\$\{SUPPORT_ADMIN_ID\}`,\s*\{ text: "✅ Ответ на #" \+ shortId \+ " отправлен клиенту!" \},\s*\{ headers: \{ Authorization: org\.token \} \}\s*\)\s*\.catch\(\(\) => \{\}\);/g,
-    `await axios\n            .post(\n              \`https://botapi.max.ru/messages?user_id=\${SUPPORT_ADMIN_ID}\`,\n              { text: "✅ Ответ на #" + shortId + " отправлен клиенту!" },\n              { headers: { Authorization: process.env.SUPPORT_BOT_TOKEN } }\n            )\n            .catch(() => {});`
-  );
-
-  fs.writeFileSync(webhookPath, content, "utf-8");
-  touched++;
-  console.log("✅ [webhooks.routes.ts] Очищен от почты и переведен на SUPPORT_BOT_TOKEN");
-}
 
 console.log("\n──────────────────────────────────────");
 if (touched > 0) {
-  console.log("🎉 Готово! Внесено изменений: " + touched);
-  console.log("⚠️ ВАЖНО: Убедись, что на сервере в .env есть SUPPORT_BOT_TOKEN!");
+  console.log("🎉 Готово! Файл support.routes.ts полностью перезаписан без ошибок.");
 } else {
-  console.log("⚠️ Изменений не внесено.");
+  console.log("⚠️ Ошибка.");
 }

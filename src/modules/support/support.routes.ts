@@ -21,44 +21,50 @@ export async function supportRoutes(app: FastifyInstance) {
     let { sessionToken } = parsed.data;
     if (!sessionToken) sessionToken = crypto.randomUUID();
 
-    let [ticket];
+    let ticket;
 
-    // 1. Если пользователь авторизован, ищем его последний тикет
+    // 1. Если авторизован — ищем по userId
     if (userId) {
-      [ticket] = await db
+      const found = await db
         .select()
         .from(supportTickets)
         .where(eq(supportTickets.userId, userId))
         .orderBy(desc(supportTickets.createdAt))
         .limit(1);
-
-      if (ticket && ticket.sessionToken !== sessionToken) {
-        await db.update(supportTickets)
-          .set({ sessionToken })
-          .where(eq(supportTickets.id, ticket.id));
+      
+      if (found.length > 0) {
+        ticket = found[0];
+        // Обновляем сессию, если зашли с нового устройства
+        if (ticket.sessionToken !== sessionToken) {
+          await db.update(supportTickets)
+            .set({ sessionToken })
+            .where(eq(supportTickets.id, ticket.id));
+        }
       }
     }
 
-    // 2. Если не нашли (или гость), ищем по сессии
+    // 2. Если не нашли (или гость) — ищем по сессии
     if (!ticket) {
-      [ticket] = await db
+      const found = await db
         .select()
         .from(supportTickets)
         .where(eq(supportTickets.sessionToken, sessionToken));
+      if (found.length > 0) ticket = found[0];
     }
 
-    // 3. Создаем новый, если нет
+    // 3. Если тикета нет — создаем новый
     if (!ticket) {
-      [ticket] = await db
+      const inserted = await db
         .insert(supportTickets)
         .values({
           userId,
           email: parsed.data.email,
           sessionToken,
           status: "OPEN",
-          message: parsed.data.message, // Для совместимости со старой БД
+          message: parsed.data.message,
         })
         .returning();
+      ticket = inserted[0];
     }
 
     // Сохраняем сообщение в историю
@@ -71,7 +77,7 @@ export async function supportRoutes(app: FastifyInstance) {
 
     const shortId = ticket.id.slice(0, 6).toUpperCase();
 
-    // Отправляем уведомление в MAX (только через бота поддержки!)
+    // Отправляем уведомление в MAX (только через бота поддержки)
     try {
       const SUPPORT_BOT_TOKEN = process.env.SUPPORT_BOT_TOKEN;
       const SUPPORT_ADMIN_ID = process.env.SUPPORT_ADMIN_ID || "141744495";
@@ -102,22 +108,24 @@ export async function supportRoutes(app: FastifyInstance) {
     const { sessionToken } = req.query as { sessionToken?: string };
     const userId = (req as any).user?.sub || null;
 
-    let [ticket];
+    let ticket;
 
     if (userId) {
-      [ticket] = await db
+      const found = await db
         .select()
         .from(supportTickets)
         .where(eq(supportTickets.userId, userId))
         .orderBy(desc(supportTickets.createdAt))
         .limit(1);
+      if (found.length > 0) ticket = found[0];
     }
 
     if (!ticket && sessionToken) {
-      [ticket] = await db
+      const found = await db
         .select()
         .from(supportTickets)
         .where(eq(supportTickets.sessionToken, sessionToken));
+      if (found.length > 0) ticket = found[0];
     }
 
     if (!ticket) return [];
