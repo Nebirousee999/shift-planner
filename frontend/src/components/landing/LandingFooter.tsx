@@ -24,7 +24,7 @@ const COLUMNS = [
     title: "Компания",
     links: [
       { label: "О нас", href: "/about" },
-      { label: "Контакты", href: "/contacts" },
+      { label: "Контакты", href: "#support" },
     ],
   },
   {
@@ -42,6 +42,10 @@ export default function LandingFooter() {
   const { pathname } = useLocation();
 
   const scrollTo = (href: string) => {
+    if (href === "#support") {
+      window.dispatchEvent(new Event("open-support-chat"));
+      return;
+    }
     if (href.startsWith("#") && href.length > 1) {
       const isHomePage = pathname === "/" || pathname === "/welcome";
       if (isHomePage) {

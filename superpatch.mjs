@@ -24,24 +24,74 @@ function patchFile(relPath, search, replace, label) {
   }
 }
 
-// 1. Патчим support.routes.ts, чтобы передавать message в тикет (обход старого NOT NULL)
+// ═══ 1. Отключаем почту в API поддержки ═══
 patchFile(
   "src/modules/support/support.routes.ts",
-  `        .values({\n          userId,\n          email: parsed.data.email,\n          sessionToken,\n          status: "OPEN",\n        })`,
-  `        .values({\n          userId,\n          email: parsed.data.email,\n          sessionToken,\n          status: "OPEN",\n          message: parsed.data.message, // Передаем первое сообщение в старое поле для совместимости\n        })`,
-  "support.routes.ts (передача message в тикет)"
+  `    await mailerService\n      .sendSupportEmail(parsed.data.email, parsed.data.message, shortId, parsed.data.images)\n      .catch((e) => app.log.error(e));\n\n`,
+  ``,
+  "support.routes.ts (удаление отправки email)"
 );
 
-// 2. Создаем миграцию на снятие NOT NULL (если ее нет)
-const migrationPath = path.join(ROOT, "db/migrations/0026_fix_support_tickets.sql");
-if (!fs.existsSync(migrationPath)) {
-  fs.writeFileSync(migrationPath, `
-ALTER TABLE "support_tickets" ALTER COLUMN "message" DROP NOT NULL;
-ALTER TABLE "support_tickets" ALTER COLUMN "images" DROP NOT NULL;
-  `);
-  touched++;
-  console.log("✅ [0026_fix_support_tickets.sql] Создана миграция");
-}
+// Обновляем текст сообщения в MAX, чтобы туда падала почта гостя
+patchFile(
+  "src/modules/support/support.routes.ts",
+  `            text: "📩 Чат поддержки #" + shortId + "\\nОт: " + parsed.data.email + "\\n\\n" + parsed.data.message + "\\n\\nЧтобы ответить, напишите:\\n#" + shortId + " ваш ответ",`,
+  `            text: "📩 Чат поддержки #" + shortId + "\\n" +\n              (userId ? "Пользователь: " + parsed.data.email : "Гость: " + parsed.data.email) + "\\n\\n" +\n              parsed.data.message + "\\n\\n" +\n              "Чтобы ответить, напишите:\\n#" + shortId + " ваш ответ",`,
+  "support.routes.ts (добавление почты в MAX)"
+);
+
+// ═══ 2. Отключаем почту в вебхуке (ответы админа) ═══
+patchFile(
+  "src/modules/webhooks/webhooks.routes.ts",
+  `          await mailerService.sendSupportReply(ticket.email, replyText).catch(() => {});\n`,
+  ``,
+  "webhooks.routes.ts (удаление отправки email)"
+);
+
+// ═══ 3. Убираем страницу Контактов из App.tsx ═══
+patchFile(
+  "frontend/src/App.tsx",
+  `import ContactsPage from "./pages/ContactsPage";\n`,
+  ``,
+  "App.tsx (удаление импорта ContactsPage)"
+);
+
+patchFile(
+  "frontend/src/App.tsx",
+  `<Route path="/contacts" element={<ContactsPage />} />`,
+  `<Route path="/contacts" element={<Navigate to="/" replace />} />`,
+  "App.tsx (редирект /contacts на главную)"
+);
+
+// ═══ 4. Обновляем футер: "Контакты" открывают виджет ═══
+patchFile(
+  "frontend/src/components/landing/LandingFooter.tsx",
+  `{ label: "Контакты", href: "/contacts" },`,
+  `{ label: "Контакты", href: "#support" },`,
+  "LandingFooter.tsx (замена href контактов)"
+);
+
+patchFile(
+  "frontend/src/components/landing/LandingFooter.tsx",
+  `  const scrollTo = (href: string) => {\n    if (href.startsWith("#") && href.length > 1) {`,
+  `  const scrollTo = (href: string) => {\n    if (href === "#support") {\n      window.dispatchEvent(new Event("open-support-chat"));\n      return;\n    }\n    if (href.startsWith("#") && href.length > 1) {`,
+  "LandingFooter.tsx (обработка клика по контактам)"
+);
+
+// ═══ 5. Заставляем виджет слушать событие открытия ═══
+patchFile(
+  "frontend/src/components/SupportWidget.tsx",
+  `import { useState } from "react";`,
+  `import { useState, useEffect } from "react";`,
+  "SupportWidget.tsx (импорт useEffect)"
+);
+
+patchFile(
+  "frontend/src/components/SupportWidget.tsx",
+  `  const [isOpen, setIsOpen] = useState(false);\n\n  // Сотрудники не видят эту форму\n  if (user?.role === "EMPLOYEE") return null;`,
+  `  const [isOpen, setIsOpen] = useState(false);\n\n  // Слушаем событие открытия (из футера)\n  useEffect(() => {\n    const handleOpen = () => setIsOpen(true);\n    window.addEventListener("open-support-chat", handleOpen);\n    return () => window.removeEventListener("open-support-chat", handleOpen);\n  }, []);\n\n  // Сотрудники не видят эту форму\n  if (user?.role === "EMPLOYEE") return null;`,
+  "SupportWidget.tsx (слушатель события)"
+);
 
 console.log("\n──────────────────────────────────────");
 if (touched > 0) {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { MessageCircle, X } from "lucide-react";
 import { useAuth } from "../store/auth";
 import SupportChat from "./SupportChat";
@@ -6,6 +6,13 @@ import SupportChat from "./SupportChat";
 export default function SupportWidget() {
   const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
+
+  // Слушаем событие открытия (из футера)
+  useEffect(() => {
+    const handleOpen = () => setIsOpen(true);
+    window.addEventListener("open-support-chat", handleOpen);
+    return () => window.removeEventListener("open-support-chat", handleOpen);
+  }, []);
 
   // Сотрудники не видят эту форму
   if (user?.role === "EMPLOYEE") return null;

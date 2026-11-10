@@ -65,7 +65,10 @@ export async function supportRoutes(app: FastifyInstance) {
         await axios.post(
           `https://botapi.max.ru/messages?user_id=${SUPPORT_ADMIN_ID}`,
           {
-            text: "📩 Чат поддержки #" + shortId + "\nОт: " + parsed.data.email + "\n\n" + parsed.data.message + "\n\nЧтобы ответить, напишите:\n#" + shortId + " ваш ответ",
+            text: "📩 Чат поддержки #" + shortId + "\n" +
+              (userId ? "Пользователь: " + parsed.data.email : "Гость: " + parsed.data.email) + "\n\n" +
+              parsed.data.message + "\n\n" +
+              "Чтобы ответить, напишите:\n#" + shortId + " ваш ответ",
           },
           { headers: { Authorization: SUPPORT_BOT_TOKEN } }
         );
