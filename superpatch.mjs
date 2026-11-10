@@ -13,7 +13,7 @@ function writeFile(relPath, content, label) {
   console.log("✅ [" + label + "] Перезаписан");
 }
 
-// ═══ 1. Бэкенд: Жесткая привязка к userId ═══
+// ═══ 1. Бэкенд: добавляем проверку токена (JWT) для авторизованных ═══
 writeFile(
   "src/modules/support/support.routes.ts",
   `import type { FastifyInstance } from "fastify";
@@ -25,6 +25,15 @@ import axios from "axios";
 import crypto from "node:crypto";
 
 export async function supportRoutes(app: FastifyInstance) {
+  // 🔥 Мягкая проверка токена: если он есть — авторизуем, если нет — пропускаем как гостя
+  app.addHook("preHandler", async (req, reply) => {
+    try {
+      await req.jwtVerify();
+    } catch (e) {
+      // Игнорируем ошибку (гость)
+    }
+  });
+
   app.post("/", async (req, reply) => {
     const parsed = z.object({
       email: z.string().email(),
@@ -35,13 +44,14 @@ export async function supportRoutes(app: FastifyInstance) {
 
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
 
+    // req.user будет существовать, если токен валиден
     const userId = (req as any).user?.sub || null;
     let sessionToken = parsed.data.sessionToken || crypto.randomUUID();
 
     let ticket;
 
     if (userId) {
-      // 🔥 Если авторизован: СТРОГО ищем по userId (игнорируем куки)
+      // 🔥 Авторизован: ищем по профилю
       const found = await db
         .select()
         .from(supportTickets)
@@ -51,7 +61,6 @@ export async function supportRoutes(app: FastifyInstance) {
       
       if (found.length > 0) {
         ticket = found[0];
-        // Привязываем текущий sessionToken к профилю, если зашли с нового устройства
         if (ticket.sessionToken !== sessionToken) {
           await db.update(supportTickets)
             .set({ sessionToken })
@@ -59,7 +68,7 @@ export async function supportRoutes(app: FastifyInstance) {
         }
       }
     } else {
-      // 🔥 Если гость: ищем по sessionToken
+      // 🔥 Гость: ищем по кукам
       const found = await db
         .select()
         .from(supportTickets)
@@ -127,7 +136,6 @@ export async function supportRoutes(app: FastifyInstance) {
     let ticket;
 
     if (userId) {
-      // 🔥 Авторизован: строго по userId
       const found = await db
         .select()
         .from(supportTickets)
@@ -136,7 +144,6 @@ export async function supportRoutes(app: FastifyInstance) {
         .limit(1);
       if (found.length > 0) ticket = found[0];
     } else if (sessionToken) {
-      // 🔥 Гость: строго по sessionToken
       const found = await db
         .select()
         .from(supportTickets)
@@ -157,7 +164,37 @@ export async function supportRoutes(app: FastifyInstance) {
   "src/modules/support/support.routes.ts"
 );
 
-// ═══ 2. Фронтенд: Обновляем sessionToken при смене юзера и скрываем поле почты для своих ═══
+// ═══ 2. API Клиент: передаем sessionToken в GET запросе ═══
+writeFile(
+  "frontend/src/api/support.ts",
+  `import { api } from "./client";
+
+export type SupportMessage = {
+  id: string;
+  sender: "USER" | "ADMIN";
+  text: string;
+  images: string[] | null;
+  createdAt: string;
+};
+
+export const supportApi = {
+  send: async (data: { email: string; message: string; images?: string[]; sessionToken?: string }) => {
+    const { data: res } = await api.post("/support", data);
+    return res;
+  },
+  getMessages: async (sessionToken: string): Promise<SupportMessage[]> => {
+    if (!sessionToken) return [];
+    const { data } = await api.get<SupportMessage[]>("/support/messages", {
+      params: { sessionToken },
+    });
+    return data;
+  },
+};
+`,
+  "frontend/src/api/support.ts"
+);
+
+// ═══ 3. Компонент чата: полный сброс при смене профиля ═══
 writeFile(
   "frontend/src/components/SupportChat.tsx",
   `import { useState, useRef, useEffect } from "react";
@@ -177,7 +214,7 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // 🔥 Следим за входом/выходом, обновляем токен и сбрасываем UI
+  // 🔥 Сброс при входе/выходе из профиля
   useEffect(() => {
     let token = localStorage.getItem("support_session_token");
     if (!token) {
@@ -186,18 +223,13 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
     }
     setSessionToken(token);
     
-    if (user?.email) {
-      setEmail(user.email);
-    } else {
-      setEmail("");
-    }
-    
+    setEmail(user?.email || "");
     setMessages([]);
     setFetching(true);
   }, [user?.id]);
 
   const loadMessages = async () => {
-    if (!sessionToken && !user?.id) return;
+    if (!sessionToken) return;
     try {
       const msgs = await supportApi.getMessages(sessionToken);
       setMessages(msgs);
@@ -325,7 +357,7 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
           </div>
         )}
 
-        {/* 🔥 Поле почты скрыто, если пользователь авторизован */}
+        {/* 🔥 Скрываем почту для авторизованных */}
         {!user && (
           <div className="mb-2">
             <input
@@ -378,7 +410,7 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
 
 console.log("\n──────────────────────────────────────");
 if (touched > 0) {
-  console.log("🎉 Готово! Логика чатов полностью переписана (разделение гостя и профиля).");
+  console.log("🎉 Готово! Добавлена проверка JWT токена в чат.");
 } else {
   console.log("⚠️ Изменений не внесено.");
 }

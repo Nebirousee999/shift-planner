@@ -15,7 +15,7 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // 🔥 Следим за входом/выходом, обновляем токен и сбрасываем UI
+  // 🔥 Сброс при входе/выходе из профиля
   useEffect(() => {
     let token = localStorage.getItem("support_session_token");
     if (!token) {
@@ -24,18 +24,13 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
     }
     setSessionToken(token);
     
-    if (user?.email) {
-      setEmail(user.email);
-    } else {
-      setEmail("");
-    }
-    
+    setEmail(user?.email || "");
     setMessages([]);
     setFetching(true);
   }, [user?.id]);
 
   const loadMessages = async () => {
-    if (!sessionToken && !user?.id) return;
+    if (!sessionToken) return;
     try {
       const msgs = await supportApi.getMessages(sessionToken);
       setMessages(msgs);
@@ -163,7 +158,7 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
           </div>
         )}
 
-        {/* 🔥 Поле почты скрыто, если пользователь авторизован */}
+        {/* 🔥 Скрываем почту для авторизованных */}
         {!user && (
           <div className="mb-2">
             <input

@@ -7,6 +7,15 @@ import axios from "axios";
 import crypto from "node:crypto";
 
 export async function supportRoutes(app: FastifyInstance) {
+  // 🔥 Мягкая проверка токена: если он есть — авторизуем, если нет — пропускаем как гостя
+  app.addHook("preHandler", async (req, reply) => {
+    try {
+      await req.jwtVerify();
+    } catch (e) {
+      // Игнорируем ошибку (гость)
+    }
+  });
+
   app.post("/", async (req, reply) => {
     const parsed = z.object({
       email: z.string().email(),
@@ -17,13 +26,14 @@ export async function supportRoutes(app: FastifyInstance) {
 
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
 
+    // req.user будет существовать, если токен валиден
     const userId = (req as any).user?.sub || null;
     let sessionToken = parsed.data.sessionToken || crypto.randomUUID();
 
     let ticket;
 
     if (userId) {
-      // 🔥 Если авторизован: СТРОГО ищем по userId (игнорируем куки)
+      // 🔥 Авторизован: ищем по профилю
       const found = await db
         .select()
         .from(supportTickets)
@@ -33,7 +43,6 @@ export async function supportRoutes(app: FastifyInstance) {
       
       if (found.length > 0) {
         ticket = found[0];
-        // Привязываем текущий sessionToken к профилю, если зашли с нового устройства
         if (ticket.sessionToken !== sessionToken) {
           await db.update(supportTickets)
             .set({ sessionToken })
@@ -41,7 +50,7 @@ export async function supportRoutes(app: FastifyInstance) {
         }
       }
     } else {
-      // 🔥 Если гость: ищем по sessionToken
+      // 🔥 Гость: ищем по кукам
       const found = await db
         .select()
         .from(supportTickets)
@@ -109,7 +118,6 @@ export async function supportRoutes(app: FastifyInstance) {
     let ticket;
 
     if (userId) {
-      // 🔥 Авторизован: строго по userId
       const found = await db
         .select()
         .from(supportTickets)
@@ -118,7 +126,6 @@ export async function supportRoutes(app: FastifyInstance) {
         .limit(1);
       if (found.length > 0) ticket = found[0];
     } else if (sessionToken) {
-      // 🔥 Гость: строго по sessionToken
       const found = await db
         .select()
         .from(supportTickets)
