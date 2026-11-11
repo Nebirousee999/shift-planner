@@ -44,8 +44,8 @@ export const supportApi = {
     const { data } = await api.get<SupportMessage[]>(`/support/admin/tickets/${ticketId}/messages`);
     return data;
   },
-  adminReply: async (ticketId: string, text: string) => {
-    const { data } = await api.post(`/support/admin/tickets/${ticketId}/reply`, { text });
+  adminReply: async (ticketId: string, text: string, images?: string[]) => {
+    const { data } = await api.post(`/support/admin/tickets/${ticketId}/reply`, { text, images });
     return data;
   }
 };
