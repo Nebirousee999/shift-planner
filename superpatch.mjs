@@ -5,134 +5,42 @@ import path from "node:path";
 const ROOT = process.cwd();
 let touched = 0;
 
-function writeFile(relPath, content, label) {
+function patchFile(relPath, search, replace, label) {
   const filePath = path.join(ROOT, relPath);
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, content, "utf-8");
+  if (!fs.existsSync(filePath)) { console.log(`⚠️  [${label}] файл не найден`); return; }
+  let content = fs.readFileSync(filePath, "utf-8");
+  const hadCRLF = content.includes("\r\n");
+  let normalized = hadCRLF ? content.replace(/\r\n/g, "\n") : content;
+
+  if (normalized.includes(replace)) { console.log(`⏭  [${label}] уже применено`); return; }
+
+  if (!normalized.includes(search)) {
+    console.log(`❌ [${label}] шаблон для замены не найден`);
+    return;
+  }
+
+  normalized = normalized.replace(search, replace);
+  fs.writeFileSync(filePath, hadCRLF ? normalized.replace(/\n/g, "\r\n") : normalized, "utf-8");
   touched++;
-  console.log(`✅ [${label}] Перезаписан`);
+  console.log(`✅ [${label}] применено`);
 }
 
-// ═══ Перезапись вебхуков с защитой от отсутствия maxBotId в базе ═══
-writeFile(
+// ═══ Исправляем отправку в webhooks.routes.ts ═══
+// 1. Ответ на /start (приветствие с ID)
+patchFile(
   "src/modules/webhooks/webhooks.routes.ts",
-  `import type { FastifyInstance } from "fastify";
-import { eq, isNotNull, and } from "drizzle-orm";
-import axios from "axios";
-import { db } from "../../../db/client.js";
-import { payments, organizations, supportTickets, supportMessages, userMessengers } from "../../../db/schema.js";
-import { yookassaService } from "../../lib/yookassa.js";
+  `            // Отправляем с access_token в query (самый совместимый способ для MAX API)\n            await axios.post(\`https://botapi.max.ru/messages?access_token=\${org.token}&user_id=\${senderId}\`, { text: replyText })\n              .catch(e => app.log.error(e.response?.data || e.message, "Ошибка отправки MAX"));`,
+  `            // MAX больше не принимает access_token в URL. Только в заголовке Authorization.\n            await axios.post(\n              \`https://botapi.max.ru/messages?user_id=\${senderId}\`, \n              { text: replyText },\n              { headers: { Authorization: org.token, "Content-Type": "application/json" } }\n            ).catch(e => app.log.error(e.response?.data || e.message, "Ошибка отправки MAX"));`,
+  "webhooks.routes.ts: фикс отправки приветствия"
+);
 
-export async function webhooksRoutes(app: FastifyInstance) {
-  app.post("/yookassa", async (req, reply) => {
-    // ... (оставляем без изменений, код ЮKassa)
-    const event = req.body as any;
-    try {
-      if (event.event === "payment.succeeded") {
-        const realPayment = await yookassaService.getPayment(event.object.id);
-        if (!realPayment || realPayment.status !== "succeeded" || !realPayment.paid) return reply.code(400).send({ error: "Payment not verified" });
-        await db.update(payments).set({ status: "succeeded", updatedAt: new Date() }).where(eq(payments.yookassaId, event.object.id));
-        const [payment] = await db.select().from(payments).where(eq(payments.yookassaId, event.object.id));
-        if (payment && payment.metadata) {
-          const meta = payment.metadata as any;
-          if (meta.orgId) {
-           const days = Number(meta.periodDays) || 30;
-           const expiresAt = new Date(); expiresAt.setDate(expiresAt.getDate() + days);
-           await db.update(organizations).set({ maxLocations: meta.tariffId === "business" ? 5 : 1, tariffId: meta.tariffId, tariffExpiresAt: expiresAt, trialEndsAt: null }).where(eq(organizations.id, meta.orgId));
-          }
-        }
-      } 
-      else if (event.event === "payment.canceled") {
-        await db.update(payments).set({ status: "canceled", updatedAt: new Date() }).where(eq(payments.yookassaId, event.object.id));
-      }
-      return reply.send({ ok: true });
-    } catch (e: any) { app.log.error(e); return reply.code(500).send({ error: "Internal Error" }); }
-  });
-
-  // ─── MAX Bot Webhook ──────────────────────────────
-  app.post("/max", async (req, reply) => {
-    const body = req.body as any;
-    app.log.info({ body }, "MAX webhook received"); // 🔍 Логируем всё, что приходит от MAX
-
-    try {
-      const updateType = body.update_type;
-      const message = body.message;
-      
-      const sender = message?.sender || body.user;
-      const senderId = sender?.user_id?.toString();
-      const botId = message?.recipient?.user_id?.toString() || body.bot_id?.toString();
-      const text = message?.body?.text || "";
-
-      // 1. ОБРАБОТКА БОТА ПОДДЕРЖКИ
-      const SUPPORT_BOT_TOKEN = process.env.SUPPORT_BOT_TOKEN;
-      const SUPPORT_ADMIN_ID = process.env.SUPPORT_ADMIN_ID || "141744495";
-
-      if (senderId === SUPPORT_ADMIN_ID && text.startsWith("#") && SUPPORT_BOT_TOKEN) {
-        const spaceIdx = text.indexOf(" ");
-        const shortId = text.substring(1, spaceIdx > -1 ? spaceIdx : text.length).toUpperCase();
-        const replyText = spaceIdx > -1 ? text.substring(spaceIdx + 1) : "";
-        const tickets = await db.select().from(supportTickets);
-        const ticket = tickets.find((t) => t.id.slice(0, 6).toUpperCase() === shortId);
-        
-        if (ticket) {
-          await db.insert(supportMessages).values({ ticketId: ticket.id, sender: "ADMIN", text: replyText });
-          await db.update(supportTickets).set({ status: "ANSWERED" }).where(eq(supportTickets.id, ticket.id));
-          if (ticket.userId) {
-            const [messenger] = await db.select().from(userMessengers).where(and(eq(userMessengers.userId, ticket.userId), eq(userMessengers.provider, "max")));
-            if (messenger && messenger.externalId) {
-              await axios.post(\`https://botapi.max.ru/messages?user_id=\${messenger.externalId}\`, { text: "Ответ поддержки:\\n\\n" + replyText }, { headers: { Authorization: SUPPORT_BOT_TOKEN } }).catch(() => {});
-            }
-          }
-          await axios.post(\`https://botapi.max.ru/messages?user_id=\${SUPPORT_ADMIN_ID}\`, { text: "✅ Ответ на #" + shortId + " отправлен клиенту!" }, { headers: { Authorization: SUPPORT_BOT_TOKEN } }).catch(() => {});
-        }
-        return reply.send({ ok: true });
-      }
-
-      // 2. ОБРАБОТКА БОТА ОРГАНИЗАЦИИ (УВЕДОМЛЕНИЯ)
-      if ((updateType === "message_created" || updateType === "bot_started") && senderId) {
-        
-        let org: { token: string | null } | undefined;
-
-        // Пытаемся найти организацию по ID бота
-        if (botId) {
-          const [found] = await db.select({ token: organizations.maxBotToken }).from(organizations).where(eq(organizations.maxBotId, botId));
-          org = found;
-        }
-        
-        // 🔥 Страховка: если не нашли по ID (например, не сохранился), берем любой токен из базы
-        if (!org) {
-          const [fallback] = await db.select({ token: organizations.maxBotToken }).from(organizations).where(isNotNull(organizations.maxBotToken)).limit(1);
-          org = fallback;
-        }
-
-        if (org && org.token) {
-          const isStart = updateType === "bot_started" || text.trim() === "/start";
-
-          if (isStart) {
-            const replyText = \`Привет! Твой ID в MAX:\\n\\n\${senderId}\\n\\nСкопируй его и вставь в настройках профиля на сайте (Профиль -> Мессенджер), чтобы получать уведомления.\`;
-            
-            // Отправляем с access_token в query (самый совместимый способ для MAX API)
-            await axios.post(\`https://botapi.max.ru/messages?access_token=\${org.token}&user_id=\${senderId}\`, { text: replyText })
-              .catch(e => app.log.error(e.response?.data || e.message, "Ошибка отправки MAX"));
-          } else if (text.trim()) {
-            await axios.post(\`https://botapi.max.ru/messages?access_token=\${org.token}&user_id=\${senderId}\`, { text: "Это бот для уведомлений. Чтобы получить свой ID и привязать аккаунт, отправьте /start" })
-              .catch(e => app.log.error(e.response?.data || e.message, "Ошибка отправки MAX"));
-          }
-        } else {
-          app.log.warn("Не найден токен бота для ответа на вебхук");
-        }
-      }
-
-      return reply.send({ ok: true });
-    } catch (e: any) {
-      app.log.error(e);
-      return reply.code(500).send({ error: "Internal Error" });
-    }
-  });
-}
-`,
-  "webhooks.routes.ts"
+// 2. Ответ на любой другой текст
+patchFile(
+  "src/modules/webhooks/webhooks.routes.ts",
+  `            await axios.post(\`https://botapi.max.ru/messages?access_token=\${org.token}&user_id=\${senderId}\`, { text: "Это бот для уведомлений. Чтобы получить свой ID и привязать аккаунт, отправьте /start" })\n              .catch(e => app.log.error(e.response?.data || e.message, "Ошибка отправки MAX"));`,
+  `            await axios.post(\n              \`https://botapi.max.ru/messages?user_id=\${senderId}\`, \n              { text: "Это бот для уведомлений. Чтобы получить свой ID и привязать аккаунт, отправьте /start" },\n              { headers: { Authorization: org.token, "Content-Type": "application/json" } }\n            ).catch(e => app.log.error(e.response?.data || e.message, "Ошибка отправки MAX"));`,
+  "webhooks.routes.ts: фикс отправки обычного текста"
 );
 
 console.log("\n──────────────────────────────────────");
-console.log(touched > 0 ? "🎉 Готово! Вебхук MAX обновлен." : "⚠️ Изменений не внесено.");
+console.log(touched > 0 ? "🎉 Готово! Токен перенесен в заголовки." : "⚠️ Изменений не внесено.");

@@ -93,12 +93,18 @@ export async function webhooksRoutes(app: FastifyInstance) {
           if (isStart) {
             const replyText = `Привет! Твой ID в MAX:\n\n${senderId}\n\nСкопируй его и вставь в настройках профиля на сайте (Профиль -> Мессенджер), чтобы получать уведомления.`;
             
-            // Отправляем с access_token в query (самый совместимый способ для MAX API)
-            await axios.post(`https://botapi.max.ru/messages?access_token=${org.token}&user_id=${senderId}`, { text: replyText })
-              .catch(e => app.log.error(e.response?.data || e.message, "Ошибка отправки MAX"));
+            // MAX больше не принимает access_token в URL. Только в заголовке Authorization.
+            await axios.post(
+              `https://botapi.max.ru/messages?user_id=${senderId}`, 
+              { text: replyText },
+              { headers: { Authorization: org.token, "Content-Type": "application/json" } }
+            ).catch(e => app.log.error(e.response?.data || e.message, "Ошибка отправки MAX"));
           } else if (text.trim()) {
-            await axios.post(`https://botapi.max.ru/messages?access_token=${org.token}&user_id=${senderId}`, { text: "Это бот для уведомлений. Чтобы получить свой ID и привязать аккаунт, отправьте /start" })
-              .catch(e => app.log.error(e.response?.data || e.message, "Ошибка отправки MAX"));
+            await axios.post(
+              `https://botapi.max.ru/messages?user_id=${senderId}`, 
+              { text: "Это бот для уведомлений. Чтобы получить свой ID и привязать аккаунт, отправьте /start" },
+              { headers: { Authorization: org.token, "Content-Type": "application/json" } }
+            ).catch(e => app.log.error(e.response?.data || e.message, "Ошибка отправки MAX"));
           }
         } else {
           app.log.warn("Не найден токен бота для ответа на вебхук");
