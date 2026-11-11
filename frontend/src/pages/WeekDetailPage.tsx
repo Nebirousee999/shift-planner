@@ -335,6 +335,26 @@ export default function WeekDetailPage() {
       } catch {
         /* ignore */
       }
+
+      // 🔥 Проверка пересечений смен в один день
+      try {
+        const overlapCheck = await shiftsApi.checkOverlap({
+          userId,
+          weekId: currentWeek.id,
+          shiftDate: date,
+          startTime,
+          endTime,
+        });
+        if (overlapCheck.overlaps) {
+          const ok = await confirmDialog(
+            `У сотрудника ${overlapCheck.userName} уже есть смена в это время (${overlapCheck.conflicting.map((c) => `${c.startTime}–${c.endTime}`).join(", ")}).\n\nВсё равно добавить?`,
+            { title: "Пересечение смен", confirmLabel: "Добавить", variant: "danger" }
+          );
+          if (!ok) return;
+        }
+      } catch {
+        /* ignore */
+      }
     }
 
     try {
@@ -1434,6 +1454,7 @@ export default function WeekDetailPage() {
 // ─── Модалка редактирования смены ─────────────────────
 function ShiftEditModal({
   shift,
+  weekId,
   users,
   templates,
   vacations,
@@ -1481,6 +1502,29 @@ function ShiftEditModal({
         title: "Ошибка",
         variant: "error",
       });
+
+    // 🔥 Проверка пересечений при редактировании
+    if (userId) {
+      try {
+        const overlapCheck = await shiftsApi.checkOverlap({
+          userId,
+          weekId,
+          shiftDate,
+          startTime,
+          endTime,
+          excludeShiftId: shift.id, // Исключаем саму редактируемую смену
+        });
+        if (overlapCheck.overlaps) {
+          const ok = await confirmDialog(
+            `У сотрудника ${overlapCheck.userName} уже есть смена в это время (${overlapCheck.conflicting.map((c: any) => `${c.startTime}–${c.endTime}`).join(", ")}).\n\nВсё равно сохранить?`,
+            { title: "Пересечение смен", confirmLabel: "Сохранить", variant: "danger" }
+          );
+          if (!ok) return;
+        }
+      } catch {
+        /* ignore */
+      }
+    }
 
     setBusy(true);
     try {
