@@ -89,6 +89,16 @@ export async function supportRoutes(app: FastifyInstance) {
     return user?.email === ADMIN_EMAIL;
   };
 
+  app.get("/admin/unread-count", async (req, reply) => {
+    const userId = (req as any).user?.sub;
+    if (!(await checkAdmin(userId))) return reply.code(403).send({ error: "Forbidden" });
+    
+    const unread = await db.select().from(supportMessages).where(
+      and(eq(supportMessages.sender, "USER"), eq(supportMessages.isReadByAdmin, false))
+    );
+    return { count: unread.length };
+  });
+
   app.get("/admin/tickets", async (req, reply) => {
     const userId = (req as any).user?.sub;
     if (!(await checkAdmin(userId))) return reply.code(403).send({ error: "Forbidden" });
@@ -101,11 +111,18 @@ export async function supportRoutes(app: FastifyInstance) {
     const userMap = new Map(usersList.map(u => [u.id, u]));
     const orgMap = new Map(orgs.map(o => [o.id, o]));
 
+    const unreadCounts = new Map();
+    for (const m of allMessages) {
+      if (m.sender === "USER" && !m.isReadByAdmin) {
+        unreadCounts.set(m.ticketId, (unreadCounts.get(m.ticketId) || 0) + 1);
+      }
+    }
+
     const uniqueTickets = new Map();
     for (const t of tickets) {
       if (!uniqueTickets.has(t.email)) {
         const lastMsg = allMessages.find(m => m.ticketId === t.id);
-        const hasUnread = allMessages.some(m => m.ticketId === t.id && m.sender === "USER" && !m.isReadByAdmin);
+        const unreadCount = unreadCounts.get(t.id) || 0;
         
         let isRegistered = false;
         let tariffId = null;
@@ -122,7 +139,7 @@ export async function supportRoutes(app: FastifyInstance) {
         uniqueTickets.set(t.email, {
           ...t,
           lastMessage: lastMsg?.text || t.message || "...",
-          hasUnread,
+          unreadCount,
           isRegistered,
           tariffId
         });

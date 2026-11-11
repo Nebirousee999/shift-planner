@@ -9,6 +9,8 @@ import {
 import { useAuth } from "../store/auth";
 import { useNotifications } from "../store/notifications";
 import { useOrganization } from "../store/organization";
+import { supportApi } from "../api/support";
+import { useState } from "react";
 import LocationSwitcher from "./LocationSwitcher";
 import NotificationBell from "./NotificationBell";
 
@@ -80,6 +82,16 @@ export default function NavBar() {
   const { vacationsPending, swapsIncoming, shiftChangesIncoming, timeOffsPending = 0, swapsAvailable = 0, refresh } = useNotifications();
   
   const org = useOrganization((s) => s.org);
+  const [supportUnread, setSupportUnread] = useState(0);
+
+  useEffect(() => {
+    if (user?.email !== "prihodko999@inbox.ru") return;
+    supportApi.adminGetUnreadCount().then(setSupportUnread).catch(() => {});
+    const interval = setInterval(() => {
+      supportApi.adminGetUnreadCount().then(setSupportUnread).catch(() => {});
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [user?.email]);
 
   const isAdmin = user?.role === "OWNER" || user?.role === "MANAGER";
   const timeTrackingOn = org?.timeTrackingEnabled === true;
@@ -144,6 +156,7 @@ export default function NavBar() {
             {user?.email === "prihodko999@inbox.ru" && (
               <button onClick={() => navigate("/admin-support")} className="relative flex items-center justify-center p-2 rounded-lg text-sm text-brand-600 bg-brand-50 hover:bg-brand-100 transition-colors" title="Панель поддержки">
                 <MessageSquare className="w-4 h-4" />
+                <Badge value={supportUnread} />
               </button>
             )}
             <button
@@ -227,6 +240,7 @@ export default function NavBar() {
           {user?.email === "prihodko999@inbox.ru" && (
             <button onClick={() => navigate("/admin-support")} className="relative flex items-center justify-center p-2 rounded-lg text-sm text-brand-600 bg-brand-50 hover:bg-brand-100 transition-colors" title="Панель поддержки">
               <MessageSquare className="w-4 h-4" />
+              <Badge value={supportUnread} />
             </button>
           )}
 

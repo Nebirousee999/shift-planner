@@ -5,6 +5,25 @@ import path from "node:path";
 const ROOT = process.cwd();
 let touched = 0;
 
+function patchFile(relPath, search, replace, label) {
+  const filePath = path.join(ROOT, relPath);
+  if (!fs.existsSync(filePath)) return;
+  let content = fs.readFileSync(filePath, "utf-8");
+  const hadCRLF = content.includes("\r\n");
+  let normalized = hadCRLF ? content.replace(/\r\n/g, "\n") : content;
+
+  if (normalized.includes(replace)) return;
+
+  if (normalized.includes(search)) {
+    normalized = normalized.replace(search, replace);
+    fs.writeFileSync(filePath, hadCRLF ? normalized.replace(/\n/g, "\r\n") : normalized, "utf-8");
+    touched++;
+    console.log("✅ [" + label + "] Применено");
+  } else {
+    console.log("⚠️ [" + label + "] Не найдено.");
+  }
+}
+
 function writeFile(relPath, content, label) {
   const filePath = path.join(ROOT, relPath);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -13,177 +32,97 @@ function writeFile(relPath, content, label) {
   console.log("✅ [" + label + "] Перезаписан");
 }
 
-// ═══ 1. Бэкенд: Убираем коллизию токенов и утечку гостевой истории ═══
-writeFile(
+// ═══ 1. Бэкенд: Счетчики непрочитанных ═══
+// Добавляем эндпоинт для общего счетчика
+patchFile(
   "src/modules/support/support.routes.ts",
-  `import type { FastifyInstance } from "fastify";
-import { z } from "zod";
-import { eq, desc, and } from "drizzle-orm";
-import { db } from "../../../db/client.js";
-import { supportTickets, supportMessages, users, organizations } from "../../../db/schema.js";
-import crypto from "node:crypto";
-
-const ADMIN_EMAIL = "prihodko999@inbox.ru";
-
-export async function supportRoutes(app: FastifyInstance) {
-  app.addHook("preHandler", async (req, reply) => {
-    try {
-      await req.jwtVerify();
-    } catch (e) {}
-  });
-
-  app.post("/", async (req, reply) => {
-    const parsed = z.object({
-      email: z.string().email(),
-      message: z.string().min(1),
-      images: z.array(z.string()).optional().default([]),
-      sessionToken: z.string().optional(),
-    }).safeParse(req.body);
-
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
-
-    const userId = (req as any).user?.sub || null;
-    let sessionToken = parsed.data.sessionToken || crypto.randomUUID();
-    let ticket;
-
-    if (userId) {
-      const found = await db.select().from(supportTickets).where(eq(supportTickets.userId, userId)).orderBy(desc(supportTickets.createdAt)).limit(1);
-      if (found.length > 0) {
-        ticket = found[0];
-        if (ticket.sessionToken !== sessionToken) {
-          const tokenBusy = await db.select().from(supportTickets).where(eq(supportTickets.sessionToken, sessionToken));
-          if (tokenBusy.length === 0) {
-            await db.update(supportTickets).set({ sessionToken }).where(eq(supportTickets.id, ticket.id));
-            ticket.sessionToken = sessionToken;
-          } else {
-            sessionToken = ticket.sessionToken;
-          }
-        }
-      } else {
-        // 🔥 Если зареген, но тикета нет — генерируем НОВЫЙ токен, игнорируя старый гостевой
-        sessionToken = crypto.randomUUID();
-      }
-    } else {
-      const found = await db.select().from(supportTickets).where(eq(supportTickets.sessionToken, sessionToken));
-      if (found.length > 0) {
-        if (found[0].email === parsed.data.email) ticket = found[0];
-        else sessionToken = crypto.randomUUID();
-      }
-    }
-
-    if (!ticket) {
-      const inserted = await db.insert(supportTickets).values({ userId, email: parsed.data.email, sessionToken, status: "OPEN", message: parsed.data.message }).returning();
-      ticket = inserted[0];
-    }
-
-    await db.insert(supportMessages).values({ ticketId: ticket.id, sender: "USER", text: parsed.data.message, images: parsed.data.images, isReadByAdmin: false });
-    
-    return { success: true, ticketId: ticket.id.slice(0, 6).toUpperCase(), sessionToken: ticket.sessionToken };
-  });
-
-  app.get("/messages", async (req) => {
-    const { sessionToken } = req.query as { sessionToken?: string };
-    const userId = (req as any).user?.sub || null;
-    let ticket;
-    
-    if (userId) {
-      // 🔥 Если зареген, ищем ТОЛЬКО по userId. Никаких fallback на куки.
-      const found = await db.select().from(supportTickets).where(eq(supportTickets.userId, userId)).orderBy(desc(supportTickets.createdAt)).limit(1);
-      if (found.length > 0) ticket = found[0];
-    } else if (sessionToken) {
-      // 🔥 Если гость, ищем по кукам
-      const found = await db.select().from(supportTickets).where(eq(supportTickets.sessionToken, sessionToken));
-      if (found.length > 0) ticket = found[0];
-    }
-    
-    if (!ticket) return [];
-    return db.select().from(supportMessages).where(eq(supportMessages.ticketId, ticket.id)).orderBy(supportMessages.createdAt);
-  });
-
-  // ─── АДМИНСКИЕ РОУТЫ ──────────
-  const checkAdmin = async (userId: string) => {
-    if (!userId) return false;
-    const [user] = await db.select().from(users).where(eq(users.id, userId));
-    return user?.email === ADMIN_EMAIL;
-  };
-
-  app.get("/admin/tickets", async (req, reply) => {
-    const userId = (req as any).user?.sub;
-    if (!(await checkAdmin(userId))) return reply.code(403).send({ error: "Forbidden" });
-
-    const tickets = await db.select().from(supportTickets).orderBy(desc(supportTickets.createdAt));
-    const allMessages = await db.select().from(supportMessages).orderBy(desc(supportMessages.createdAt));
-    const orgs = await db.select().from(organizations);
-    const usersList = await db.select().from(users);
-
-    const userMap = new Map(usersList.map(u => [u.id, u]));
-    const orgMap = new Map(orgs.map(o => [o.id, o]));
-
-    const uniqueTickets = new Map();
-    for (const t of tickets) {
-      if (!uniqueTickets.has(t.email)) {
-        const lastMsg = allMessages.find(m => m.ticketId === t.id);
-        const hasUnread = allMessages.some(m => m.ticketId === t.id && m.sender === "USER" && !m.isReadByAdmin);
-        
-        let isRegistered = false;
-        let tariffId = null;
-        
-        if (t.userId && userMap.has(t.userId)) {
-          isRegistered = true;
-          const u = userMap.get(t.userId);
-          if (u && u.orgId) {
-            const org = orgMap.get(u.orgId);
-            tariffId = org?.tariffId || "free";
-          }
-        }
-
-        uniqueTickets.set(t.email, {
-          ...t,
-          lastMessage: lastMsg?.text || t.message || "...",
-          hasUnread,
-          isRegistered,
-          tariffId
-        });
-      }
-    }
-    return Array.from(uniqueTickets.values());
-  });
-
-  app.get("/admin/tickets/:id/messages", async (req, reply) => {
+  `  app.get("/admin/tickets", async (req, reply) => {`,
+  `  app.get("/admin/unread-count", async (req, reply) => {
     const userId = (req as any).user?.sub;
     if (!(await checkAdmin(userId))) return reply.code(403).send({ error: "Forbidden" });
     
-    const { id } = req.params as { id: string };
-    
-    await db.update(supportMessages).set({ isReadByAdmin: true }).where(and(eq(supportMessages.ticketId, id), eq(supportMessages.sender, "USER")));
-    
-    return db.select().from(supportMessages).where(eq(supportMessages.ticketId, id)).orderBy(supportMessages.createdAt);
+    const unread = await db.select().from(supportMessages).where(
+      and(eq(supportMessages.sender, "USER"), eq(supportMessages.isReadByAdmin, false))
+    );
+    return { count: unread.length };
   });
 
-  app.post("/admin/tickets/:id/reply", async (req, reply) => {
-    const userId = (req as any).user?.sub;
-    if (!(await checkAdmin(userId))) return reply.code(403).send({ error: "Forbidden" });
+  app.get("/admin/tickets", async (req, reply) => {`,
+  "support.routes.ts (эндпоинт unread-count)"
+);
 
-    const { id } = req.params as { id: string };
-    const parsed = z.object({ text: z.string().min(1) }).safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ error: "Empty message" });
+// Добавляем подсчет непрочитанных для каждого тикета
+patchFile(
+  "src/modules/support/support.routes.ts",
+  `    const uniqueTickets = new Map();\n    for (const t of tickets) {\n      if (!uniqueTickets.has(t.email)) {\n        const lastMsg = allMessages.find(m => m.ticketId === t.id);\n        const hasUnread = allMessages.some(m => m.ticketId === t.id && m.sender === "USER" && !m.isReadByAdmin);`,
+  `    const unreadCounts = new Map();\n    for (const m of allMessages) {\n      if (m.sender === "USER" && !m.isReadByAdmin) {\n        unreadCounts.set(m.ticketId, (unreadCounts.get(m.ticketId) || 0) + 1);\n      }\n    }\n\n    const uniqueTickets = new Map();\n    for (const t of tickets) {\n      if (!uniqueTickets.has(t.email)) {\n        const lastMsg = allMessages.find(m => m.ticketId === t.id);\n        const unreadCount = unreadCounts.get(t.id) || 0;`,
+  "support.routes.ts (подсчет для тикетов 1)"
+);
 
-    const [ticket] = await db.select().from(supportTickets).where(eq(supportTickets.id, id));
-    if (!ticket) return reply.code(404).send({ error: "Ticket not found" });
+patchFile(
+  "src/modules/support/support.routes.ts",
+  `          lastMessage: lastMsg?.text || t.message || "...",\n          hasUnread,`,
+  `          lastMessage: lastMsg?.text || t.message || "...",\n          unreadCount,`,
+  "support.routes.ts (подсчет для тикетов 2)"
+);
 
-    await db.insert(supportMessages).values({ ticketId: id, sender: "ADMIN", text: parsed.data.text, isReadByAdmin: true });
-    await db.update(supportTickets).set({ status: "ANSWERED" }).where(eq(supportTickets.id, id));
-    
-    return { success: true };
-  });
-}
-`,
-  "src/modules/support/support.routes.ts"
+// ═══ 2. Фронтенд API ═══
+patchFile(
+  "frontend/src/api/support.ts",
+  `  lastMessage: string;\n  hasUnread: boolean;`,
+  `  lastMessage: string;\n  unreadCount: number;`,
+  "support.ts (тип AdminTicket)"
+);
+
+patchFile(
+  "frontend/src/api/support.ts",
+  `  adminGetTickets: async (): Promise<AdminTicket[]> => {`,
+  `  adminGetUnreadCount: async (): Promise<number> => {\n    try {\n      const { data } = await api.get<{ count: number }>("/support/admin/unread-count");\n      return data.count;\n    } catch { return 0; }\n  },\n  adminGetTickets: async (): Promise<AdminTicket[]> => {`,
+  "support.ts (метод adminGetUnreadCount)"
+);
+
+// ═══ 3. NavBar: Общий бейдж ═══
+patchFile(
+  "frontend/src/components/NavBar.tsx",
+  `import { useOrganization } from "../store/organization";`,
+  `import { useOrganization } from "../store/organization";\nimport { supportApi } from "../api/support";\nimport { useState } from "react";`,
+  "NavBar.tsx (импорты)"
+);
+
+patchFile(
+  "frontend/src/components/NavBar.tsx",
+  `  const org = useOrganization((s) => s.org);`,
+  `  const org = useOrganization((s) => s.org);\n  const [supportUnread, setSupportUnread] = useState(0);\n\n  useEffect(() => {\n    if (user?.email !== "prihodko999@inbox.ru") return;\n    supportApi.adminGetUnreadCount().then(setSupportUnread).catch(() => {});\n    const interval = setInterval(() => {\n      supportApi.adminGetUnreadCount().then(setSupportUnread).catch(() => {});\n    }, 10000);\n    return () => clearInterval(interval);\n  }, [user?.email]);`,
+  "NavBar.tsx (логика счетчика)"
+);
+
+// Заменяем кнопку в сотрудническом виде
+patchFile(
+  "frontend/src/components/NavBar.tsx",
+  `            {user?.email === "prihodko999@inbox.ru" && (\n              <button onClick={() => navigate("/admin-support")} className="relative flex items-center justify-center p-2 rounded-lg text-sm text-brand-600 bg-brand-50 hover:bg-brand-100 transition-colors" title="Панель поддержки">\n                <MessageSquare className="w-4 h-4" />\n              </button>\n            )}`,
+  `            {user?.email === "prihodko999@inbox.ru" && (\n              <button onClick={() => navigate("/admin-support")} className="relative flex items-center justify-center p-2 rounded-lg text-sm text-brand-600 bg-brand-50 hover:bg-brand-100 transition-colors" title="Панель поддержки">\n                <MessageSquare className="w-4 h-4" />\n                <Badge value={supportUnread} />\n              </button>\n            )}`,
+  "NavBar.tsx (кнопка в сотрудническом виде)"
+);
+
+// Заменяем кнопку в админском виде
+patchFile(
+  "frontend/src/components/NavBar.tsx",
+  `          {user?.email === "prihodko999@inbox.ru" && (\n            <button onClick={() => navigate("/admin-support")} className="relative flex items-center justify-center p-2 rounded-lg text-sm text-brand-600 bg-brand-50 hover:bg-brand-100 transition-colors" title="Панель поддержки">\n              <MessageSquare className="w-4 h-4" />\n            </button>\n          )}`,
+  `          {user?.email === "prihodko999@inbox.ru" && (\n            <button onClick={() => navigate("/admin-support")} className="relative flex items-center justify-center p-2 rounded-lg text-sm text-brand-600 bg-brand-50 hover:bg-brand-100 transition-colors" title="Панель поддержки">\n              <MessageSquare className="w-4 h-4" />\n              <Badge value={supportUnread} />\n            </button>\n          )}`,
+  "NavBar.tsx (кнопка в админском виде)"
+);
+
+// ═══ 4. AdminSupportPage: Количество сообщений в списке чатов ═══
+patchFile(
+  "frontend/src/pages/AdminSupportPage.tsx",
+  `                <div className="flex justify-between items-start mb-1">\n                  <div className="font-semibold text-sm text-slate-900 truncate pr-2">{t.email}</div>\n                  {t.hasUnread && (\n                    <span className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0 mt-1" title="Новое сообщение" />\n                  )}\n                </div>`,
+  `                <div className="flex justify-between items-start mb-1">\n                  <div className="font-semibold text-sm text-slate-900 truncate pr-2">{t.email}</div>\n                  {t.unreadCount > 0 && (\n                    <span className="inline-flex items-center justify-center min-w-[20px] h-[20px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold shrink-0" title="Новых сообщений">\n                      {t.unreadCount}\n                    </span>\n                  )}\n                </div>`,
+  "AdminSupportPage.tsx (цифра вместо точки)"
 );
 
 console.log("\\n──────────────────────────────────────");
 if (touched > 0) {
-  console.log("🎉 Готово! Исправлен баг с дубликатом токена и старой историей.");
+  console.log("🎉 Готово! Счетчики непрочитанных добавлены в меню и список чатов.");
 } else {
   console.log("⚠️ Изменений не внесено.");
 }

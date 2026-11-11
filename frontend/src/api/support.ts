@@ -16,7 +16,7 @@ export type AdminTicket = {
   tariffId: string | null;
   status: string;
   lastMessage: string;
-  hasUnread: boolean;
+  unreadCount: number;
   createdAt: string;
 };
 
@@ -29,6 +29,12 @@ export const supportApi = {
     if (!sessionToken) return [];
     const { data } = await api.get<SupportMessage[]>("/support/messages", { params: { sessionToken } });
     return data;
+  },
+  adminGetUnreadCount: async (): Promise<number> => {
+    try {
+      const { data } = await api.get<{ count: number }>("/support/admin/unread-count");
+      return data.count;
+    } catch { return 0; }
   },
   adminGetTickets: async (): Promise<AdminTicket[]> => {
     const { data } = await api.get<AdminTicket[]>("/support/admin/tickets");

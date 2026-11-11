@@ -89,8 +89,10 @@ export default function AdminSupportPage() {
               >
                 <div className="flex justify-between items-start mb-1">
                   <div className="font-semibold text-sm text-slate-900 truncate pr-2">{t.email}</div>
-                  {t.hasUnread && (
-                    <span className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0 mt-1" title="Новое сообщение" />
+                  {t.unreadCount > 0 && (
+                    <span className="inline-flex items-center justify-center min-w-[20px] h-[20px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold shrink-0" title="Новых сообщений">
+                      {t.unreadCount}
+                    </span>
                   )}
                 </div>
                 
