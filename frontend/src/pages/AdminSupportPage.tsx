@@ -120,15 +120,15 @@ export default function AdminSupportPage() {
   if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin" /></div>;
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className="h-screen bg-slate-50 flex flex-col overflow-hidden">
       <NavBar />
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex gap-4 h-[calc(100vh-80px)]">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex gap-4 min-h-0">
         
-        <div className="w-80 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden shrink-0">
-          <div className="p-4 border-b border-slate-100 bg-slate-50 font-semibold text-slate-900">
+        <div className="w-80 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden shrink-0 h-full">
+          <div className="p-4 border-b border-slate-100 bg-slate-50 font-semibold text-slate-900 shrink-0">
             Все обращения ({tickets.length})
           </div>
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto min-h-0">
             {tickets.map(t => (
               <button
                 key={t.id}
@@ -167,7 +167,7 @@ export default function AdminSupportPage() {
           </div>
         </div>
 
-        <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
+        <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden h-full min-w-0">
           {selectedId ? (
             <>
               <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
@@ -178,7 +178,7 @@ export default function AdminSupportPage() {
                 )}
               </div>
               
-              <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
+              <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 p-4 space-y-4 bg-slate-50">
                 {messages.map(m => (
                   <div key={m.id} className={`flex ${m.sender === "ADMIN" ? "justify-end" : "justify-start"}`}>
                     <div className={`max-w-[70%] rounded-2xl px-4 py-2 text-sm ${m.sender === "ADMIN" ? "bg-brand-600 text-white rounded-br-sm" : "bg-white border border-slate-200 text-slate-800 rounded-bl-sm shadow-sm"}`}>
@@ -198,7 +198,7 @@ export default function AdminSupportPage() {
                 ))}
               </div>
 
-              <form onSubmit={handleReply} className="p-3 bg-white border-t border-slate-200">
+              <form onSubmit={handleReply} className="p-3 bg-white border-t border-slate-200 shrink-0">
                 {replyImages.length > 0 && (
                   <div className="flex gap-2 overflow-x-auto pt-2 pb-2 px-1">
                     {replyImages.map((img, i) => (
