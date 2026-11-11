@@ -18,8 +18,9 @@ export default function AdminSupportPage() {
   const [replyText, setReplyText] = useState("");
   const [replyImages, setReplyImages] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeImage, setActiveImage] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [activeImage, setActiveImage] = useState<string | null>(null);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -36,8 +37,6 @@ export default function AdminSupportPage() {
           return [...newOnes, ...newTickets];
         });
         
-        // 🔥 ФУНКЦИОНАЛЬНОЕ ОБНОВЛЕНИЕ (лечит прыжки на первый чат)
-        // Используем функциональное обновление, чтобы не зависеть от замыкания
         setSelectedId(prev => {
           if (!prev && data.length > 0) return data[0].id;
           return prev;
@@ -125,6 +124,7 @@ export default function AdminSupportPage() {
       <NavBar />
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex gap-4 min-h-0">
         
+        {/* ЛЕВАЯ КОЛОНКА */}
         <div className="w-80 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden shrink-0 h-full">
           <div className="p-4 border-b border-slate-100 bg-slate-50 font-semibold text-slate-900 shrink-0">
             Все обращения ({tickets.length})
@@ -139,7 +139,7 @@ export default function AdminSupportPage() {
                 <div className="flex justify-between items-start mb-1">
                   <div className="font-semibold text-sm text-slate-900 truncate pr-2">{t.email}</div>
                   {t.unreadCount > 0 && (
-                    <span className="inline-flex items-center justify-center min-w-[20px] h-[20px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold shrink-0" title="Новых сообщений">
+                    <span className="inline-flex items-center justify-center min-w-[20px] h-[20px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold shrink-0">
                       {t.unreadCount}
                     </span>
                   )}
@@ -168,10 +168,11 @@ export default function AdminSupportPage() {
           </div>
         </div>
 
+        {/* ПРАВАЯ КОЛОНКА */}
         <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden h-full min-w-0">
           {selectedId ? (
             <>
-              <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
+              <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center gap-2 shrink-0">
                 <User className="w-4 h-4 text-slate-500" />
                 <span className="font-semibold text-slate-900">{tickets.find(t => t.id === selectedId)?.email}</span>
                 {tickets.find(t => t.id === selectedId)?.isRegistered && (
@@ -181,43 +182,41 @@ export default function AdminSupportPage() {
               
               <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 p-4 space-y-4 bg-slate-50">
                 {messages.map(m => (
-                <div key={m.id} className={`flex ${m.sender === "ADMIN" ? "justify-end" : "justify-start"} mb-2`}>
-                  <div className={`flex flex-col max-w-[70%] ${m.sender === "ADMIN" ? "items-end" : "items-start"}`}>
-                    
-                    {/* Картинки в админке: 50% ширины, без фона */}
-                    {m.images && m.images.length > 0 && (
-                      <div className="flex flex-col gap-2 mb-1 w-[50%] min-w-[200px] max-w-[400px]">
-                        {m.images.map((img, i) => (
-                          <img key={i} src={img} onClick={() => setActiveImage(img)} className="w-full h-auto object-contain rounded-xl cursor-pointer border border-slate-200 hover:opacity-90 transition-opacity" />
-                        ))}
-                      </div>
-                    )}
-                    
-                    {/* Текст в пузыре */}
-                    {m.text && (
-                      <div className={`rounded-2xl px-4 py-2 text-sm ${m.sender === "ADMIN" ? "bg-brand-600 text-white rounded-br-sm" : "bg-white border border-slate-200 text-slate-800 rounded-bl-sm shadow-sm"}`}>
-                        <p className="whitespace-pre-wrap">{m.text}</p>
-                        <div className={`text-[9px] mt-1 text-right ${m.sender === "ADMIN" ? "text-brand-200" : "text-slate-400"}`}>
-                          {new Date(m.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* Время под картинкой, если нет текста */}
-                    {!m.text && m.images && m.images.length > 0 && (
-                      <div className="text-[9px] mt-1 text-slate-400">
-                        {new Date(m.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
+                  <div key={m.id} className={`flex ${m.sender === "ADMIN" ? "justify-end" : "justify-start"} mb-2`}>
+                    <div className={`flex flex-col max-w-[70%] ${m.sender === "ADMIN" ? "items-end" : "items-start"}`}>
+                      
+                      {/* Картинки в админке: 50% ширины, без фона */}
+                      {m.images && m.images.length > 0 && (
+                        <div className="flex flex-col gap-2 mb-1 w-[50%] min-w-[200px] max-w-[400px]">
+                          {m.images.map((img, i) => (
+                            <img 
+                              key={i} 
+                              src={img} 
+                              onClick={() => setActiveImage(img)} 
+                              className="w-full h-auto object-contain rounded-xl cursor-pointer border border-slate-200 hover:opacity-90 transition-opacity" 
+                            />
+                          ))}
                         </div>
                       )}
-                      <p className="whitespace-pre-wrap">{m.text}</p>
-                      <div className={`text-[9px] mt-1 text-right ${m.sender === "ADMIN" ? "text-brand-200" : "text-slate-400"}`}>
-                        {new Date(m.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
-                      </div>
+                      
+                      {/* Текст в пузыре */}
+                      {m.text && (
+                        <div className={`rounded-2xl px-4 py-2 text-sm ${
+                          m.sender === "ADMIN" ? "bg-brand-600 text-white rounded-br-sm" : "bg-white border border-slate-200 text-slate-800 rounded-bl-sm shadow-sm"
+                        }`}>
+                          <p className="whitespace-pre-wrap">{m.text}</p>
+                          <div className={`text-[9px] mt-1 text-right ${m.sender === "ADMIN" ? "text-brand-200" : "text-slate-400"}`}>
+                            {new Date(m.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Время под картинкой, если нет текста */}
+                      {!m.text && m.images && m.images.length > 0 && (
+                        <div className="text-[9px] mt-1 text-slate-400">
+                          {new Date(m.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -230,6 +229,7 @@ export default function AdminSupportPage() {
                       <div key={i} className="relative shrink-0 group">
                         <img src={img} className="h-12 w-12 object-cover rounded-lg border border-slate-200" />
                         <button
+                          type="button"
                           onClick={() => setReplyImages((prev) => prev.filter((_, idx) => idx !== i))}
                           className="absolute -top-2.5 -right-2.5 bg-red-500 text-white rounded-full p-1 shadow-sm hover:bg-red-600 transition-colors z-10"
                         >
@@ -254,7 +254,7 @@ export default function AdminSupportPage() {
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
                     onPaste={handlePaste}
-                    placeholder="Написать ответ клиенту... (можно вставить фото)"
+                    placeholder="Написать ответ клиенту..."
                     className="flex-1 !text-sm !py-2 !bg-slate-50 resize-none min-h-[40px] max-h-32"
                     rows={1}
                     onKeyDown={(e) => {
@@ -279,14 +279,11 @@ export default function AdminSupportPage() {
         </div>
       </main>
 
-      {/* Лайтбокс для админки */}
+      {/* Лайтбокс */}
       {activeImage && (
-        <div
-          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in"
-          onClick={() => setActiveImage(null)}
-        >
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in" onClick={() => setActiveImage(null)}>
           <img src={activeImage} className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
-          <button className="absolute top-4 right-4 text-white hover:bg-white/20 p-2 rounded-full transition-colors">
+          <button className="absolute top-4 right-4 text-white hover:bg-white/20 p-2 rounded-full transition-colors" onClick={() => setActiveImage(null)}>
             <X className="w-6 h-6" />
           </button>
         </div>

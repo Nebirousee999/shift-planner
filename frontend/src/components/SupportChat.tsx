@@ -11,16 +11,15 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
   const [images, setImages] = useState<string[]>([]);
   const [messages, setMessages] = useState<SupportMessage[]>([]);
   const [loading, setLoading] = useState(false);
-  const [activeImage, setActiveImage] = useState<string | null>(null);
   const [fetching, setFetching] = useState(true);
+  const [activeImage, setActiveImage] = useState<string | null>(null);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const prevUserId = useRef<string | null>(user?.id || null);
 
   useEffect(() => {
     let token = localStorage.getItem("support_session_token");
-    
-    // Если пользователь вышел из профиля, генерируем новый токен для гостя
     if (prevUserId.current && !user?.id) {
       token = crypto.randomUUID();
       localStorage.setItem("support_session_token", token);
@@ -100,7 +99,6 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
       if (res.sessionToken && res.sessionToken !== sessionToken) {
         setSessionToken(res.sessionToken);
         localStorage.setItem("support_session_token", res.sessionToken);
-        // 🔑 Страховка: сразу тянем сообщения новым токеном, не дожидаясь effect
         try {
           const msgs = await supportApi.getMessages(res.sessionToken);
           setMessages(msgs);
@@ -133,30 +131,41 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
           </div>
         ) : (
           messages.map((m) => (
-            <div key={m.id} className={`flex ${m.sender === "USER" ? "justify-end" : "justify-start"}`}>
-              <div
-                className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${
-                  m.sender === "USER"
-                    ? "bg-brand-600 text-white rounded-br-sm"
-                    : "bg-white border border-slate-200 text-slate-800 rounded-bl-sm shadow-sm"
-                }`}
-              >
+            <div key={m.id} className={`flex ${m.sender === "USER" ? "justify-end" : "justify-start"} mb-2`}>
+              <div className={`flex flex-col max-w-[80%] ${m.sender === "USER" ? "items-end" : "items-start"}`}>
+                
+                {/* Картинки в чате: на всю ширину, без фона */}
                 {m.images && m.images.length > 0 && (
-                  <div className="flex flex-col gap-2 mb-2">
+                  <div className="flex flex-col gap-2 mb-1 w-full max-w-[250px]">
                     {m.images.map((img, i) => (
-                      <img
-                        key={i}
-                        src={img}
-                        onClick={() => setActiveImage(img)}
-                        className="w-full max-w-[250px] h-auto object-cover rounded-lg cursor-pointer border border-slate-200 hover:opacity-90 transition-opacity"
+                      <img 
+                        key={i} 
+                        src={img} 
+                        onClick={() => setActiveImage(img)} 
+                        className="w-full h-auto object-contain rounded-xl cursor-pointer border border-slate-200 hover:opacity-90 transition-opacity" 
                       />
                     ))}
                   </div>
                 )}
-                <p className="whitespace-pre-wrap">{m.text}</p>
-                <div className={`text-[9px] mt-1 text-right ${m.sender === "USER" ? "text-brand-200" : "text-slate-400"}`}>
-                  {new Date(m.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
-                </div>
+                
+                {/* Текст */}
+                {m.text && (
+                  <div className={`rounded-2xl px-3 py-2 text-sm ${
+                    m.sender === "USER" ? "bg-brand-600 text-white rounded-br-sm" : "bg-white border border-slate-200 text-slate-800 rounded-bl-sm shadow-sm"
+                  }`}>
+                    <p className="whitespace-pre-wrap">{m.text}</p>
+                    <div className={`text-[9px] mt-1 text-right ${m.sender === "USER" ? "text-brand-200" : "text-slate-400"}`}>
+                      {new Date(m.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Время под картинкой */}
+                {!m.text && m.images && m.images.length > 0 && (
+                  <div className="text-[9px] mt-1 text-slate-400">
+                    {new Date(m.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+                  </div>
+                )}
               </div>
             </div>
           ))
@@ -223,14 +232,11 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
         </form>
       </div>
 
-      {/* Лайтбокс для плавающего чата */}
+      {/* Лайтбокс */}
       {activeImage && (
-        <div
-          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in"
-          onClick={() => setActiveImage(null)}
-        >
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in" onClick={() => setActiveImage(null)}>
           <img src={activeImage} className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
-          <button className="absolute top-4 right-4 text-white hover:bg-white/20 p-2 rounded-full transition-colors">
+          <button className="absolute top-4 right-4 text-white hover:bg-white/20 p-2 rounded-full transition-colors" onClick={() => setActiveImage(null)}>
             <X className="w-6 h-6" />
           </button>
         </div>
