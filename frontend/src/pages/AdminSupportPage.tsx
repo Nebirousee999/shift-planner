@@ -181,18 +181,37 @@ export default function AdminSupportPage() {
               
               <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 p-4 space-y-4 bg-slate-50">
                 {messages.map(m => (
-                  <div key={m.id} className={`flex ${m.sender === "ADMIN" ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[70%] rounded-2xl px-4 py-2 text-sm ${m.sender === "ADMIN" ? "bg-brand-600 text-white rounded-br-sm" : "bg-white border border-slate-200 text-slate-800 rounded-bl-sm shadow-sm"}`}>
-                      {m.images && m.images.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mb-2">
-                          {m.images.map((img, i) => (
-                            <img
-                              key={i}
-                              src={img}
-                              onClick={() => setActiveImage(img)}
-                              className="w-1/2 max-w-[300px] min-w-[150px] h-auto object-cover rounded-lg cursor-pointer border border-slate-200 hover:opacity-90 transition-opacity"
-                            />
-                          ))}
+                <div key={m.id} className={`flex ${m.sender === "ADMIN" ? "justify-end" : "justify-start"} mb-2`}>
+                  <div className={`flex flex-col max-w-[70%] ${m.sender === "ADMIN" ? "items-end" : "items-start"}`}>
+                    
+                    {/* Картинки в админке: 50% ширины, без фона */}
+                    {m.images && m.images.length > 0 && (
+                      <div className="flex flex-col gap-2 mb-1 w-[50%] min-w-[200px] max-w-[400px]">
+                        {m.images.map((img, i) => (
+                          <img key={i} src={img} onClick={() => setActiveImage(img)} className="w-full h-auto object-contain rounded-xl cursor-pointer border border-slate-200 hover:opacity-90 transition-opacity" />
+                        ))}
+                      </div>
+                    )}
+                    
+                    {/* Текст в пузыре */}
+                    {m.text && (
+                      <div className={`rounded-2xl px-4 py-2 text-sm ${m.sender === "ADMIN" ? "bg-brand-600 text-white rounded-br-sm" : "bg-white border border-slate-200 text-slate-800 rounded-bl-sm shadow-sm"}`}>
+                        <p className="whitespace-pre-wrap">{m.text}</p>
+                        <div className={`text-[9px] mt-1 text-right ${m.sender === "ADMIN" ? "text-brand-200" : "text-slate-400"}`}>
+                          {new Date(m.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Время под картинкой, если нет текста */}
+                    {!m.text && m.images && m.images.length > 0 && (
+                      <div className="text-[9px] mt-1 text-slate-400">
+                        {new Date(m.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
                         </div>
                       )}
                       <p className="whitespace-pre-wrap">{m.text}</p>
