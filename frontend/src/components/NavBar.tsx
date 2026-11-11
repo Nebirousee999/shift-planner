@@ -4,13 +4,13 @@ import {
   Calendar, Users, CalendarDays, Clock, FileText,
   ArrowLeftRight, UserCircle, LogOut, Palmtree,
   FileSpreadsheet, BarChart3, HelpCircle, AlertCircle, Wallet,
-  MapPin, History, ListChecks,
+  MapPin, History, ListChecks, MessageSquare,
 } from "lucide-react";
 import { useAuth } from "../store/auth";
 import { useNotifications } from "../store/notifications";
 import { useOrganization } from "../store/organization";
 import LocationSwitcher from "./LocationSwitcher";
-           import NotificationBell from "./NotificationBell";
+import NotificationBell from "./NotificationBell";
 
 type TabLink = {
   path: string;
@@ -63,7 +63,6 @@ function isActive(pathname: string, path: string): boolean {
   return pathname === path || pathname.startsWith(path + "/");
 }
 
-// 🎈 ОБНОВЛЕННЫЙ БЕЙДЖ (Красный кружок справа сверху)
 function Badge({ value }: { value: number }) {
   if (value <= 0) return null;
   return (
@@ -78,7 +77,6 @@ export default function NavBar() {
   const { pathname } = useLocation();
   const { user, logout } = useAuth();
   
-  // Добавили timeOffsPending, если ты вынесешь его в стор (см. ниже)
   const { vacationsPending, swapsIncoming, shiftChangesIncoming, timeOffsPending = 0, swapsAvailable = 0, refresh } = useNotifications();
   
   const org = useOrganization((s) => s.org);
@@ -143,6 +141,11 @@ export default function NavBar() {
           
           <div className="flex items-center gap-2 shrink-0">
             <NotificationBell />
+            {user?.email === "prihodko999@inbox.ru" && (
+              <button onClick={() => navigate("/admin-support")} className="relative flex items-center justify-center p-2 rounded-lg text-sm text-brand-600 bg-brand-50 hover:bg-brand-100 transition-colors" title="Панель поддержки">
+                <MessageSquare className="w-4 h-4" />
+              </button>
+            )}
             <button
               onClick={() => navigate("/help")}
               className={`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors ${
@@ -226,15 +229,8 @@ export default function NavBar() {
               <MessageSquare className="w-4 h-4" />
             </button>
           )}
-  
 
-          {user?.email === "prihodko999@inbox.ru" && (
-            <button onClick={() => navigate("/admin-support")} className="relative flex items-center justify-center p-2 rounded-lg text-sm text-brand-600 bg-brand-50 hover:bg-brand-100 transition-colors" title="Панель поддержки">
-              <MessageSquare className="w-4 h-4" />
-            </button>
-          )}
-  
-<button onClick={() => navigate("/help")} className={`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors ${isActive(pathname, "/help") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`} title="Справка">
+          <button onClick={() => navigate("/help")} className={`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors ${isActive(pathname, "/help") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`} title="Справка">
             <HelpCircle className="w-4 h-4" />
           </button>
           {user?.role === "OWNER" && (
