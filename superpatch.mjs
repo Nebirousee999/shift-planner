@@ -24,32 +24,289 @@ function patchFile(relPath, search, replace, label) {
   }
 }
 
-// ═══ 1. Бэкенд: Помечаем ВСЕ сообщения по email как прочитанные ═══
+function writeFile(relPath, content, label) {
+  const filePath = path.join(ROOT, relPath);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content, "utf-8");
+  touched++;
+  console.log("✅ [" + label + "] Перезаписан");
+}
+
+// ═══ 1. Бэкенд: Починка исчезновения истории ═══
 patchFile(
   "src/modules/support/support.routes.ts",
-  `import { eq, desc, and, isNull } from "drizzle-orm";`,
-  `import { eq, desc, and, isNull, inArray } from "drizzle-orm";`,
-  "support.routes.ts (импорт inArray)"
+  `  app.get("/messages", async (req) => {\n    const { sessionToken } = req.query as { sessionToken?: string };\n    const userId = (req as any).user?.sub || null;\n    let ticket;\n    \n    if (userId) {\n      // 🔥 Если зареген, ищем ТОЛЬКО по userId. Никаких fallback на куки.\n      const found = await db.select().from(supportTickets).where(eq(supportTickets.userId, userId)).orderBy(desc(supportTickets.createdAt)).limit(1);\n      if (found.length > 0) ticket = found[0];\n    } else if (sessionToken) {\n      // 🔥 Если гость, ищем по кукам\n      const found = await db.select().from(supportTickets).where(eq(supportTickets.sessionToken, sessionToken));\n      if (found.length > 0) ticket = found[0];\n    }\n    \n    if (!ticket) return [];\n    return db.select().from(supportMessages).where(eq(supportMessages.ticketId, ticket.id)).orderBy(supportMessages.createdAt);\n  });`,
+  `  app.get("/messages", async (req) => {\n    const { sessionToken } = req.query as { sessionToken?: string };\n    const userId = (req as any).user?.sub || null;\n    let ticket;\n    \n    if (userId) {\n      const found = await db.select().from(supportTickets).where(eq(supportTickets.userId, userId)).orderBy(desc(supportTickets.createdAt)).limit(1);\n      if (found.length > 0) ticket = found[0];\n    }\n    \n    // 🔥 Если не нашли по userId (или это гость), пробуем найти по кукам\n    if (!ticket && sessionToken) {\n      const found = await db.select().from(supportTickets).where(eq(supportTickets.sessionToken, sessionToken));\n      if (found.length > 0) ticket = found[0];\n    }\n    \n    if (!ticket) return [];\n    return db.select().from(supportMessages).where(eq(supportMessages.ticketId, ticket.id)).orderBy(supportMessages.createdAt);\n  });`,
+  "support.routes.ts (фикс исчезновения чата)"
 );
 
-patchFile(
-  "src/modules/support/support.routes.ts",
-  `    const { id } = req.params as { id: string };\n    \n    await db.update(supportMessages).set({ isReadByAdmin: true }).where(and(eq(supportMessages.ticketId, id), eq(supportMessages.sender, "USER")));\n    \n    return db.select().from(supportMessages).where(eq(supportMessages.ticketId, id)).orderBy(supportMessages.createdAt);`,
-  `    const { id } = req.params as { id: string };\n    \n    // 🔥 Находим тикет, чтобы узнать его email\n    const [ticket] = await db.select().from(supportTickets).where(eq(supportTickets.id, id));\n    \n    if (ticket) {\n      // 🔥 Находим ВСЕ тикеты с такой же почтой (включая старые)\n      const allTickets = await db.select({ id: supportTickets.id }).from(supportTickets).where(eq(supportTickets.email, ticket.email));\n      const ticketIds = allTickets.map(t => t.id);\n      \n      if (ticketIds.length > 0) {\n        // 🔥 Помечаем ВСЕ их сообщения как прочитанные\n        await db.update(supportMessages).set({ isReadByAdmin: true }).where(\n          and(inArray(supportMessages.ticketId, ticketIds), eq(supportMessages.sender, "USER"))\n        );\n      }\n    }\n    \n    return db.select().from(supportMessages).where(eq(supportMessages.ticketId, id)).orderBy(supportMessages.createdAt);`,
-  "support.routes.ts (пометка всех сообщений по email)"
-);
-
-// ═══ 2. Фронтенд: Защита от "прыжков" при обновлении списка ═══
-patchFile(
+// ═══ 2. Админ-панель: Фикс прыжков и Картинки ═══
+writeFile(
   "frontend/src/pages/AdminSupportPage.tsx",
-  `  const loadTickets = () => {\n    supportApi.adminGetTickets()\n      .then(data => {\n        setTickets(data);\n        if (!selectedId && data.length > 0) setSelectedId(data[0].id);\n      })\n      .catch(() => {})\n      .finally(() => setLoading(false));\n  };`,
-  `  const loadTickets = () => {\n    supportApi.adminGetTickets()\n      .then(data => {\n        // 🔥 Защита от "прыжков": если данные не изменились, не трогаем стейт\n        setTickets(prev => {\n          if (JSON.stringify(prev) === JSON.stringify(data)) return prev;\n          return data;\n        });\n        if (!selectedId && data.length > 0) setSelectedId(data[0].id);\n      })\n      .catch(() => {})\n      .finally(() => setLoading(false));\n  };`,
-  "AdminSupportPage.tsx (защита от прыжков)"
+  `import { useState, useEffect, useRef } from "react";
+import { useAuth } from "../store/auth";
+import { supportApi, type AdminTicket, type SupportMessage } from "../api/support";
+import { Send, Loader2, Inbox, User, ImagePlus, X } from "lucide-react";
+import NavBar from "../components/NavBar";
+
+const TARIFF_LABELS: Record<string, string> = {
+  free: "Free",
+  pro: "Pro",
+  business: "Business"
+};
+
+export default function AdminSupportPage() {
+  const { user } = useAuth();
+  const [tickets, setTickets] = useState<AdminTicket[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<SupportMessage[]>([]);
+  const [replyText, setReplyText] = useState("");
+  const [replyImages, setReplyImages] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const loadTickets = () => {
+    supportApi.adminGetTickets()
+      .then(data => {
+        setTickets(prev => {
+          if (prev.length === 0) return data;
+          const newTickets = prev.map(oldT => {
+            const updated = data.find(d => d.id === oldT.id);
+            return updated ? { ...oldT, ...updated } : oldT;
+          });
+          const newOnes = data.filter(d => !prev.find(p => p.id === d.id));
+          return [...newOnes, ...newTickets];
+        });
+        
+        // 🔥 ФУНКЦИОНАЛЬНОЕ ОБНОВЛЕНИЕ (лечит прыжки на первый чат)
+        setSelectedId(prev => {
+          if (!prev && data.length > 0) return data[0].id;
+          return prev;
+        });
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  const loadMessages = () => {
+    if (!selectedId) return;
+    supportApi.adminGetMessages(selectedId).then((msgs) => {
+      setMessages(msgs);
+      window.dispatchEvent(new Event("support-unread-update"));
+    }).catch(() => {});
+  };
+
+  useEffect(() => {
+    loadTickets();
+    const interval = setInterval(loadTickets, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    setTickets(prev => prev.map(t => t.id === selectedId ? { ...t, unreadCount: 0 } : t));
+    loadMessages();
+    const interval = setInterval(loadMessages, 3000);
+    return () => clearInterval(interval);
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages]);
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf("image") !== -1) {
+        const blob = items[i].getAsFile();
+        if (blob) {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            setReplyImages((prev) => [...prev, event.target?.result as string]);
+          };
+          reader.readAsDataURL(blob);
+        }
+      }
+    }
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    files.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setReplyImages((prev) => [...prev, event.target?.result as string]);
+      };
+      reader.readAsDataURL(file);
+    });
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleReply = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedId || (!replyText.trim() && replyImages.length === 0)) return;
+    setSending(true);
+    try {
+      await supportApi.adminReply(selectedId, replyText, replyImages);
+      setReplyText("");
+      setReplyImages([]);
+      await loadMessages();
+      await loadTickets();
+    } catch {
+      alert("Ошибка отправки");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin" /></div>;
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex flex-col">
+      <NavBar />
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex gap-4 h-[calc(100vh-80px)]">
+        
+        <div className="w-80 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden shrink-0">
+          <div className="p-4 border-b border-slate-100 bg-slate-50 font-semibold text-slate-900">
+            Все обращения ({tickets.length})
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {tickets.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setSelectedId(t.id)}
+                className={\`w-full text-left p-4 border-b border-slate-100 hover:bg-slate-50 transition-colors \${selectedId === t.id ? "bg-brand-50" : ""}\`}
+              >
+                <div className="flex justify-between items-start mb-1">
+                  <div className="font-semibold text-sm text-slate-900 truncate pr-2">{t.email}</div>
+                  {t.unreadCount > 0 && (
+                    <span className="inline-flex items-center justify-center min-w-[20px] h-[20px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold shrink-0" title="Новых сообщений">
+                      {t.unreadCount}
+                    </span>
+                  )}
+                </div>
+                
+                <div className="flex items-center gap-1.5 mb-2">
+                  {t.isRegistered ? (
+                    <span className={\`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold \${
+                      t.tariffId === "business" ? "bg-violet-100 text-violet-700" :
+                      t.tariffId === "pro" ? "bg-brand-100 text-brand-700" :
+                      "bg-slate-100 text-slate-600"
+                    }\`}>
+                      Зареген · {TARIFF_LABELS[t.tariffId || "free"] || "Free"}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700">
+                      Гость
+                    </span>
+                  )}
+                </div>
+
+                <div className="text-xs text-slate-500 truncate">{t.lastMessage}</div>
+                <div className="text-[10px] text-slate-400 mt-2">{new Date(t.createdAt).toLocaleString("ru-RU")}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
+          {selectedId ? (
+            <>
+              <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
+                <User className="w-4 h-4 text-slate-500" />
+                <span className="font-semibold text-slate-900">{tickets.find(t => t.id === selectedId)?.email}</span>
+                {tickets.find(t => t.id === selectedId)?.isRegistered && (
+                  <span className="text-xs text-slate-500">(Зарегистрирован)</span>
+                )}
+              </div>
+              
+              <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
+                {messages.map(m => (
+                  <div key={m.id} className={\`flex \${m.sender === "ADMIN" ? "justify-end" : "justify-start"}\`}>
+                    <div className={\`max-w-[70%] rounded-2xl px-4 py-2 text-sm \${m.sender === "ADMIN" ? "bg-brand-600 text-white rounded-br-sm" : "bg-white border border-slate-200 text-slate-800 rounded-bl-sm shadow-sm"}\`}>
+                      {m.images && m.images.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mb-2">
+                          {m.images.map((img, i) => (
+                            <img key={i} src={img} className="h-24 w-24 object-cover rounded-lg cursor-pointer" />
+                          ))}
+                        </div>
+                      )}
+                      <p className="whitespace-pre-wrap">{m.text}</p>
+                      <div className={\`text-[9px] mt-1 text-right \${m.sender === "ADMIN" ? "text-brand-200" : "text-slate-400"}\`}>
+                        {new Date(m.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <form onSubmit={handleReply} className="p-3 bg-white border-t border-slate-200">
+                {replyImages.length > 0 && (
+                  <div className="flex gap-2 overflow-x-auto pt-2 pb-2 px-1">
+                    {replyImages.map((img, i) => (
+                      <div key={i} className="relative shrink-0 group">
+                        <img src={img} className="h-12 w-12 object-cover rounded-lg border border-slate-200" />
+                        <button
+                          onClick={() => setReplyImages((prev) => prev.filter((_, idx) => idx !== i))}
+                          className="absolute -top-2.5 -right-2.5 bg-red-500 text-white rounded-full p-1 shadow-sm hover:bg-red-600 transition-colors z-10"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex items-end gap-2">
+                  <input type="file" accept="image/*" multiple ref={fileInputRef} onChange={handleImageUpload} className="hidden" />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="p-2 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
+                    title="Прикрепить фото"
+                  >
+                    <ImagePlus className="w-5 h-5" />
+                  </button>
+                  
+                  <textarea
+                    value={replyText}
+                    onChange={(e) => setReplyText(e.target.value)}
+                    onPaste={handlePaste}
+                    placeholder="Написать ответ клиенту... (можно вставить фото)"
+                    className="flex-1 !text-sm !py-2 !bg-slate-50 resize-none min-h-[40px] max-h-32"
+                    rows={1}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleReply(e);
+                      }
+                    }}
+                  />
+                  <button type="submit" disabled={sending || (!replyText.trim() && replyImages.length === 0)} className="p-2.5 bg-brand-600 text-white rounded-xl hover:bg-brand-700 disabled:opacity-50 shrink-0">
+                    {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                  </button>
+                </div>
+              </form>
+            </>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
+              <Inbox className="w-12 h-12 mb-2 opacity-50" />
+              <p>Выберите чат для общения</p>
+            </div>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}
+`,
+  "AdminSupportPage.tsx (фикс багов и картинки)"
 );
 
 console.log("\\n──────────────────────────────────────");
 if (touched > 0) {
-  console.log("🎉 Готово! Кружочки сбрасываются полностью по email, список больше не прыгает.");
+  console.log("🎉 Готово! Прыжки исправлены, исчезновение починено, картинки добавлены.");
 } else {
   console.log("⚠️ Изменений не внесено.");
 }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../store/auth";
 import { supportApi, type AdminTicket, type SupportMessage } from "../api/support";
-import { Send, Loader2, Inbox, User } from "lucide-react";
+import { Send, Loader2, Inbox, User, ImagePlus, X } from "lucide-react";
 import NavBar from "../components/NavBar";
 
 const TARIFF_LABELS: Record<string, string> = {
@@ -16,19 +16,30 @@ export default function AdminSupportPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<SupportMessage[]>([]);
   const [replyText, setReplyText] = useState("");
+  const [replyImages, setReplyImages] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadTickets = () => {
     supportApi.adminGetTickets()
       .then(data => {
-        // 🔥 Защита от "прыжков": если данные не изменились, не трогаем стейт
         setTickets(prev => {
-          if (JSON.stringify(prev) === JSON.stringify(data)) return prev;
-          return data;
+          if (prev.length === 0) return data;
+          const newTickets = prev.map(oldT => {
+            const updated = data.find(d => d.id === oldT.id);
+            return updated ? { ...oldT, ...updated } : oldT;
+          });
+          const newOnes = data.filter(d => !prev.find(p => p.id === d.id));
+          return [...newOnes, ...newTickets];
         });
-        if (!selectedId && data.length > 0) setSelectedId(data[0].id);
+        
+        // 🔥 ФУНКЦИОНАЛЬНОЕ ОБНОВЛЕНИЕ (лечит прыжки на первый чат)
+        setSelectedId(prev => {
+          if (!prev && data.length > 0) return data[0].id;
+          return prev;
+        });
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -38,7 +49,6 @@ export default function AdminSupportPage() {
     if (!selectedId) return;
     supportApi.adminGetMessages(selectedId).then((msgs) => {
       setMessages(msgs);
-      // 🔥 Сообщаем шапке, что счетчики обновились
       window.dispatchEvent(new Event("support-unread-update"));
     }).catch(() => {});
   };
@@ -51,7 +61,6 @@ export default function AdminSupportPage() {
 
   useEffect(() => {
     if (!selectedId) return;
-    // 🔥 Мгновенно убираем красный бейдж у выбранного чата в списке
     setTickets(prev => prev.map(t => t.id === selectedId ? { ...t, unreadCount: 0 } : t));
     loadMessages();
     const interval = setInterval(loadMessages, 3000);
@@ -62,13 +71,42 @@ export default function AdminSupportPage() {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages]);
 
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf("image") !== -1) {
+        const blob = items[i].getAsFile();
+        if (blob) {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            setReplyImages((prev) => [...prev, event.target?.result as string]);
+          };
+          reader.readAsDataURL(blob);
+        }
+      }
+    }
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    files.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setReplyImages((prev) => [...prev, event.target?.result as string]);
+      };
+      reader.readAsDataURL(file);
+    });
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   const handleReply = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedId || !replyText.trim()) return;
+    if (!selectedId || (!replyText.trim() && replyImages.length === 0)) return;
     setSending(true);
     try {
-      await supportApi.adminReply(selectedId, replyText);
+      await supportApi.adminReply(selectedId, replyText, replyImages);
       setReplyText("");
+      setReplyImages([]);
       await loadMessages();
       await loadTickets();
     } catch {
@@ -85,7 +123,6 @@ export default function AdminSupportPage() {
       <NavBar />
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex gap-4 h-[calc(100vh-80px)]">
         
-        {/* Список чатов */}
         <div className="w-80 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden shrink-0">
           <div className="p-4 border-b border-slate-100 bg-slate-50 font-semibold text-slate-900">
             Все обращения ({tickets.length})
@@ -129,7 +166,6 @@ export default function AdminSupportPage() {
           </div>
         </div>
 
-        {/* Окно чата */}
         <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
           {selectedId ? (
             <>
@@ -145,6 +181,13 @@ export default function AdminSupportPage() {
                 {messages.map(m => (
                   <div key={m.id} className={`flex ${m.sender === "ADMIN" ? "justify-end" : "justify-start"}`}>
                     <div className={`max-w-[70%] rounded-2xl px-4 py-2 text-sm ${m.sender === "ADMIN" ? "bg-brand-600 text-white rounded-br-sm" : "bg-white border border-slate-200 text-slate-800 rounded-bl-sm shadow-sm"}`}>
+                      {m.images && m.images.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mb-2">
+                          {m.images.map((img, i) => (
+                            <img key={i} src={img} className="h-24 w-24 object-cover rounded-lg cursor-pointer" />
+                          ))}
+                        </div>
+                      )}
                       <p className="whitespace-pre-wrap">{m.text}</p>
                       <div className={`text-[9px] mt-1 text-right ${m.sender === "ADMIN" ? "text-brand-200" : "text-slate-400"}`}>
                         {new Date(m.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
@@ -154,23 +197,51 @@ export default function AdminSupportPage() {
                 ))}
               </div>
 
-              <form onSubmit={handleReply} className="p-3 bg-white border-t border-slate-200 flex items-end gap-2">
-                <textarea
-                  value={replyText}
-                  onChange={(e) => setReplyText(e.target.value)}
-                  placeholder="Написать ответ клиенту..."
-                  className="flex-1 !text-sm !py-2 !bg-slate-50 resize-none min-h-[40px] max-h-32"
-                  rows={1}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleReply(e);
-                    }
-                  }}
-                />
-                <button type="submit" disabled={sending || !replyText.trim()} className="p-2.5 bg-brand-600 text-white rounded-xl hover:bg-brand-700 disabled:opacity-50">
-                  {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-                </button>
+              <form onSubmit={handleReply} className="p-3 bg-white border-t border-slate-200">
+                {replyImages.length > 0 && (
+                  <div className="flex gap-2 overflow-x-auto pt-2 pb-2 px-1">
+                    {replyImages.map((img, i) => (
+                      <div key={i} className="relative shrink-0 group">
+                        <img src={img} className="h-12 w-12 object-cover rounded-lg border border-slate-200" />
+                        <button
+                          onClick={() => setReplyImages((prev) => prev.filter((_, idx) => idx !== i))}
+                          className="absolute -top-2.5 -right-2.5 bg-red-500 text-white rounded-full p-1 shadow-sm hover:bg-red-600 transition-colors z-10"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex items-end gap-2">
+                  <input type="file" accept="image/*" multiple ref={fileInputRef} onChange={handleImageUpload} className="hidden" />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="p-2 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
+                    title="Прикрепить фото"
+                  >
+                    <ImagePlus className="w-5 h-5" />
+                  </button>
+                  
+                  <textarea
+                    value={replyText}
+                    onChange={(e) => setReplyText(e.target.value)}
+                    onPaste={handlePaste}
+                    placeholder="Написать ответ клиенту... (можно вставить фото)"
+                    className="flex-1 !text-sm !py-2 !bg-slate-50 resize-none min-h-[40px] max-h-32"
+                    rows={1}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleReply(e);
+                      }
+                    }}
+                  />
+                  <button type="submit" disabled={sending || (!replyText.trim() && replyImages.length === 0)} className="p-2.5 bg-brand-600 text-white rounded-xl hover:bg-brand-700 disabled:opacity-50 shrink-0">
+                    {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                  </button>
+                </div>
               </form>
             </>
           ) : (

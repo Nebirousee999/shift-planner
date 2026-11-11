@@ -78,11 +78,12 @@ export async function supportRoutes(app: FastifyInstance) {
     let ticket;
     
     if (userId) {
-      // 🔥 Если зареген, ищем ТОЛЬКО по userId. Никаких fallback на куки.
       const found = await db.select().from(supportTickets).where(eq(supportTickets.userId, userId)).orderBy(desc(supportTickets.createdAt)).limit(1);
       if (found.length > 0) ticket = found[0];
-    } else if (sessionToken) {
-      // 🔥 Если гость, ищем по кукам
+    }
+    
+    // 🔥 Если не нашли по userId (или это гость), пробуем найти по кукам
+    if (!ticket && sessionToken) {
       const found = await db.select().from(supportTickets).where(eq(supportTickets.sessionToken, sessionToken));
       if (found.length > 0) ticket = found[0];
     }
