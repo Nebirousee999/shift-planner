@@ -9,7 +9,9 @@ services:
     ports:
       - "3001:3001"
     env_file:
-      - .env      # Берет DATABASE_URL, JWT_SECRET и т.д. из корневого .env
+      - .env
+    environment:
+      - NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt      # Берет DATABASE_URL, JWT_SECRET и т.д. из корневого .env
     volumes:
       - ./pgdata:/app/pgdata # Сохраняем локальную базу при перезапуске
     restart: unless-stopped
