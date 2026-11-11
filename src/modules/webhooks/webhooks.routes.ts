@@ -95,6 +95,7 @@ export async function webhooksRoutes(app: FastifyInstance) {
       // ─── ОБРАБОТКА ОТВЕТА АДМИНА ПОДДЕРЖКИ ───
       const SUPPORT_BOT_TOKEN = process.env.SUPPORT_BOT_TOKEN;
       const SUPPORT_ADMIN_ID = process.env.SUPPORT_ADMIN_ID || "141744495";
+      const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
       const text = message?.body?.text || "";
 
       if (senderId === SUPPORT_ADMIN_ID && text.startsWith("#") && SUPPORT_BOT_TOKEN) {

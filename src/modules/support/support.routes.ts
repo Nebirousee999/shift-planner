@@ -5,7 +5,7 @@ import { db } from "../../../db/client.js";
 import { supportTickets, supportMessages, users, organizations } from "../../../db/schema.js";
 import crypto from "node:crypto";
 
-const ADMIN_EMAIL = "prihodko999@inbox.ru";
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 
 export async function supportRoutes(app: FastifyInstance) {
   app.addHook("preHandler", async (req, reply) => {

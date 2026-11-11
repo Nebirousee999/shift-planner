@@ -25,60 +25,51 @@ function patchFile(relPath, search, replace, label) {
   console.log(`✅ [${label}] применено`);
 }
 
-// ═══ 1. Ограничиваем высоту всей страницы админки ═══
+// ═══ 1. БЭКЕНД: Выносим email админа в переменные окружения ═══
 patchFile(
-  "frontend/src/pages/AdminSupportPage.tsx",
-  `<div className="min-h-screen bg-slate-50 flex flex-col">`,
-  `<div className="h-screen bg-slate-50 flex flex-col overflow-hidden">`,
-  "AdminSupportPage: высота страницы"
-);
-
-// ═══ 2. Убираем жесткий calc() и ставим min-h-0 для правильного flex-скролла ═══
-patchFile(
-  "frontend/src/pages/AdminSupportPage.tsx",
-  `<main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex gap-4 h-[calc(100vh-80px)]">`,
-  `<main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex gap-4 min-h-0">`,
-  "AdminSupportPage: контейнер main"
-);
-
-// ═══ 3. Левая колонка (список чатов): фиксируем шапку и включаем скролл для списка ═══
-patchFile(
-  "frontend/src/pages/AdminSupportPage.tsx",
-  `<div className="w-80 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden shrink-0">
-          <div className="p-4 border-b border-slate-100 bg-slate-50 font-semibold text-slate-900">
-            Все обращения ({tickets.length})
-          </div>
-          <div className="flex-1 overflow-y-auto">`,
-  `<div className="w-80 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden shrink-0 h-full">
-          <div className="p-4 border-b border-slate-100 bg-slate-50 font-semibold text-slate-900 shrink-0">
-            Все обращения ({tickets.length})
-          </div>
-          <div className="flex-1 overflow-y-auto min-h-0">`,
-  "AdminSupportPage: скролл левого списка"
-);
-
-// ═══ 4. Правая колонка (чат): добавляем h-full и min-h-0 ═══
-patchFile(
-  "frontend/src/pages/AdminSupportPage.tsx",
-  `<div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">`,
-  `<div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden h-full min-w-0">`,
-  "AdminSupportPage: контейнер правого чата"
-);
-
-// ═══ 5. Скролл сообщений: фиксируем форму ввода и даем скроллиться сообщениям ═══
-patchFile(
-  "frontend/src/pages/AdminSupportPage.tsx",
-  `<div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">`,
-  `<div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 p-4 space-y-4 bg-slate-50">`,
-  "AdminSupportPage: скролл сообщений"
+  "src/modules/support/support.routes.ts",
+  `const ADMIN_EMAIL = "prihodko999@inbox.ru";`,
+  `const ADMIN_EMAIL = process.env.ADMIN_EMAIL;`,
+  "support.routes.ts: ADMIN_EMAIL из env"
 );
 
 patchFile(
-  "frontend/src/pages/AdminSupportPage.tsx",
-  `<form onSubmit={handleReply} className="p-3 bg-white border-t border-slate-200">`,
-  `<form onSubmit={handleReply} className="p-3 bg-white border-t border-slate-200 shrink-0">`,
-  "AdminSupportPage: фикс формы ввода"
+  "src/modules/webhooks/webhooks.routes.ts",
+  `const SUPPORT_ADMIN_ID = process.env.SUPPORT_ADMIN_ID || "141744495";`,
+  `const SUPPORT_ADMIN_ID = process.env.SUPPORT_ADMIN_ID || "141744495";\n      const ADMIN_EMAIL = process.env.ADMIN_EMAIL;`,
+  "webhooks.routes.ts: проверка поддержки (подготовка)"
+);
+
+// ═══ 2. ФРОНТЕНД: Выносим email админа в переменные сборки (Vite) ═══
+patchFile(
+  "frontend/src/components/NavBar.tsx",
+  `if (user?.email !== "prihodko999@inbox.ru") return;`,
+  `if (user?.email !== import.meta.env.VITE_ADMIN_EMAIL) return;`,
+  "NavBar.tsx: проверка unread (env)"
+);
+
+patchFile(
+  "frontend/src/components/NavBar.tsx",
+  `{user?.email === "prihodko999@inbox.ru" && (`,
+  `{user?.email === import.meta.env.VITE_ADMIN_EMAIL && (`,
+  "NavBar.tsx: показ кнопки админа (env)"
+);
+
+// ═══ 3. ФРОНТЕНД: Пробрасываем переменную через Dockerfile ═══
+patchFile(
+  "frontend/Dockerfile",
+  `ARG VITE_API_URL\nENV VITE_API_URL=$VITE_API_URL`,
+  `ARG VITE_API_URL\nENV VITE_API_URL=$VITE_API_URL\n\nARG VITE_ADMIN_EMAIL\nENV VITE_ADMIN_EMAIL=$VITE_ADMIN_EMAIL`,
+  "frontend/Dockerfile: аргумент сборки"
+);
+
+// ═══ 4. DOCKER COMPOSE: Передаем переменную при сборке фронтенда ═══
+patchFile(
+  "docker-compose.yml",
+  `      args:\n        # Передаем адрес API для сборки React\n        - VITE_API_URL=/api`,
+  `      args:\n        # Передаем адрес API для сборки React\n        - VITE_API_URL=/api\n        - VITE_ADMIN_EMAIL=\${ADMIN_EMAIL}`,
+  "docker-compose.yml: передача VITE_ADMIN_EMAIL"
 );
 
 console.log("\n──────────────────────────────────────");
-console.log(touched > 0 ? "🎉 Готово! Верстка чата исправлена." : "⚠️ Изменений не внесено.");
+console.log(touched > 0 ? "🎉 Готово! Email админа вынесен в env." : "⚠️ Изменений не внесено.");

@@ -24,6 +24,7 @@ services:
       args:
         # Передаем адрес API для сборки React
         - VITE_API_URL=/api
+        - VITE_ADMIN_EMAIL=${ADMIN_EMAIL}
     ports:
       - "8080:80"
     depends_on:

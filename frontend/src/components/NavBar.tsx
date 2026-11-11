@@ -85,7 +85,7 @@ export default function NavBar() {
   const [supportUnread, setSupportUnread] = useState(0);
 
   useEffect(() => {
-    if (user?.email !== "prihodko999@inbox.ru") return;
+    if (user?.email !== import.meta.env.VITE_ADMIN_EMAIL) return;
     
     const updateCount = () => {
       supportApi.adminGetUnreadCount().then(setSupportUnread).catch(() => {});
@@ -163,7 +163,7 @@ export default function NavBar() {
           
           <div className="flex items-center gap-2 shrink-0">
             <NotificationBell />
-            {user?.email === "prihodko999@inbox.ru" && (
+            {user?.email === import.meta.env.VITE_ADMIN_EMAIL && (
               <button onClick={() => navigate("/admin-support")} className="relative flex items-center justify-center p-2 rounded-lg text-sm text-brand-600 bg-brand-50 hover:bg-brand-100 transition-colors" title="Панель поддержки">
                 <MessageSquare className="w-4 h-4" />
                 <Badge value={supportUnread} />
