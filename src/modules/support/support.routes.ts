@@ -67,7 +67,7 @@ export async function supportRoutes(app: FastifyInstance) {
 
     await db.insert(supportMessages).values({ ticketId: ticket.id, sender: "USER", text: parsed.data.message, images: parsed.data.images, isReadByAdmin: false });
     
-    return { success: true, ticketId: ticket.id.slice(0, 6).toUpperCase(), sessionToken: ticket.sessionToken };
+    return { success: true, ticketId: ticket.id.slice(0, 6).toUpperCase(), sessionToken: sessionToken };
   });
 
   app.get("/messages", async (req) => {

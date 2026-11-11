@@ -99,6 +99,11 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
       if (res.sessionToken && res.sessionToken !== sessionToken) {
         setSessionToken(res.sessionToken);
         localStorage.setItem("support_session_token", res.sessionToken);
+        // 🔑 Страховка: сразу тянем сообщения новым токеном, не дожидаясь effect
+        try {
+          const msgs = await supportApi.getMessages(res.sessionToken);
+          setMessages(msgs);
+        } catch {}
       } else {
         await loadMessages();
       }
