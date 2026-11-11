@@ -5,179 +5,89 @@ import path from "node:path";
 const ROOT = process.cwd();
 let touched = 0;
 
+function patchFile(relPath, search, replace, label) {
+  const filePath = path.join(ROOT, relPath);
+  if (!fs.existsSync(filePath)) return;
+  let content = fs.readFileSync(filePath, "utf-8");
+  const hadCRLF = content.includes("\r\n");
+  let normalized = hadCRLF ? content.replace(/\r\n/g, "\n") : content;
+
+  if (normalized.includes(replace)) return;
+
+  if (normalized.includes(search)) {
+    normalized = normalized.replace(search, replace);
+    fs.writeFileSync(filePath, hadCRLF ? normalized.replace(/\n/g, "\r\n") : normalized, "utf-8");
+    touched++;
+    console.log("✅ [" + label + "] Применено");
+  } else {
+    console.log("⚠️ [" + label + "] Не найдено.");
+  }
+}
+
 function writeFile(relPath, content, label) {
   const filePath = path.join(ROOT, relPath);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content, "utf-8");
   touched++;
-  console.log("✅ [" + label + "] Перезаписан");
+  console.log("✅ [" + label + "] Создан/Перезаписан");
 }
 
-// ═══ Бэкенд: защита от дубликатов sessionToken ═══
-writeFile(
-  "src/modules/support/support.routes.ts",
-  `import type { FastifyInstance } from "fastify";
-import { z } from "zod";
-import { eq, desc } from "drizzle-orm";
-import { db } from "../../../db/client.js";
-import { supportTickets, supportMessages } from "../../../db/schema.js";
-import axios from "axios";
-import crypto from "node:crypto";
-
-export async function supportRoutes(app: FastifyInstance) {
-  app.addHook("preHandler", async (req, reply) => {
-    try {
-      await req.jwtVerify();
-    } catch (e) {
-      // Guest
-    }
-  });
-
-  app.post("/", async (req, reply) => {
-    const parsed = z.object({
-      email: z.string().email(),
-      message: z.string().min(1),
-      images: z.array(z.string()).optional().default([]),
-      sessionToken: z.string().optional(),
-    }).safeParse(req.body);
-
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
-
-    const userId = (req as any).user?.sub || null;
-    let sessionToken = parsed.data.sessionToken || crypto.randomUUID();
-
-    let ticket;
-
-    if (userId) {
-      const found = await db
-        .select()
-        .from(supportTickets)
-        .where(eq(supportTickets.userId, userId))
-        .orderBy(desc(supportTickets.createdAt))
-        .limit(1);
-      
-      if (found.length > 0) {
-        ticket = found[0];
-        if (ticket.sessionToken !== sessionToken) {
-          const tokenBusy = await db.select().from(supportTickets).where(eq(supportTickets.sessionToken, sessionToken));
-          if (tokenBusy.length === 0) {
-            await db.update(supportTickets)
-              .set({ sessionToken })
-              .where(eq(supportTickets.id, ticket.id));
-            ticket.sessionToken = sessionToken;
-          } else {
-            sessionToken = ticket.sessionToken; // Возвращаем старый, чтобы фронт перезаписал
-          }
-        }
-      } else {
-        const tokenBusy = await db.select().from(supportTickets).where(eq(supportTickets.sessionToken, sessionToken));
-        if (tokenBusy.length > 0) {
-          sessionToken = crypto.randomUUID(); // Если токен занят, генерируем новый
-        }
-      }
-    } else {
-      const found = await db
-        .select()
-        .from(supportTickets)
-        .where(eq(supportTickets.sessionToken, sessionToken));
-      
-      if (found.length > 0) {
-        if (found[0].email === parsed.data.email) {
-          ticket = found[0];
-        } else {
-          sessionToken = crypto.randomUUID();
-        }
-      }
-    }
-
-    if (!ticket) {
-      const inserted = await db
-        .insert(supportTickets)
-        .values({
-          userId,
-          email: parsed.data.email,
-          sessionToken,
-          status: "OPEN",
-          message: parsed.data.message,
-        })
-        .returning();
-      ticket = inserted[0];
-    } else {
-      if (!ticket.message) {
-         await db.update(supportTickets).set({ message: parsed.data.message }).where(eq(supportTickets.id, ticket.id));
-      }
-    }
-
-    await db.insert(supportMessages).values({
-      ticketId: ticket.id,
-      sender: "USER",
-      text: parsed.data.message,
-      images: parsed.data.images,
-    });
-
-    const shortId = ticket.id.slice(0, 6).toUpperCase();
-
-    try {
-      const SUPPORT_BOT_TOKEN = process.env.SUPPORT_BOT_TOKEN;
-      const SUPPORT_ADMIN_ID = process.env.SUPPORT_ADMIN_ID || "141744495";
-
-      if (SUPPORT_BOT_TOKEN) {
-        await axios.post(
-          \`https://botapi.max.ru/messages?user_id=\${SUPPORT_ADMIN_ID}\`,
-          {
-            text: "📩 Чат поддержки #" + shortId + "\\n" +
-                  (userId ? "Пользователь: " + parsed.data.email : "Гость: " + parsed.data.email) + "\\n\\n" +
-                  parsed.data.message + "\\n\\n" +
-                  "Чтобы ответить, напишите:\\n#" + shortId + " ваш ответ",
-          },
-          { headers: { Authorization: SUPPORT_BOT_TOKEN } }
-        );
-      }
-    } catch (e: any) {
-      app.log.warn({ err: e?.message }, "MAX send failed");
-    }
-
-    return { success: true, ticketId: shortId, sessionToken: ticket.sessionToken };
-  });
-
-  app.get("/messages", async (req) => {
-    const { sessionToken } = req.query as { sessionToken?: string };
-    const userId = (req as any).user?.sub || null;
-
-    let ticket;
-
-    if (userId) {
-      const found = await db
-        .select()
-        .from(supportTickets)
-        .where(eq(supportTickets.userId, userId))
-        .orderBy(desc(supportTickets.createdAt))
-        .limit(1);
-      if (found.length > 0) ticket = found[0];
-    } else if (sessionToken) {
-      const found = await db
-        .select()
-        .from(supportTickets)
-        .where(eq(supportTickets.sessionToken, sessionToken));
-      if (found.length > 0) ticket = found[0];
-    }
-
-    if (!ticket) return [];
-
-    return db
-      .select()
-      .from(supportMessages)
-      .where(eq(supportMessages.ticketId, ticket.id))
-      .orderBy(supportMessages.createdAt);
-  });
-}
-`,
-  "src/modules/support/support.routes.ts"
+// ═══ 1. Исправляем вебхук (правильный поиск ID пользователя в MAX) ═══
+patchFile(
+  "src/modules/webhooks/webhooks.routes.ts",
+  `import { eq, isNotNull } from "drizzle-orm";`,
+  `import { eq, isNotNull, and } from "drizzle-orm";`,
+  "webhooks.routes.ts (импорт and)"
 );
 
-console.log("\n──────────────────────────────────────");
+patchFile(
+  "src/modules/webhooks/webhooks.routes.ts",
+  `import { payments, organizations, supportTickets, supportMessages } from "../../../db/schema.js";`,
+  `import { payments, organizations, supportTickets, supportMessages, userMessengers } from "../../../db/schema.js";`,
+  "webhooks.routes.ts (импорт userMessengers)"
+);
+
+patchFile(
+  "src/modules/webhooks/webhooks.routes.ts",
+  `          if (ticket.userId) {\n            await axios\n              .post(\n                \`https://botapi.max.ru/messages?user_id=\${ticket.userId}\`,\n                { text: "Ответ поддержки:\\n\\n" + replyText },\n                { headers: { Authorization: SUPPORT_BOT_TOKEN } }\n              )\n              .catch(() => {});\n          }`,
+  `          if (ticket.userId) {\n            const [messenger] = await db.select().from(userMessengers)\n              .where(and(eq(userMessengers.userId, ticket.userId), eq(userMessengers.provider, "max")));\n            \n            if (messenger && messenger.externalId) {\n              await axios\n                .post(\n                  \`https://botapi.max.ru/messages?user_id=\${messenger.externalId}\`,\n                  { text: "Ответ поддержки:\\n\\n" + replyText },\n                  { headers: { Authorization: SUPPORT_BOT_TOKEN } }\n                )\n                .catch(() => {});\n            }\n          }`,
+  "webhooks.routes.ts (исправление отправки ответа)"
+);
+
+// ═══ 2. Создаем скрипт для регистрации Webhook ═══
+writeFile(
+  "set-webhook.mjs",
+  `import axios from "axios";
+import "dotenv/config";
+
+const token = process.env.SUPPORT_BOT_TOKEN;
+if (!token) {
+  console.error("❌ SUPPORT_BOT_TOKEN не задан в .env");
+  process.exit(1);
+}
+
+async function setWebhook() {
+  try {
+    await axios.post("https://platform-api2.max.ru/subscriptions", {
+      url: "https://shift-planner.ru/api/webhooks/max",
+      update_types: ["message_created", "bot_started"],
+      secret: "super_secret_webhook_key_123"
+    }, {
+      headers: { Authorization: token, "Content-Type": "application/json" }
+    });
+    console.log("✅ Вебхук для бота поддержки успешно установлен!");
+  } catch (e) {
+    console.error("❌ Ошибка установки вебхука:", e.response?.data || e.message);
+  }
+}
+setWebhook();
+`,
+  "set-webhook.mjs"
+);
+
+console.log("\\n──────────────────────────────────────");
 if (touched > 0) {
-  console.log("🎉 Готово! Исправлена ошибка дублирования sessionToken.");
+  console.log("🎉 Готово! Код исправлен, создан скрипт set-webhook.mjs.");
 } else {
   console.log("⚠️ Изменений не внесено.");
 }

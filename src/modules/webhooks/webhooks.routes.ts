@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
-import { eq, isNotNull } from "drizzle-orm";
+import { eq, isNotNull, and } from "drizzle-orm";
 import axios from "axios";
 import { db } from "../../../db/client.js";
-import { payments, organizations, supportTickets, supportMessages } from "../../../db/schema.js";
+import { payments, organizations, supportTickets, supportMessages, userMessengers } from "../../../db/schema.js";
 import { yookassaService } from "../../lib/yookassa.js";
 import { mailerService } from "../../lib/mailer.service.js";
 
@@ -120,13 +120,18 @@ export async function webhooksRoutes(app: FastifyInstance) {
           
           
           if (ticket.userId) {
-            await axios
-              .post(
-                `https://botapi.max.ru/messages?user_id=${ticket.userId}`,
-                { text: "Ответ поддержки:\n\n" + replyText },
-                { headers: { Authorization: SUPPORT_BOT_TOKEN } }
-              )
-              .catch(() => {});
+            const [messenger] = await db.select().from(userMessengers)
+              .where(and(eq(userMessengers.userId, ticket.userId), eq(userMessengers.provider, "max")));
+            
+            if (messenger && messenger.externalId) {
+              await axios
+                .post(
+                  `https://botapi.max.ru/messages?user_id=${messenger.externalId}`,
+                  { text: "Ответ поддержки:\n\n" + replyText },
+                  { headers: { Authorization: SUPPORT_BOT_TOKEN } }
+                )
+                .catch(() => {});
+            }
           }
           
           await axios
