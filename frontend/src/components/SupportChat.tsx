@@ -14,22 +14,32 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
   const [fetching, setFetching] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const prevUserId = useRef<string | null>(user?.id || null);
 
   useEffect(() => {
     let token = localStorage.getItem("support_session_token");
-    if (!token) {
+    
+    // Если пользователь вышел из профиля, генерируем новый токен для гостя
+    if (prevUserId.current && !user?.id) {
+      token = crypto.randomUUID();
+      localStorage.setItem("support_session_token", token);
+    } else if (!token) {
       token = crypto.randomUUID();
       localStorage.setItem("support_session_token", token);
     }
+    
+    prevUserId.current = user?.id || null;
+    
     setSessionToken(token);
     setEmail(user?.email || "");
+    setMessages([]);
+    setFetching(true);
   }, [user?.id]);
 
   const loadMessages = async () => {
     if (!sessionToken) return;
     try {
       const msgs = await supportApi.getMessages(sessionToken);
-      // 🔥 Защита: не очищаем чат, если сервер вернул пустоту (гонка данных)
       if (msgs.length > 0 || messages.length === 0) {
         setMessages(msgs);
       }
@@ -86,8 +96,6 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
     try {
       const res = await supportApi.send({ email, message, images, sessionToken });
       
-      // Если токен изменился, НЕ вызываем loadMessages вручную. 
-      // useEffect сам подхватит новый токен и сделает запрос.
       if (res.sessionToken && res.sessionToken !== sessionToken) {
         setSessionToken(res.sessionToken);
         localStorage.setItem("support_session_token", res.sessionToken);
@@ -97,8 +105,9 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
       
       setMessage("");
       setImages([]);
-    } catch (err) {
-      alert("Ошибка отправки");
+    } catch (err: any) {
+      const msg = err.response?.data?.error ? JSON.stringify(err.response.data.error) : "Ошибка отправки";
+      alert(msg);
     } finally {
       setLoading(false);
     }
@@ -188,10 +197,9 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onPaste={handlePaste}
-            placeholder="Сообщение... (можно вставить фото из буфера)"
+            placeholder="Сообщение..."
             className="flex-1 !text-sm !py-2 !bg-slate-50 !border-slate-200 resize-none min-h-[72px] max-h-32"
             rows={3}
-            required={images.length === 0}
           />
 
           <button
