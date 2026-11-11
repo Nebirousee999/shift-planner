@@ -15,7 +15,6 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // 🔥 Сброс при входе/выходе из профиля
   useEffect(() => {
     let token = localStorage.getItem("support_session_token");
     if (!token) {
@@ -23,7 +22,6 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
       localStorage.setItem("support_session_token", token);
     }
     setSessionToken(token);
-    
     setEmail(user?.email || "");
     setMessages([]);
     setFetching(true);
@@ -95,8 +93,10 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
       await loadMessages();
       setMessage("");
       setImages([]);
-    } catch (err) {
-      alert("Ошибка отправки");
+    } catch (err: any) {
+      // 🔥 Показываем точную ошибку с бэкенда
+      const errorMsg = err.response?.data?.error || err.message || "Ошибка отправки";
+      alert(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg));
     } finally {
       setLoading(false);
     }
@@ -158,8 +158,8 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
           </div>
         )}
 
-        {/* 🔥 Скрываем почту для авторизованных */}
-        {!user && (
+        {/* 🔥 Показываем поле, если его нет, даже у авторизованных */}
+        {(!user || !email) && (
           <div className="mb-2">
             <input
               type="email"

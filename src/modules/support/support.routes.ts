@@ -23,7 +23,9 @@ export async function supportRoutes(app: FastifyInstance) {
       sessionToken: z.string().optional(),
     }).safeParse(req.body);
 
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.flatten() });
+    }
 
     const userId = (req as any).user?.sub || null;
     let sessionToken = parsed.data.sessionToken || crypto.randomUUID();
@@ -37,24 +39,17 @@ export async function supportRoutes(app: FastifyInstance) {
         .where(eq(supportTickets.userId, userId))
         .orderBy(desc(supportTickets.createdAt))
         .limit(1);
-      
+
       if (found.length > 0) {
         ticket = found[0];
         if (ticket.sessionToken !== sessionToken) {
           const tokenBusy = await db.select().from(supportTickets).where(eq(supportTickets.sessionToken, sessionToken));
           if (tokenBusy.length === 0) {
-            await db.update(supportTickets)
-              .set({ sessionToken })
-              .where(eq(supportTickets.id, ticket.id));
+            await db.update(supportTickets).set({ sessionToken }).where(eq(supportTickets.id, ticket.id));
             ticket.sessionToken = sessionToken;
           } else {
-            sessionToken = ticket.sessionToken; // Возвращаем старый, чтобы фронт перезаписал
+            sessionToken = ticket.sessionToken;
           }
-        }
-      } else {
-        const tokenBusy = await db.select().from(supportTickets).where(eq(supportTickets.sessionToken, sessionToken));
-        if (tokenBusy.length > 0) {
-          sessionToken = crypto.randomUUID(); // Если токен занят, генерируем новый
         }
       }
     } else {
@@ -62,7 +57,6 @@ export async function supportRoutes(app: FastifyInstance) {
         .select()
         .from(supportTickets)
         .where(eq(supportTickets.sessionToken, sessionToken));
-      
       if (found.length > 0) {
         if (found[0].email === parsed.data.email) {
           ticket = found[0];
@@ -73,20 +67,35 @@ export async function supportRoutes(app: FastifyInstance) {
     }
 
     if (!ticket) {
-      const inserted = await db
-        .insert(supportTickets)
-        .values({
-          userId,
-          email: parsed.data.email,
-          sessionToken,
-          status: "OPEN",
-          message: parsed.data.message,
-        })
-        .returning();
-      ticket = inserted[0];
-    } else {
-      if (!ticket.message) {
-         await db.update(supportTickets).set({ message: parsed.data.message }).where(eq(supportTickets.id, ticket.id));
+      try {
+        const inserted = await db
+          .insert(supportTickets)
+          .values({
+            userId,
+            email: parsed.data.email,
+            sessionToken,
+            status: "OPEN",
+            message: parsed.data.message,
+          })
+          .returning();
+        ticket = inserted[0];
+      } catch (err: any) {
+        if (err.code === '23505') {
+          sessionToken = crypto.randomUUID();
+          const inserted = await db
+            .insert(supportTickets)
+            .values({
+              userId,
+              email: parsed.data.email,
+              sessionToken,
+              status: "OPEN",
+              message: parsed.data.message,
+            })
+            .returning();
+          ticket = inserted[0];
+        } else {
+          throw err;
+        }
       }
     }
 
@@ -136,7 +145,9 @@ export async function supportRoutes(app: FastifyInstance) {
         .orderBy(desc(supportTickets.createdAt))
         .limit(1);
       if (found.length > 0) ticket = found[0];
-    } else if (sessionToken) {
+    }
+
+    if (!ticket && sessionToken) {
       const found = await db
         .select()
         .from(supportTickets)
