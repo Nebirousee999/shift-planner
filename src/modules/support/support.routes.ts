@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, isNull } from "drizzle-orm";
 import { db } from "../../../db/client.js";
 import { supportTickets, supportMessages, users, organizations } from "../../../db/schema.js";
 import crypto from "node:crypto";
@@ -50,6 +50,15 @@ export async function supportRoutes(app: FastifyInstance) {
       if (found.length > 0) {
         if (found[0].email === parsed.data.email) ticket = found[0];
         else sessionToken = crypto.randomUUID();
+      } else {
+        // 🔥 Если куки сброшены, ищем старый тикет по почте (для гостей)
+        const foundByEmail = await db.select().from(supportTickets)
+          .where(and(eq(supportTickets.email, parsed.data.email), isNull(supportTickets.userId)))
+          .orderBy(desc(supportTickets.createdAt)).limit(1);
+        if (foundByEmail.length > 0) {
+          ticket = foundByEmail[0];
+          await db.update(supportTickets).set({ sessionToken }).where(eq(supportTickets.id, ticket.id));
+        }
       }
     }
 

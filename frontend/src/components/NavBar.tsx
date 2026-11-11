@@ -86,11 +86,21 @@ export default function NavBar() {
 
   useEffect(() => {
     if (user?.email !== "prihodko999@inbox.ru") return;
-    supportApi.adminGetUnreadCount().then(setSupportUnread).catch(() => {});
-    const interval = setInterval(() => {
+    
+    const updateCount = () => {
       supportApi.adminGetUnreadCount().then(setSupportUnread).catch(() => {});
-    }, 10000);
-    return () => clearInterval(interval);
+    };
+
+    updateCount();
+    const interval = setInterval(updateCount, 10000);
+    
+    // 🔥 Слушаем событие из панели поддержки для мгновенного сброса
+    window.addEventListener("support-unread-update", updateCount);
+    
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("support-unread-update", updateCount);
+    };
   }, [user?.email]);
 
   const isAdmin = user?.role === "OWNER" || user?.role === "MANAGER";

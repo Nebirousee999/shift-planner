@@ -32,7 +32,11 @@ export default function AdminSupportPage() {
 
   const loadMessages = () => {
     if (!selectedId) return;
-    supportApi.adminGetMessages(selectedId).then(setMessages).catch(() => {});
+    supportApi.adminGetMessages(selectedId).then((msgs) => {
+      setMessages(msgs);
+      // 🔥 Сообщаем шапке, что счетчики обновились
+      window.dispatchEvent(new Event("support-unread-update"));
+    }).catch(() => {});
   };
 
   useEffect(() => {
@@ -43,6 +47,8 @@ export default function AdminSupportPage() {
 
   useEffect(() => {
     if (!selectedId) return;
+    // 🔥 Мгновенно убираем красный бейдж у выбранного чата в списке
+    setTickets(prev => prev.map(t => t.id === selectedId ? { ...t, unreadCount: 0 } : t));
     loadMessages();
     const interval = setInterval(loadMessages, 3000);
     return () => clearInterval(interval);
