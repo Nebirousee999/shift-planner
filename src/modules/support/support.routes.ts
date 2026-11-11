@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq, desc, and, isNull } from "drizzle-orm";
+import { eq, desc, and, isNull, inArray } from "drizzle-orm";
 import { db } from "../../../db/client.js";
 import { supportTickets, supportMessages, users, organizations } from "../../../db/schema.js";
 import crypto from "node:crypto";
@@ -163,7 +163,21 @@ export async function supportRoutes(app: FastifyInstance) {
     
     const { id } = req.params as { id: string };
     
-    await db.update(supportMessages).set({ isReadByAdmin: true }).where(and(eq(supportMessages.ticketId, id), eq(supportMessages.sender, "USER")));
+    // 🔥 Находим тикет, чтобы узнать его email
+    const [ticket] = await db.select().from(supportTickets).where(eq(supportTickets.id, id));
+    
+    if (ticket) {
+      // 🔥 Находим ВСЕ тикеты с такой же почтой (включая старые)
+      const allTickets = await db.select({ id: supportTickets.id }).from(supportTickets).where(eq(supportTickets.email, ticket.email));
+      const ticketIds = allTickets.map(t => t.id);
+      
+      if (ticketIds.length > 0) {
+        // 🔥 Помечаем ВСЕ их сообщения как прочитанные
+        await db.update(supportMessages).set({ isReadByAdmin: true }).where(
+          and(inArray(supportMessages.ticketId, ticketIds), eq(supportMessages.sender, "USER"))
+        );
+      }
+    }
     
     return db.select().from(supportMessages).where(eq(supportMessages.ticketId, id)).orderBy(supportMessages.createdAt);
   });

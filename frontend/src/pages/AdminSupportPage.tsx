@@ -23,7 +23,11 @@ export default function AdminSupportPage() {
   const loadTickets = () => {
     supportApi.adminGetTickets()
       .then(data => {
-        setTickets(data);
+        // 🔥 Защита от "прыжков": если данные не изменились, не трогаем стейт
+        setTickets(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(data)) return prev;
+          return data;
+        });
         if (!selectedId && data.length > 0) setSelectedId(data[0].id);
       })
       .catch(() => {})
