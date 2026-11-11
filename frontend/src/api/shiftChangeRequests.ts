@@ -101,11 +101,11 @@ export const shiftChangeRequestsApi = {
   },
 
   cancel: async (id: string): Promise<void> => {
-    // DELETE — Fastify не парсит тело, Content-Type можно оставить,
-    // но тело не нужно. Оставляем как есть — работает.
+    // 🔥 Для DELETE не отправляем Content-Type, чтобы Fastify не ждал тело
+    const token = localStorage.getItem("token");
     const res = await fetch(`${API_URL}/shift-change-requests/${id}`, {
       method: "DELETE",
-      headers: authHeaders(),
+      headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error("Ошибка отмены");
   },
