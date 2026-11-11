@@ -7,12 +7,11 @@ import axios from "axios";
 import crypto from "node:crypto";
 
 export async function supportRoutes(app: FastifyInstance) {
-  // 🔥 Мягкая проверка токена: если он есть — авторизуем, если нет — пропускаем как гостя
   app.addHook("preHandler", async (req, reply) => {
     try {
       await req.jwtVerify();
     } catch (e) {
-      // Игнорируем ошибку (гость)
+      // Guest
     }
   });
 
@@ -26,14 +25,12 @@ export async function supportRoutes(app: FastifyInstance) {
 
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
 
-    // req.user будет существовать, если токен валиден
     const userId = (req as any).user?.sub || null;
     let sessionToken = parsed.data.sessionToken || crypto.randomUUID();
 
     let ticket;
 
     if (userId) {
-      // 🔥 Авторизован: ищем по профилю
       const found = await db
         .select()
         .from(supportTickets)
@@ -44,13 +41,23 @@ export async function supportRoutes(app: FastifyInstance) {
       if (found.length > 0) {
         ticket = found[0];
         if (ticket.sessionToken !== sessionToken) {
-          await db.update(supportTickets)
-            .set({ sessionToken })
-            .where(eq(supportTickets.id, ticket.id));
+          const tokenBusy = await db.select().from(supportTickets).where(eq(supportTickets.sessionToken, sessionToken));
+          if (tokenBusy.length === 0) {
+            await db.update(supportTickets)
+              .set({ sessionToken })
+              .where(eq(supportTickets.id, ticket.id));
+            ticket.sessionToken = sessionToken;
+          } else {
+            sessionToken = ticket.sessionToken; // Возвращаем старый, чтобы фронт перезаписал
+          }
+        }
+      } else {
+        const tokenBusy = await db.select().from(supportTickets).where(eq(supportTickets.sessionToken, sessionToken));
+        if (tokenBusy.length > 0) {
+          sessionToken = crypto.randomUUID(); // Если токен занят, генерируем новый
         }
       }
     } else {
-      // 🔥 Гость: ищем по кукам
       const found = await db
         .select()
         .from(supportTickets)
@@ -60,7 +67,7 @@ export async function supportRoutes(app: FastifyInstance) {
         if (found[0].email === parsed.data.email) {
           ticket = found[0];
         } else {
-          sessionToken = crypto.randomUUID(); // Сменили почту — новый гость
+          sessionToken = crypto.randomUUID();
         }
       }
     }
@@ -77,6 +84,10 @@ export async function supportRoutes(app: FastifyInstance) {
         })
         .returning();
       ticket = inserted[0];
+    } else {
+      if (!ticket.message) {
+         await db.update(supportTickets).set({ message: parsed.data.message }).where(eq(supportTickets.id, ticket.id));
+      }
     }
 
     await db.insert(supportMessages).values({
