@@ -13,188 +13,252 @@ function writeFile(relPath, content, label) {
   console.log("✅ [" + label + "] Перезаписан");
 }
 
-function patchFile(relPath, search, replace, label) {
-  const filePath = path.join(ROOT, relPath);
-  if (!fs.existsSync(filePath)) return;
-  let content = fs.readFileSync(filePath, "utf-8");
-  
-  if (search instanceof RegExp) {
-    if (search.test(content)) {
-      content = content.replace(search, replace);
-      fs.writeFileSync(filePath, content, "utf-8");
-      touched++;
-      console.log("✅ [" + label + "] Применено (Regex)");
-    } else {
-      console.log("⏭  [" + label + "] Не найдено");
-    }
-    return;
-  }
-
-  if (content.includes(search)) {
-    content = content.replace(search, replace);
-    fs.writeFileSync(filePath, content, "utf-8");
-    touched++;
-    console.log("✅ [" + label + "] Применено");
-  } else {
-    console.log("⏭  [" + label + "] Не найдено");
-  }
-}
-
-// ═══ 1. Бэкенд: Полностью чистая поддержка (без почты и MAX) ═══
+// ═══ 1. API Клиент ═══
 writeFile(
-  "src/modules/support/support.routes.ts",
-  `import type { FastifyInstance } from "fastify";
-import { z } from "zod";
-import { eq, desc } from "drizzle-orm";
-import { db } from "../../../db/client.js";
-import { supportTickets, supportMessages, users } from "../../../db/schema.js";
-import crypto from "node:crypto";
+  "frontend/src/api/support.ts",
+  `import { api } from "./client";
 
-const ADMIN_EMAIL = "prihodko999@inbox.ru";
+export type SupportMessage = {
+  id: string;
+  sender: "USER" | "ADMIN";
+  text: string;
+  images: string[] | null;
+  createdAt: string;
+};
 
-export async function supportRoutes(app: FastifyInstance) {
-  app.addHook("preHandler", async (req, reply) => {
-    try {
-      await req.jwtVerify();
-    } catch (e) {
-      // Guest
-    }
-  });
+export type AdminTicket = {
+  id: string;
+  email: string;
+  userId: string | null;
+  status: string;
+  lastMessage: string;
+  createdAt: string;
+};
 
-  // ─── КЛИЕНТСКИЕ РОУТЫ ───────────────────────────────
-  app.post("/", async (req, reply) => {
-    const parsed = z.object({
-      email: z.string().email(),
-      message: z.string().min(1),
-      images: z.array(z.string()).optional().default([]),
-      sessionToken: z.string().optional(),
-    }).safeParse(req.body);
+export const supportApi = {
+  send: async (data: { email: string; message: string; images?: string[]; sessionToken?: string }) => {
+    const { data: res } = await api.post("/support", data);
+    return res;
+  },
+  getMessages: async (sessionToken: string): Promise<SupportMessage[]> => {
+    if (!sessionToken) return [];
+    const { data } = await api.get<SupportMessage[]>("/support/messages", { params: { sessionToken } });
+    return data;
+  },
+  adminGetTickets: async (): Promise<AdminTicket[]> => {
+    const { data } = await api.get<AdminTicket[]>("/support/admin/tickets");
+    return data;
+  },
+  adminGetMessages: async (ticketId: string): Promise<SupportMessage[]> => {
+    const { data } = await api.get<SupportMessage[]>(\`/support/admin/tickets/\${ticketId}/messages\`);
+    return data;
+  },
+  adminReply: async (ticketId: string, text: string) => {
+    const { data } = await api.post(\`/support/admin/tickets/\${ticketId}/reply\`, { text });
+    return data;
+  }
+};
+`,
+  "frontend/src/api/support.ts"
+);
 
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+// ═══ 2. Страница Админ-Панели ═══
+writeFile(
+  "frontend/src/pages/AdminSupportPage.tsx",
+  `import { useState, useEffect, useRef } from "react";
+import { useAuth } from "../store/auth";
+import { supportApi, type AdminTicket, type SupportMessage } from "../api/support";
+import { Send, Loader2, Inbox, User } from "lucide-react";
+import NavBar from "../components/NavBar";
 
-    const userId = (req as any).user?.sub || null;
-    let sessionToken = parsed.data.sessionToken || crypto.randomUUID();
-    let ticket;
+export default function AdminSupportPage() {
+  const { user } = useAuth();
+  const [tickets, setTickets] = useState<AdminTicket[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<SupportMessage[]>([]);
+  const [replyText, setReplyText] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-    if (userId) {
-      const found = await db.select().from(supportTickets).where(eq(supportTickets.userId, userId)).orderBy(desc(supportTickets.createdAt)).limit(1);
-      if (found.length > 0) {
-        ticket = found[0];
-        if (ticket.sessionToken !== sessionToken) {
-          const tokenBusy = await db.select().from(supportTickets).where(eq(supportTickets.sessionToken, sessionToken));
-          if (tokenBusy.length === 0) {
-            await db.update(supportTickets).set({ sessionToken }).where(eq(supportTickets.id, ticket.id));
-            ticket.sessionToken = sessionToken;
-          } else {
-            sessionToken = ticket.sessionToken;
-          }
-        }
-      }
-    } else {
-      const found = await db.select().from(supportTickets).where(eq(supportTickets.sessionToken, sessionToken));
-      if (found.length > 0) {
-        if (found[0].email === parsed.data.email) ticket = found[0];
-        else sessionToken = crypto.randomUUID();
-      }
-    }
-
-    if (!ticket) {
-      try {
-        const inserted = await db.insert(supportTickets).values({ userId, email: parsed.data.email, sessionToken, status: "OPEN", message: parsed.data.message }).returning();
-        ticket = inserted[0];
-      } catch (err: any) {
-        if (err.code === '23505') {
-          sessionToken = crypto.randomUUID();
-          const inserted = await db.insert(supportTickets).values({ userId, email: parsed.data.email, sessionToken, status: "OPEN", message: parsed.data.message }).returning();
-          ticket = inserted[0];
-        } else throw err;
-      }
-    }
-
-    await db.insert(supportMessages).values({ ticketId: ticket.id, sender: "USER", text: parsed.data.message, images: parsed.data.images });
-    
-    return { success: true, ticketId: ticket.id.slice(0, 6).toUpperCase(), sessionToken: ticket.sessionToken };
-  });
-
-  app.get("/messages", async (req) => {
-    const { sessionToken } = req.query as { sessionToken?: string };
-    const userId = (req as any).user?.sub || null;
-    let ticket;
-    if (userId) {
-      const found = await db.select().from(supportTickets).where(eq(supportTickets.userId, userId)).orderBy(desc(supportTickets.createdAt)).limit(1);
-      if (found.length > 0) ticket = found[0];
-    }
-    if (!ticket && sessionToken) {
-      const found = await db.select().from(supportTickets).where(eq(supportTickets.sessionToken, sessionToken));
-      if (found.length > 0) ticket = found[0];
-    }
-    if (!ticket) return [];
-    return db.select().from(supportMessages).where(eq(supportMessages.ticketId, ticket.id)).orderBy(supportMessages.createdAt);
-  });
-
-  // ─── АДМИНСКИЕ РОУТЫ (Панель разработчика) ──────────
-  const checkAdmin = async (userId: string) => {
-    if (!userId) return false;
-    const [user] = await db.select().from(users).where(eq(users.id, userId));
-    return user?.email === ADMIN_EMAIL;
+  const loadTickets = () => {
+    supportApi.adminGetTickets()
+      .then(data => {
+        setTickets(data);
+        if (!selectedId && data.length > 0) setSelectedId(data[0].id);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   };
 
-  app.get("/admin/tickets", async (req, reply) => {
-    const userId = (req as any).user?.sub;
-    if (!(await checkAdmin(userId))) return reply.code(403).send({ error: "Forbidden" });
+  const loadMessages = () => {
+    if (!selectedId) return;
+    supportApi.adminGetMessages(selectedId).then(setMessages).catch(() => {});
+  };
 
-    const tickets = await db.select().from(supportTickets).orderBy(desc(supportTickets.createdAt));
-    const allMessages = await db.select().from(supportMessages).orderBy(desc(supportMessages.createdAt));
-    
-    const uniqueTickets = new Map();
-    for (const t of tickets) {
-      if (!uniqueTickets.has(t.email)) {
-        const lastMsg = allMessages.find(m => m.ticketId === t.id);
-        uniqueTickets.set(t.email, { ...t, lastMessage: lastMsg?.text || t.message || "..." });
-      }
+  useEffect(() => {
+    loadTickets();
+    const interval = setInterval(loadTickets, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    loadMessages();
+    const interval = setInterval(loadMessages, 3000);
+    return () => clearInterval(interval);
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages]);
+
+  const handleReply = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedId || !replyText.trim()) return;
+    setSending(true);
+    try {
+      await supportApi.adminReply(selectedId, replyText);
+      setReplyText("");
+      await loadMessages();
+      await loadTickets();
+    } catch {
+      alert("Ошибка отправки");
+    } finally {
+      setSending(false);
     }
-    return Array.from(uniqueTickets.values());
-  });
+  };
 
-  app.get("/admin/tickets/:id/messages", async (req, reply) => {
-    const userId = (req as any).user?.sub;
-    if (!(await checkAdmin(userId))) return reply.code(403).send({ error: "Forbidden" });
-    const { id } = req.params as { id: string };
-    return db.select().from(supportMessages).where(eq(supportMessages.ticketId, id)).orderBy(supportMessages.createdAt);
-  });
+  if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin" /></div>;
 
-  app.post("/admin/tickets/:id/reply", async (req, reply) => {
-    const userId = (req as any).user?.sub;
-    if (!(await checkAdmin(userId))) return reply.code(403).send({ error: "Forbidden" });
+  return (
+    <div className="min-h-screen bg-slate-50 flex flex-col">
+      <NavBar />
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex gap-4 h-[calc(100vh-80px)]">
+        
+        <div className="w-80 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden shrink-0">
+          <div className="p-4 border-b border-slate-100 bg-slate-50 font-semibold text-slate-900">
+            Все обращения ({tickets.length})
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {tickets.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setSelectedId(t.id)}
+                className={\`w-full text-left p-4 border-b border-slate-100 hover:bg-slate-50 transition-colors \${selectedId === t.id ? "bg-brand-50" : ""}\`}
+              >
+                <div className="font-semibold text-sm text-slate-900 truncate">{t.email}</div>
+                <div className="text-xs text-slate-500 truncate mt-1">{t.lastMessage}</div>
+                <div className="text-[10px] text-slate-400 mt-2">{new Date(t.createdAt).toLocaleString("ru-RU")}</div>
+              </button>
+            ))}
+          </div>
+        </div>
 
-    const { id } = req.params as { id: string };
-    const parsed = z.object({ text: z.string().min(1) }).safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ error: "Empty message" });
+        <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
+          {selectedId ? (
+            <>
+              <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
+                <User className="w-4 h-4 text-slate-500" />
+                <span className="font-semibold text-slate-900">{tickets.find(t => t.id === selectedId)?.email}</span>
+              </div>
+              
+              <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
+                {messages.map(m => (
+                  <div key={m.id} className={\`flex \${m.sender === "ADMIN" ? "justify-end" : "justify-start"}\`}>
+                    <div className={\`max-w-[70%] rounded-2xl px-4 py-2 text-sm \${m.sender === "ADMIN" ? "bg-brand-600 text-white rounded-br-sm" : "bg-white border border-slate-200 text-slate-800 rounded-bl-sm shadow-sm"}\`}>
+                      <p className="whitespace-pre-wrap">{m.text}</p>
+                      <div className={\`text-[9px] mt-1 text-right \${m.sender === "ADMIN" ? "text-brand-200" : "text-slate-400"}\`}>
+                        {new Date(m.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
 
-    const [ticket] = await db.select().from(supportTickets).where(eq(supportTickets.id, id));
-    if (!ticket) return reply.code(404).send({ error: "Ticket not found" });
-
-    await db.insert(supportMessages).values({ ticketId: id, sender: "ADMIN", text: parsed.data.text });
-    await db.update(supportTickets).set({ status: "ANSWERED" }).where(eq(supportTickets.id, id));
-    
-    return { success: true };
-  });
+              <form onSubmit={handleReply} className="p-3 bg-white border-t border-slate-200 flex items-end gap-2">
+                <textarea
+                  value={replyText}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  placeholder="Написать ответ клиенту..."
+                  className="flex-1 !text-sm !py-2 !bg-slate-50 resize-none min-h-[40px] max-h-32"
+                  rows={1}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleReply(e);
+                    }
+                  }}
+                />
+                <button type="submit" disabled={sending || !replyText.trim()} className="p-2.5 bg-brand-600 text-white rounded-xl hover:bg-brand-700 disabled:opacity-50">
+                  {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                </button>
+              </form>
+            </>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
+              <Inbox className="w-12 h-12 mb-2 opacity-50" />
+              <p>Выберите чат для общения</p>
+            </div>
+          )}
+        </div>
+      </main>
+    </div>
+  );
 }
 `,
-  "src/modules/support/support.routes.ts"
+  "frontend/src/pages/AdminSupportPage.tsx"
 );
 
-// ═══ 2. Вебхук: Убираем логику ответов на тикеты (чтобы бот не реагировал на #ID) ═══
-patchFile(
-  "src/modules/webhooks/webhooks.routes.ts",
-  /if \(senderId === SUPPORT_ADMIN_ID && text\.startsWith\("#"\)[\s\S]*?return reply\.send\(\{ ok: true \}\);\n          \}/,
-  ``,
-  "webhooks.routes.ts (удаление логики поддержки)"
-);
+// ═══ 3. Роутинг (App.tsx) ═══
+let appContent = fs.readFileSync(path.join(ROOT, "frontend/src/App.tsx"), "utf-8");
+if (!appContent.includes("AdminSupportPage")) {
+  appContent = appContent.replace(
+    `const LandingPage = lazy(() => import("./pages/LandingPage"));`,
+    `const LandingPage = lazy(() => import("./pages/LandingPage"));\nconst AdminSupportPage = lazy(() => import("./pages/AdminSupportPage"));`
+  );
+  appContent = appContent.replace(
+    `<Route path="/history" element={<ProtectedRoute adminOnly><HistoryPage /></ProtectedRoute>} />`,
+    `<Route path="/history" element={<ProtectedRoute adminOnly><HistoryPage /></ProtectedRoute>} />\n          <Route path="/admin-support" element={<ProtectedRoute><AdminSupportPage /></ProtectedRoute>} />`
+  );
+  fs.writeFileSync(path.join(ROOT, "frontend/src/App.tsx"), appContent, "utf-8");
+  touched++;
+  console.log("✅ [App.tsx] Добавлен роут /admin-support");
+}
+
+// ═══ 4. Кнопка в меню (NavBar.tsx) ═══
+let navContent = fs.readFileSync(path.join(ROOT, "frontend/src/components/NavBar.tsx"), "utf-8");
+if (!navContent.includes("admin-support")) {
+  const button = `
+          {user?.email === "prihodko999@inbox.ru" && (
+            <button onClick={() => navigate("/admin-support")} className="relative flex items-center justify-center p-2 rounded-lg text-sm text-brand-600 bg-brand-50 hover:bg-brand-100 transition-colors" title="Панель поддержки">
+              <MessageSquare className="w-4 h-4" />
+            </button>
+          )}
+  `;
+  
+  navContent = navContent.replace(
+    `<button onClick={() => navigate("/help")} className={\`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors \${isActive(pathname, "/help") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}\`} title="Справка">`,
+    button + `\n<button onClick={() => navigate("/help")} className={\`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors \${isActive(pathname, "/help") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}\`} title="Справка">`
+  );
+  
+  navContent = navContent.replace(
+    `<button onClick={() => navigate("/help")} className={\`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors \${isActive(pathname, "/help") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}\`} title="Справка">`,
+    button + `\n<button onClick={() => navigate("/help")} className={\`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors \${isActive(pathname, "/help") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}\`} title="Справка">`
+  );
+  
+  if (!navContent.includes("MessageSquare")) {
+    navContent = navContent.replace("HelpCircle, AlertCircle, Wallet,", "HelpCircle, AlertCircle, Wallet, MessageSquare,");
+  }
+  
+  fs.writeFileSync(path.join(ROOT, "frontend/src/components/NavBar.tsx"), navContent, "utf-8");
+  touched++;
+  console.log("✅ [NavBar.tsx] Добавлена кнопка панели");
+}
 
 console.log("\n──────────────────────────────────────");
 if (touched > 0) {
-  console.log("🎉 Готово! Поддержка полностью изолирована на сайте.");
+  console.log("🎉 Готово! Интерфейс панели добавлен.");
 } else {
   console.log("⚠️ Изменений не внесено.");
 }

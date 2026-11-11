@@ -220,7 +220,21 @@ export default function NavBar() {
           <button onClick={() => window.dispatchEvent(new Event("show-onboarding"))} className="relative flex items-center justify-center p-2 rounded-lg text-sm text-slate-600 hover:bg-slate-100 transition-colors" title="С чего начать">
             <ListChecks className="w-4 h-4" />
           </button>
-          <button onClick={() => navigate("/help")} className={`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors ${isActive(pathname, "/help") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`} title="Справка">
+          
+          {user?.email === "prihodko999@inbox.ru" && (
+            <button onClick={() => navigate("/admin-support")} className="relative flex items-center justify-center p-2 rounded-lg text-sm text-brand-600 bg-brand-50 hover:bg-brand-100 transition-colors" title="Панель поддержки">
+              <MessageSquare className="w-4 h-4" />
+            </button>
+          )}
+  
+
+          {user?.email === "prihodko999@inbox.ru" && (
+            <button onClick={() => navigate("/admin-support")} className="relative flex items-center justify-center p-2 rounded-lg text-sm text-brand-600 bg-brand-50 hover:bg-brand-100 transition-colors" title="Панель поддержки">
+              <MessageSquare className="w-4 h-4" />
+            </button>
+          )}
+  
+<button onClick={() => navigate("/help")} className={`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors ${isActive(pathname, "/help") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`} title="Справка">
             <HelpCircle className="w-4 h-4" />
           </button>
           {user?.role === "OWNER" && (
