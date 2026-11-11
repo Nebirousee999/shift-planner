@@ -587,6 +587,25 @@ export default function WeekDetailPage() {
     useNotifications.getState().refresh();
   };
 
+  const onCancelShiftChange = async (requestId: string) => {
+    const ok = await confirmDialog("Отменить запрос на изменение смены? Сотрудник больше не увидит его.", {
+      title: "Отмена",
+      confirmLabel: "Отменить запрос",
+      variant: "danger",
+    });
+    if (!ok) return;
+    setModerating(requestId);
+    try {
+      await shiftChangeRequestsApi.cancel(requestId);
+      await refreshShiftRequests();
+      if (id) await fetchWeek(id);
+    } catch (e: any) {
+      await alertDialog(e.message ?? "Ошибка отмены", { title: "Ошибка", variant: "error" });
+    } finally {
+      setModerating(null);
+    }
+  };
+
   const getUserInfo = (uid: string | null) => {
     const u = users.find((x) => x.id === uid);
     return u ? { name: u.name, position: u.position } : { name: "—", position: null };
@@ -1238,6 +1257,13 @@ export default function WeekDetailPage() {
                         <Clock className="w-3 h-3 shrink-0" />
                         <span>Ждёт согласования</span>
                       </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onCancelShiftChange(r.id); }}
+                        disabled={moderating === r.id}
+                        className="mt-1 w-full bg-white border border-rose-200 text-rose-600 text-[10px] py-1 rounded hover:bg-rose-50 font-medium transition-colors disabled:opacity-50"
+                      >
+                        Отменить
+                      </button>
                     </div>
                   ))}
 
