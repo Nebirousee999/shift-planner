@@ -94,9 +94,14 @@ export const useAuth = create<AuthState>((set) => ({
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     localStorage.removeItem("support_session_token"); // Очищаем сессию чата
-    // Сбрасываем кэш организации, чтобы при следующем входе под другим
-    // пользователем NavBar не мигал чужой организацией
+    
+    // Сбрасываем кэш организации и пользователей, чтобы при следующем входе
+    // виджеты и таблицы не показывали данные предыдущего аккаунта
     resetOrganizationStore();
+    import("./users").then(({ useUsers }) => {
+      useUsers.setState({ items: [] });
+    }).catch(() => {});
+
     set({ user: null, token: null });
   },
 

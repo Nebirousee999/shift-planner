@@ -9,6 +9,7 @@ import { useWeeks } from "../store/weeks";
 
 export default function OnboardingWidget() {
   const { user } = useAuth();
+  // По умолчанию виджет всегда открыт (isOpen = true)
   const [isOpen, setIsOpen] = useState(true);
   const [isDismissed, setIsDismissed] = useState(() => localStorage.getItem("onboarding_dismissed") === "true");
 
@@ -35,20 +36,24 @@ export default function OnboardingWidget() {
   // Подгружаем данные, если их нет
   useEffect(() => {
     if (user && user.role !== "EMPLOYEE" && !isDismissed) {
-      if (users.length === 0) fetchUsers();
+      fetchUsers();
       if (areas.length === 0) fetchAreas();
       if (templates.length === 0) fetchTemplates();
       if (weeks.length === 0) fetchWeeks();
     }
-  }, [user, isDismissed, users.length, areas.length, templates.length, weeks.length, fetchUsers, fetchAreas, fetchTemplates, fetchWeeks]);
+  }, [user, isDismissed, areas.length, templates.length, weeks.length, fetchUsers, fetchAreas, fetchTemplates, fetchWeeks]);
 
   // Показываем только авторизованным владельцам и менеджерам
   if (!user || user.role === "EMPLOYEE" || isDismissed) return null;
 
-  // 🔥 Не считаем самого Владельца за добавленного сотрудника
-  const hasUsers = users.some((u) => u.id !== user?.id);
+  // 🔥 Строгая фильтрация: не считаем текущего пользователя (Владельца) за добавленного сотрудника
+  const otherUsers = users.filter((u) => u.id !== user.id);
+  
+  const hasUsers = otherUsers.length > 0;
   const hasAreas = areas.length > 0;
-  const hasAssignedUsers = users.some((u) => u.id !== user?.id && ((u.areaIds && u.areaIds.length > 0) || (u.locationIds && u.locationIds.length > 0)));
+  const hasAssignedUsers = otherUsers.some(
+    (u) => (u.areaIds && u.areaIds.length > 0) || (u.locationIds && u.locationIds.length > 0)
+  );
   const hasTemplates = templates.length > 0;
   const hasSchedule = weeks.some((w) => w.shifts && w.shifts.length > 0);
 
