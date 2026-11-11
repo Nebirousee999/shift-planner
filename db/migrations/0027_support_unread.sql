@@ -1,0 +1,1 @@
+ALTER TABLE "support_messages" ADD COLUMN IF NOT EXISTS "is_read_by_admin" boolean DEFAULT false NOT NULL;

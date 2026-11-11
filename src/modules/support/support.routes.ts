@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { db } from "../../../db/client.js";
-import { supportTickets, supportMessages, users } from "../../../db/schema.js";
+import { supportTickets, supportMessages, users, organizations } from "../../../db/schema.js";
 import crypto from "node:crypto";
 
 const ADMIN_EMAIL = "prihodko999@inbox.ru";
@@ -11,12 +11,9 @@ export async function supportRoutes(app: FastifyInstance) {
   app.addHook("preHandler", async (req, reply) => {
     try {
       await req.jwtVerify();
-    } catch (e) {
-      // Guest
-    }
+    } catch (e) {}
   });
 
-  // ─── КЛИЕНТСКИЕ РОУТЫ ───────────────────────────────
   app.post("/", async (req, reply) => {
     const parsed = z.object({
       email: z.string().email(),
@@ -44,6 +41,9 @@ export async function supportRoutes(app: FastifyInstance) {
             sessionToken = ticket.sessionToken;
           }
         }
+      } else {
+        // 🔥 Если зареген, но тикета нет — генерируем НОВЫЙ токен, игнорируя старый гостевой
+        sessionToken = crypto.randomUUID();
       }
     } else {
       const found = await db.select().from(supportTickets).where(eq(supportTickets.sessionToken, sessionToken));
@@ -54,19 +54,11 @@ export async function supportRoutes(app: FastifyInstance) {
     }
 
     if (!ticket) {
-      try {
-        const inserted = await db.insert(supportTickets).values({ userId, email: parsed.data.email, sessionToken, status: "OPEN", message: parsed.data.message }).returning();
-        ticket = inserted[0];
-      } catch (err: any) {
-        if (err.code === '23505') {
-          sessionToken = crypto.randomUUID();
-          const inserted = await db.insert(supportTickets).values({ userId, email: parsed.data.email, sessionToken, status: "OPEN", message: parsed.data.message }).returning();
-          ticket = inserted[0];
-        } else throw err;
-      }
+      const inserted = await db.insert(supportTickets).values({ userId, email: parsed.data.email, sessionToken, status: "OPEN", message: parsed.data.message }).returning();
+      ticket = inserted[0];
     }
 
-    await db.insert(supportMessages).values({ ticketId: ticket.id, sender: "USER", text: parsed.data.message, images: parsed.data.images });
+    await db.insert(supportMessages).values({ ticketId: ticket.id, sender: "USER", text: parsed.data.message, images: parsed.data.images, isReadByAdmin: false });
     
     return { success: true, ticketId: ticket.id.slice(0, 6).toUpperCase(), sessionToken: ticket.sessionToken };
   });
@@ -75,19 +67,22 @@ export async function supportRoutes(app: FastifyInstance) {
     const { sessionToken } = req.query as { sessionToken?: string };
     const userId = (req as any).user?.sub || null;
     let ticket;
+    
     if (userId) {
+      // 🔥 Если зареген, ищем ТОЛЬКО по userId. Никаких fallback на куки.
       const found = await db.select().from(supportTickets).where(eq(supportTickets.userId, userId)).orderBy(desc(supportTickets.createdAt)).limit(1);
       if (found.length > 0) ticket = found[0];
-    }
-    if (!ticket && sessionToken) {
+    } else if (sessionToken) {
+      // 🔥 Если гость, ищем по кукам
       const found = await db.select().from(supportTickets).where(eq(supportTickets.sessionToken, sessionToken));
       if (found.length > 0) ticket = found[0];
     }
+    
     if (!ticket) return [];
     return db.select().from(supportMessages).where(eq(supportMessages.ticketId, ticket.id)).orderBy(supportMessages.createdAt);
   });
 
-  // ─── АДМИНСКИЕ РОУТЫ (Панель разработчика) ──────────
+  // ─── АДМИНСКИЕ РОУТЫ ──────────
   const checkAdmin = async (userId: string) => {
     if (!userId) return false;
     const [user] = await db.select().from(users).where(eq(users.id, userId));
@@ -100,12 +95,37 @@ export async function supportRoutes(app: FastifyInstance) {
 
     const tickets = await db.select().from(supportTickets).orderBy(desc(supportTickets.createdAt));
     const allMessages = await db.select().from(supportMessages).orderBy(desc(supportMessages.createdAt));
-    
+    const orgs = await db.select().from(organizations);
+    const usersList = await db.select().from(users);
+
+    const userMap = new Map(usersList.map(u => [u.id, u]));
+    const orgMap = new Map(orgs.map(o => [o.id, o]));
+
     const uniqueTickets = new Map();
     for (const t of tickets) {
       if (!uniqueTickets.has(t.email)) {
         const lastMsg = allMessages.find(m => m.ticketId === t.id);
-        uniqueTickets.set(t.email, { ...t, lastMessage: lastMsg?.text || t.message || "..." });
+        const hasUnread = allMessages.some(m => m.ticketId === t.id && m.sender === "USER" && !m.isReadByAdmin);
+        
+        let isRegistered = false;
+        let tariffId = null;
+        
+        if (t.userId && userMap.has(t.userId)) {
+          isRegistered = true;
+          const u = userMap.get(t.userId);
+          if (u && u.orgId) {
+            const org = orgMap.get(u.orgId);
+            tariffId = org?.tariffId || "free";
+          }
+        }
+
+        uniqueTickets.set(t.email, {
+          ...t,
+          lastMessage: lastMsg?.text || t.message || "...",
+          hasUnread,
+          isRegistered,
+          tariffId
+        });
       }
     }
     return Array.from(uniqueTickets.values());
@@ -114,7 +134,11 @@ export async function supportRoutes(app: FastifyInstance) {
   app.get("/admin/tickets/:id/messages", async (req, reply) => {
     const userId = (req as any).user?.sub;
     if (!(await checkAdmin(userId))) return reply.code(403).send({ error: "Forbidden" });
+    
     const { id } = req.params as { id: string };
+    
+    await db.update(supportMessages).set({ isReadByAdmin: true }).where(and(eq(supportMessages.ticketId, id), eq(supportMessages.sender, "USER")));
+    
     return db.select().from(supportMessages).where(eq(supportMessages.ticketId, id)).orderBy(supportMessages.createdAt);
   });
 
@@ -129,7 +153,7 @@ export async function supportRoutes(app: FastifyInstance) {
     const [ticket] = await db.select().from(supportTickets).where(eq(supportTickets.id, id));
     if (!ticket) return reply.code(404).send({ error: "Ticket not found" });
 
-    await db.insert(supportMessages).values({ ticketId: id, sender: "ADMIN", text: parsed.data.text });
+    await db.insert(supportMessages).values({ ticketId: id, sender: "ADMIN", text: parsed.data.text, isReadByAdmin: true });
     await db.update(supportTickets).set({ status: "ANSWERED" }).where(eq(supportTickets.id, id));
     
     return { success: true };

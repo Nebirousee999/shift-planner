@@ -288,6 +288,7 @@ export const supportMessages = pgTable("support_messages", {
   sender: varchar("sender", { length: 20 }).notNull(),
   text: text("text").notNull(),
   images: text("images").array(),
+  isReadByAdmin: boolean("is_read_by_admin").default(false).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 

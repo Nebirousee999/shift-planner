@@ -12,8 +12,11 @@ export type AdminTicket = {
   id: string;
   email: string;
   userId: string | null;
+  isRegistered: boolean;
+  tariffId: string | null;
   status: string;
   lastMessage: string;
+  hasUnread: boolean;
   createdAt: string;
 };
 
