@@ -23,15 +23,16 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
     }
     setSessionToken(token);
     setEmail(user?.email || "");
-    setMessages([]);
-    setFetching(true);
   }, [user?.id]);
 
   const loadMessages = async () => {
     if (!sessionToken) return;
     try {
       const msgs = await supportApi.getMessages(sessionToken);
-      setMessages(msgs);
+      // 🔥 Защита: не очищаем чат, если сервер вернул пустоту (гонка данных)
+      if (msgs.length > 0 || messages.length === 0) {
+        setMessages(msgs);
+      }
     } catch (e) {
       // ignore
     } finally {
@@ -47,9 +48,7 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
   }, [sessionToken, user?.id]);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages]);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -86,17 +85,20 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
     setLoading(true);
     try {
       const res = await supportApi.send({ email, message, images, sessionToken });
+      
+      // Если токен изменился, НЕ вызываем loadMessages вручную. 
+      // useEffect сам подхватит новый токен и сделает запрос.
       if (res.sessionToken && res.sessionToken !== sessionToken) {
         setSessionToken(res.sessionToken);
         localStorage.setItem("support_session_token", res.sessionToken);
+      } else {
+        await loadMessages();
       }
-      await loadMessages();
+      
       setMessage("");
       setImages([]);
-    } catch (err: any) {
-      // 🔥 Показываем точную ошибку с бэкенда
-      const errorMsg = err.response?.data?.error || err.message || "Ошибка отправки";
-      alert(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg));
+    } catch (err) {
+      alert("Ошибка отправки");
     } finally {
       setLoading(false);
     }
@@ -158,7 +160,6 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
           </div>
         )}
 
-        {/* 🔥 Показываем поле, если его нет, даже у авторизованных */}
         {(!user || !email) && (
           <div className="mb-2">
             <input

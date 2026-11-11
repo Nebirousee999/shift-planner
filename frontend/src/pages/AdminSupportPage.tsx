@@ -36,10 +36,10 @@ export default function AdminSupportPage() {
         });
         
         // 🔥 ФУНКЦИОНАЛЬНОЕ ОБНОВЛЕНИЕ (лечит прыжки на первый чат)
-        setSelectedId(prev => {
-          if (!prev && data.length > 0) return data[0].id;
-          return prev;
-        });
+        // Используем setSelectedId только для инициализации первого чата, если ничего не выбрано
+        if (!selectedId && data.length > 0) {
+          setSelectedId(data[0].id);
+        }
       })
       .catch(() => {})
       .finally(() => setLoading(false));

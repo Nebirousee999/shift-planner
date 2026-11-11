@@ -41,7 +41,7 @@ if (!process.env.JWT_SECRET) {
   process.exit(1);
 }
 
-const app = Fastify({ logger: true });
+const app = Fastify({ logger: true, bodyLimit: 50 * 1024 * 1024 });
 
 await app.register(cors, {
   origin: true,

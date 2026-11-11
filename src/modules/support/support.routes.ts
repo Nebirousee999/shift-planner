@@ -17,9 +17,11 @@ export async function supportRoutes(app: FastifyInstance) {
   app.post("/", async (req, reply) => {
     const parsed = z.object({
       email: z.string().email(),
-      message: z.string().min(1),
+      message: z.string().optional().default(""),
       images: z.array(z.string()).optional().default([]),
       sessionToken: z.string().optional(),
+    }).refine(data => data.message.trim().length > 0 || data.images.length > 0, {
+      message: "Сообщение не может быть пустым"
     }).safeParse(req.body);
 
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
