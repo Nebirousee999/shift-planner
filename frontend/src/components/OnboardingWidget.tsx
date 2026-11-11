@@ -45,9 +45,10 @@ export default function OnboardingWidget() {
   // Показываем только авторизованным владельцам и менеджерам
   if (!user || user.role === "EMPLOYEE" || isDismissed) return null;
 
-  const hasUsers = users.length > 0;
+  // 🔥 Не считаем самого Владельца за добавленного сотрудника
+  const hasUsers = users.some((u) => u.id !== user?.id);
   const hasAreas = areas.length > 0;
-  const hasAssignedUsers = users.some((u) => (u.areaIds && u.areaIds.length > 0) || (u.locationIds && u.locationIds.length > 0));
+  const hasAssignedUsers = users.some((u) => u.id !== user?.id && ((u.areaIds && u.areaIds.length > 0) || (u.locationIds && u.locationIds.length > 0)));
   const hasTemplates = templates.length > 0;
   const hasSchedule = weeks.some((w) => w.shifts && w.shifts.length > 0);
 
