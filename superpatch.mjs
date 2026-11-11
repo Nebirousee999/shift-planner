@@ -25,22 +25,126 @@ function patchFile(relPath, search, replace, label) {
   console.log(`✅ [${label}] применено`);
 }
 
-// ═══ Исправляем отправку в webhooks.routes.ts ═══
-// 1. Ответ на /start (приветствие с ID)
+// ════════════════════════════════════════════════════════════
+// 1. АДМИНКА (AdminSupportPage.tsx)
+// ════════════════════════════════════════════════════════════
 patchFile(
-  "src/modules/webhooks/webhooks.routes.ts",
-  `            // Отправляем с access_token в query (самый совместимый способ для MAX API)\n            await axios.post(\`https://botapi.max.ru/messages?access_token=\${org.token}&user_id=\${senderId}\`, { text: replyText })\n              .catch(e => app.log.error(e.response?.data || e.message, "Ошибка отправки MAX"));`,
-  `            // MAX больше не принимает access_token в URL. Только в заголовке Authorization.\n            await axios.post(\n              \`https://botapi.max.ru/messages?user_id=\${senderId}\`, \n              { text: replyText },\n              { headers: { Authorization: org.token, "Content-Type": "application/json" } }\n            ).catch(e => app.log.error(e.response?.data || e.message, "Ошибка отправки MAX"));`,
-  "webhooks.routes.ts: фикс отправки приветствия"
+  "frontend/src/pages/AdminSupportPage.tsx",
+  `  const [loading, setLoading] = useState(true);`,
+  `  const [loading, setLoading] = useState(true);\n  const [activeImage, setActiveImage] = useState<string | null>(null);`,
+  "AdminSupportPage: добавление стейта для картинки"
 );
 
-// 2. Ответ на любой другой текст
 patchFile(
-  "src/modules/webhooks/webhooks.routes.ts",
-  `            await axios.post(\`https://botapi.max.ru/messages?access_token=\${org.token}&user_id=\${senderId}\`, { text: "Это бот для уведомлений. Чтобы получить свой ID и привязать аккаунт, отправьте /start" })\n              .catch(e => app.log.error(e.response?.data || e.message, "Ошибка отправки MAX"));`,
-  `            await axios.post(\n              \`https://botapi.max.ru/messages?user_id=\${senderId}\`, \n              { text: "Это бот для уведомлений. Чтобы получить свой ID и привязать аккаунт, отправьте /start" },\n              { headers: { Authorization: org.token, "Content-Type": "application/json" } }\n            ).catch(e => app.log.error(e.response?.data || e.message, "Ошибка отправки MAX"));`,
-  "webhooks.routes.ts: фикс отправки обычного текста"
+  "frontend/src/pages/AdminSupportPage.tsx",
+  `                      {m.images && m.images.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mb-2">
+                          {m.images.map((img, i) => (
+                            <img key={i} src={img} className="h-24 w-24 object-cover rounded-lg cursor-pointer" />
+                          ))}
+                        </div>
+                      )}`,
+  `                      {m.images && m.images.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mb-2">
+                          {m.images.map((img, i) => (
+                            <img
+                              key={i}
+                              src={img}
+                              onClick={() => setActiveImage(img)}
+                              className="w-1/2 max-w-[300px] min-w-[150px] h-auto object-cover rounded-lg cursor-pointer border border-slate-200 hover:opacity-90 transition-opacity"
+                            />
+                          ))}
+                        </div>
+                      )}`,
+  "AdminSupportPage: стили картинок и клик"
+);
+
+patchFile(
+  "frontend/src/pages/AdminSupportPage.tsx",
+  `      </main>
+    </div>
+  );
+}`,
+  `      </main>
+
+      {/* Лайтбокс для админки */}
+      {activeImage && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in"
+          onClick={() => setActiveImage(null)}
+        >
+          <img src={activeImage} className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
+          <button className="absolute top-4 right-4 text-white hover:bg-white/20 p-2 rounded-full transition-colors">
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}`,
+  "AdminSupportPage: лайтбокс в конце"
+);
+
+
+// ════════════════════════════════════════════════════════════
+// 2. ПЛАВАЮЩИЙ ЧАТ (SupportChat.tsx)
+// ════════════════════════════════════════════════════════════
+patchFile(
+  "frontend/src/components/SupportChat.tsx",
+  `  const [loading, setLoading] = useState(false);`,
+  `  const [loading, setLoading] = useState(false);\n  const [activeImage, setActiveImage] = useState<string | null>(null);`,
+  "SupportChat: добавление стейта для картинки"
+);
+
+patchFile(
+  "frontend/src/components/SupportChat.tsx",
+  `                {m.images && m.images.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    {m.images.map((img, i) => (
+                      <img key={i} src={img} className="h-16 w-16 object-cover rounded-lg cursor-pointer" />
+                    ))}
+                  </div>
+                )}`,
+  `                {m.images && m.images.length > 0 && (
+                  <div className="flex flex-col gap-2 mb-2">
+                    {m.images.map((img, i) => (
+                      <img
+                        key={i}
+                        src={img}
+                        onClick={() => setActiveImage(img)}
+                        className="w-full max-w-[250px] h-auto object-cover rounded-lg cursor-pointer border border-slate-200 hover:opacity-90 transition-opacity"
+                      />
+                    ))}
+                  </div>
+                )}`,
+  "SupportChat: стили картинок и клик"
+);
+
+patchFile(
+  "frontend/src/components/SupportChat.tsx",
+  `      </div>
+    </div>
+  );
+}`,
+  `      </div>
+
+      {/* Лайтбокс для плавающего чата */}
+      {activeImage && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in"
+          onClick={() => setActiveImage(null)}
+        >
+          <img src={activeImage} className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
+          <button className="absolute top-4 right-4 text-white hover:bg-white/20 p-2 rounded-full transition-colors">
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}`,
+  "SupportChat: лайтбокс в конце"
 );
 
 console.log("\n──────────────────────────────────────");
-console.log(touched > 0 ? "🎉 Готово! Токен перенесен в заголовки." : "⚠️ Изменений не внесено.");
+console.log(touched > 0 ? "🎉 Готово! Картинки теперь можно открывать и они стали больше." : "⚠️ Изменений не внесено.");

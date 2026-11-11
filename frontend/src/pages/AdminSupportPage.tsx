@@ -18,6 +18,7 @@ export default function AdminSupportPage() {
   const [replyText, setReplyText] = useState("");
   const [replyImages, setReplyImages] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeImage, setActiveImage] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -183,9 +184,14 @@ export default function AdminSupportPage() {
                   <div key={m.id} className={`flex ${m.sender === "ADMIN" ? "justify-end" : "justify-start"}`}>
                     <div className={`max-w-[70%] rounded-2xl px-4 py-2 text-sm ${m.sender === "ADMIN" ? "bg-brand-600 text-white rounded-br-sm" : "bg-white border border-slate-200 text-slate-800 rounded-bl-sm shadow-sm"}`}>
                       {m.images && m.images.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mb-2">
+                        <div className="flex flex-wrap gap-2 mb-2">
                           {m.images.map((img, i) => (
-                            <img key={i} src={img} className="h-24 w-24 object-cover rounded-lg cursor-pointer" />
+                            <img
+                              key={i}
+                              src={img}
+                              onClick={() => setActiveImage(img)}
+                              className="w-1/2 max-w-[300px] min-w-[150px] h-auto object-cover rounded-lg cursor-pointer border border-slate-200 hover:opacity-90 transition-opacity"
+                            />
                           ))}
                         </div>
                       )}
@@ -253,6 +259,19 @@ export default function AdminSupportPage() {
           )}
         </div>
       </main>
+
+      {/* Лайтбокс для админки */}
+      {activeImage && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in"
+          onClick={() => setActiveImage(null)}
+        >
+          <img src={activeImage} className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
+          <button className="absolute top-4 right-4 text-white hover:bg-white/20 p-2 rounded-full transition-colors">
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

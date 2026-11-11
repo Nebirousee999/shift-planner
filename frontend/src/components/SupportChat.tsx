@@ -11,6 +11,7 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
   const [images, setImages] = useState<string[]>([]);
   const [messages, setMessages] = useState<SupportMessage[]>([]);
   const [loading, setLoading] = useState(false);
+  const [activeImage, setActiveImage] = useState<string | null>(null);
   const [fetching, setFetching] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -141,9 +142,14 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
                 }`}
               >
                 {m.images && m.images.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mb-2">
+                  <div className="flex flex-col gap-2 mb-2">
                     {m.images.map((img, i) => (
-                      <img key={i} src={img} className="h-16 w-16 object-cover rounded-lg cursor-pointer" />
+                      <img
+                        key={i}
+                        src={img}
+                        onClick={() => setActiveImage(img)}
+                        className="w-full max-w-[250px] h-auto object-cover rounded-lg cursor-pointer border border-slate-200 hover:opacity-90 transition-opacity"
+                      />
                     ))}
                   </div>
                 )}
@@ -216,6 +222,19 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
           </button>
         </form>
       </div>
+
+      {/* Лайтбокс для плавающего чата */}
+      {activeImage && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in"
+          onClick={() => setActiveImage(null)}
+        >
+          <img src={activeImage} className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
+          <button className="absolute top-4 right-4 text-white hover:bg-white/20 p-2 rounded-full transition-colors">
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
