@@ -131,12 +131,12 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
           </div>
         ) : (
           messages.map((m) => (
-            <div key={m.id} className={`flex ${m.sender === "USER" ? "justify-end" : "justify-start"} mb-2`}>
-              <div className={`flex flex-col max-w-[80%] ${m.sender === "USER" ? "items-end" : "items-start"}`}>
+            <div key={m.id} className={`flex ${m.sender === "USER" ? "justify-end" : "justify-start"} mb-2 w-full`}>
+              <div className={`flex flex-col w-full ${m.sender === "USER" ? "items-end" : "items-start"}`}>
                 
-                {/* Картинки в чате: на всю ширину, без фона */}
+                {/* Картинки в чате: на всю ширину пузыря, без фона */}
                 {m.images && m.images.length > 0 && (
-                  <div className="flex flex-col gap-2 mb-1 w-full max-w-[250px]">
+                  <div className="flex flex-col gap-2 mb-1 w-full max-w-[280px]">
                     {m.images.map((img, i) => (
                       <img 
                         key={i} 
@@ -148,9 +148,9 @@ export default function SupportChat({ onClose }: { onClose?: () => void }) {
                   </div>
                 )}
                 
-                {/* Текст */}
+                {/* Текст: максимум 80% */}
                 {m.text && (
-                  <div className={`rounded-2xl px-3 py-2 text-sm ${
+                  <div className={`rounded-2xl px-3 py-2 text-sm max-w-[80%] ${
                     m.sender === "USER" ? "bg-brand-600 text-white rounded-br-sm" : "bg-white border border-slate-200 text-slate-800 rounded-bl-sm shadow-sm"
                   }`}>
                     <p className="whitespace-pre-wrap">{m.text}</p>

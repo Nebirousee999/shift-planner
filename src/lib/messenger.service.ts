@@ -101,13 +101,16 @@ export const messengerService = {
     const token = customToken || process.env.MAX_BOT_TOKEN;
     if (!token) throw new Error("MAX_BOT_TOKEN не задан");
 
+    // 🔥 Убираем HTML-теги (MAX не поддерживает форматирование)
+    const plainText = text.replace(/<[^>]*>/g, '');
+
     // ID получателя передаем в URL, токен — в заголовке (без Bearer)
     const url = `https://botapi.max.ru/messages?user_id=${userId}`;
 
     await axios.post(
       url,
       {
-        text: text,
+        text: plainText,
       },
       {
         headers: {

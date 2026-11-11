@@ -182,12 +182,12 @@ export default function AdminSupportPage() {
               
               <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 p-4 space-y-4 bg-slate-50">
                 {messages.map(m => (
-                  <div key={m.id} className={`flex ${m.sender === "ADMIN" ? "justify-end" : "justify-start"} mb-2`}>
-                    <div className={`flex flex-col max-w-[70%] ${m.sender === "ADMIN" ? "items-end" : "items-start"}`}>
+                  <div key={m.id} className={`flex ${m.sender === "ADMIN" ? "justify-end" : "justify-start"} mb-2 w-full`}>
+                    <div className={`flex flex-col w-full ${m.sender === "ADMIN" ? "items-end" : "items-start"}`}>
                       
-                      {/* Картинки в админке: 50% ширины, без фона */}
+                      {/* Картинки в админке: ровно 50% ширины всего чата */}
                       {m.images && m.images.length > 0 && (
-                        <div className="flex flex-col gap-2 mb-1 w-[50%] min-w-[200px] max-w-[400px]">
+                        <div className="flex flex-col gap-2 mb-1 w-[50%] min-w-[250px] max-w-[600px]">
                           {m.images.map((img, i) => (
                             <img 
                               key={i} 
@@ -199,9 +199,9 @@ export default function AdminSupportPage() {
                         </div>
                       )}
                       
-                      {/* Текст в пузыре */}
+                      {/* Текст в пузыре: максимум 70% */}
                       {m.text && (
-                        <div className={`rounded-2xl px-4 py-2 text-sm ${
+                        <div className={`rounded-2xl px-4 py-2 text-sm max-w-[70%] ${
                           m.sender === "ADMIN" ? "bg-brand-600 text-white rounded-br-sm" : "bg-white border border-slate-200 text-slate-800 rounded-bl-sm shadow-sm"
                         }`}>
                           <p className="whitespace-pre-wrap">{m.text}</p>
