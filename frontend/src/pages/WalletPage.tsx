@@ -43,7 +43,7 @@ const fmtMoney = (n: number) => new Intl.NumberFormat("ru-RU").format(n) + " ₽
 export default function WalletPage() {
   const { user } = useAuth();
   const isAdmin = user?.email === import.meta.env.VITE_ADMIN_EMAIL;
-  const [testPaying, setTestPaying] = useState(false);
+  const [testPaying, setTestPaying] = useState<"monthly" | "yearly" | null>(null);
   const [searchParams] = useSearchParams();
   const checkoutPlan = searchParams.get("checkout") as "pro" | "business" | null;
 
@@ -89,18 +89,17 @@ export default function WalletPage() {
       });
   }, [checkoutPlan]);
 
-  const handleTestPay = async () => {
-    setTestPaying(true);
+  const handleTestPay = async (yearly: boolean = false) => {
+    setTestPaying(yearly ? "yearly" : "monthly");
     try {
-      const { confirmationUrl } = await paymentsApi.create(
-        "pro",
-        1,
-        "Тестовая оплата 1₽ (Pro на 30 дней)"
-      );
+      const amount = yearly ? 2 : 1;
+      const desc = yearly ? "Тестовая оплата 2₽ (Pro на ГОД)" : "Тестовая оплата 1₽ (Pro на 30 дней)";
+      
+      const { confirmationUrl } = await paymentsApi.create("pro", amount, desc);
       window.location.href = confirmationUrl;
     } catch (e: any) {
       alert(e.response?.data?.error ?? "Ошибка создания тестового платежа");
-      setTestPaying(false);
+      setTestPaying(null);
     }
   };
 
@@ -264,14 +263,24 @@ export default function WalletPage() {
                 Реальный платёж 1 ₽ через YooKassa. Pro активируется на 30 дней.
               </div>
             </div>
-            <button
-              onClick={handleTestPay}
-              disabled={testPaying}
-              className="inline-flex items-center gap-2 bg-amber-600 text-white px-4 py-2 rounded-xl hover:bg-amber-700 disabled:opacity-50 text-sm font-medium shadow-sm whitespace-nowrap"
-            >
-              {testPaying && <Loader2 className="w-4 h-4 animate-spin" />}
-              {testPaying ? "Создание..." : "Оплатить 1 ₽"}
-            </button>
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={() => handleTestPay(false)}
+                disabled={!!testPaying}
+                className="inline-flex items-center gap-2 bg-amber-600 text-white px-4 py-2 rounded-xl hover:bg-amber-700 disabled:opacity-50 text-sm font-medium shadow-sm whitespace-nowrap"
+              >
+                {testPaying === "monthly" && <Loader2 className="w-4 h-4 animate-spin" />}
+                {testPaying === "monthly" ? "Создание..." : "Оплатить 1 ₽ (Мес)"}
+              </button>
+              <button
+                onClick={() => handleTestPay(true)}
+                disabled={!!testPaying}
+                className="inline-flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-xl hover:bg-slate-900 disabled:opacity-50 text-sm font-medium shadow-sm whitespace-nowrap"
+              >
+                {testPaying === "yearly" && <Loader2 className="w-4 h-4 animate-spin" />}
+                {testPaying === "yearly" ? "Создание..." : "Оплатить 2 ₽ (Год)"}
+              </button>
+            </div>
           </div>
         )}
 

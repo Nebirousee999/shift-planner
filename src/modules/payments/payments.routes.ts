@@ -14,8 +14,8 @@ const createSchema = z.object({
 
 // Цены для проверки (защита от подмены суммы на фронте)
 const TARIFF_PRICES: Record<string, number[]> = {
-  pro: [990, 9480, 1], // 1 ₽ — для тестовой оплаты через реальный кошелёк
-  business: [2490, 23880],
+  pro: [990, 9480, 1, 2], // 1 и 2 ₽ — для тестовой оплаты
+  business: [2490, 23880, 1, 2],
 };
 
 export async function paymentsRoutes(app: FastifyInstance) {
@@ -34,7 +34,8 @@ export async function paymentsRoutes(app: FastifyInstance) {
     if (TARIFF_PRICES[tariffId] && !TARIFF_PRICES[tariffId].includes(amount)) {
       return reply.code(400).send({ error: "Неверная сумма для тарифа" });
     }
-    const isYearly = amount > 5000;
+    // Определяем год по сумме ИЛИ по слову "год" в описании (для тестов)
+    const isYearly = amount > 5000 || description.toLowerCase().includes("год");
     const periodDays = isYearly ? 365 : 30;
 
     try {
@@ -76,7 +77,12 @@ export async function paymentsRoutes(app: FastifyInstance) {
         amount: amount.toFixed(2),
         status: payment.status,
         description,
-        metadata: { tariffId, orgId },
+        metadata: { 
+          tariffId, 
+          orgId, 
+          periodDays: periodDays.toString(), 
+          isYearly: isYearly.toString() 
+        }, // 🔥 ТЕПЕРЬ СОХРАНЯЕМ ПЕРИОД В БАЗУ
       });
 
       return {

@@ -15,12 +15,29 @@ export async function webhooksRoutes(app: FastifyInstance) {
         if (!realPayment || realPayment.status !== "succeeded" || !realPayment.paid) return reply.code(400).send({ error: "Payment not verified" });
         await db.update(payments).set({ status: "succeeded", updatedAt: new Date() }).where(eq(payments.yookassaId, event.object.id));
         const [payment] = await db.select().from(payments).where(eq(payments.yookassaId, event.object.id));
-        if (payment && payment.metadata) {
+                if (payment && payment.metadata) {
           const meta = payment.metadata as any;
           if (meta.orgId) {
-           const days = Number(meta.periodDays) || 30;
-           const expiresAt = new Date(); expiresAt.setDate(expiresAt.getDate() + days);
-           await db.update(organizations).set({ maxLocations: meta.tariffId === "business" ? 5 : 1, tariffId: meta.tariffId, tariffExpiresAt: expiresAt, trialEndsAt: null }).where(eq(organizations.id, meta.orgId));
+            const days = Number(meta.periodDays) || 30;
+
+            // 🔥 Получаем текущую организацию, чтобы проверить, активна ли подписка
+            const [org] = await db.select().from(organizations).where(eq(organizations.id, meta.orgId));
+
+            let baseDate = new Date();
+            // Если подписка еще не истекла — прибавляем дни к дате ее окончания
+            if (org && org.tariffExpiresAt && new Date(org.tariffExpiresAt) > baseDate) {
+              baseDate = new Date(org.tariffExpiresAt);
+            }
+
+            const expiresAt = new Date(baseDate);
+            expiresAt.setDate(expiresAt.getDate() + days);
+
+            await db.update(organizations).set({
+              maxLocations: meta.tariffId === "business" ? 5 : 1,
+              tariffId: meta.tariffId,
+              tariffExpiresAt: expiresAt,
+              trialEndsAt: null
+            }).where(eq(organizations.id, meta.orgId));
           }
         }
       } 
