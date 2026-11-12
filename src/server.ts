@@ -34,6 +34,7 @@ import { timeOffRoutes } from "./modules/time-off/time-off.routes.js";
 import { historyRoutes } from "./modules/history/history.routes.js";
            import { notificationsRoutes } from "./modules/notifications/notifications.routes.js";
 import { supportRoutes } from "./modules/support/support.routes.js";
+import { adminRoutes } from "./modules/admin/admin.routes.js";
 
 
 if (!process.env.JWT_SECRET) {
@@ -86,6 +87,7 @@ await app.register(timeOffRoutes, { prefix: "/api/time-off" });
 await app.register(historyRoutes, { prefix: "/api/history" });
            await app.register(notificationsRoutes, { prefix: "/api/notifications" });
 await app.register(supportRoutes, { prefix: "/api/support" });
+await app.register(adminRoutes, { prefix: "/api/admin" });
 
 import { startScheduler } from "./lib/scheduler.js";
 

@@ -7,6 +7,7 @@ import { useOrganization } from "./store/organization";
 const LoginPage = lazy(() => import("./pages/LoginPage"));
 const LandingPage = lazy(() => import("./pages/LandingPage"));
 const AdminSupportPage = lazy(() => import("./pages/AdminSupportPage"));
+const AdminDatabasePage = lazy(() => import("./pages/AdminDatabasePage"));
 const BlogPage = lazy(() => import("./pages/BlogPage"));
 const BlogArticlePage = lazy(() => import("./pages/BlogArticlePage"));
 const WalletPage = lazy(() => import("./pages/WalletPage"));
@@ -118,6 +119,7 @@ export default function App() {
           <Route path="/payment/success" element={<PaymentSuccessPage />} />
           <Route path="/history" element={<ProtectedRoute adminOnly><HistoryPage /></ProtectedRoute>} />
           <Route path="/admin-support" element={<ProtectedRoute><AdminSupportPage /></ProtectedRoute>} />
+          <Route path="/admin-database" element={<ProtectedRoute><AdminDatabasePage /></ProtectedRoute>} />
         </Routes>
       </Suspense>
     </BrowserRouter>

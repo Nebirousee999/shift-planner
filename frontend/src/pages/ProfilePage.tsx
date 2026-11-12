@@ -5,7 +5,7 @@ import { z } from "zod";
 import {
   Mail, Phone, Coins, Shield, KeyRound, Save, CalendarDays, Building2,
   Lock, Pencil, Settings as SettingsIcon, Clock, Percent, Palette, AlertCircle,
-  Bell, Send, MessageSquare, Check, Loader2, X, User as UserIcon, Info, HelpCircle, CheckCircle2,
+  Bell, Send, MessageSquare, Check, Loader2, X, User as UserIcon, Info, HelpCircle, CheckCircle2, Database,
 } from "lucide-react";
 import { useAuth } from "../store/auth";
 import { useUsers } from "../store/users";
@@ -80,7 +80,8 @@ function initials(name: string): string {
 // Главный компонент
 // ═══════════════════════════════════════════════════
 export default function ProfilePage() {
-  const { changePassword } = useAuth();
+  const { changePassword, user } = useAuth();
+  const isAdmin = user?.email === import.meta.env.VITE_ADMIN_EMAIL;
   const [profile, setProfile] = useState<MyProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -228,6 +229,7 @@ export default function ProfilePage() {
       <NavBar />
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+        
         <h1 className="text-3xl font-bold text-slate-900 mb-1">Профиль</h1>
         <p className="text-sm text-slate-500 mb-6">
           Личные данные, мессенджеры и настройки организации
@@ -253,6 +255,22 @@ export default function ProfilePage() {
                     active={section}
                     onSelect={setSection}
                   />
+                )}
+
+                {/* 🔥 Кнопка для админа сервиса */}
+                {user?.email === import.meta.env.VITE_ADMIN_EMAIL && (
+                  <div className="pt-3 mt-3 border-t border-slate-100">
+                    <div className="px-3 py-1.5 text-[10px] uppercase tracking-wide font-semibold text-brand-600">
+                      Администратор
+                    </div>
+                    <button
+                      onClick={() => window.location.href = "/admin-database"}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-colors text-left bg-slate-900 text-white hover:bg-slate-800"
+                    >
+                      <Database className="w-4 h-4 shrink-0 text-brand-400" />
+                      <span className="truncate">База организаций</span>
+                    </button>
+                  </div>
                 )}
               </div>
             </aside>
