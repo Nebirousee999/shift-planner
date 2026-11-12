@@ -26,116 +26,118 @@ function patchFile(relPath, search, replace, label) {
 }
 
 // ════════════════════════════════════════════════════════════
-// 1. БЭКЕНД: разрешаем 1 ₽ для тарифа Pro
+// 1. БЭКЕНД: Добавляем поддержку receipt в yookassa.ts
+// ════════════════════════════════════════════════════════════
+patchFile(
+  "src/lib/yookassa.ts",
+  `export type CreatePaymentInput = {
+  amount: number;
+  currency?: string;
+  description: string;
+  returnUrl: string;
+  metadata?: Record<string, string>;
+};`,
+  `export type CreatePaymentInput = {
+  amount: number;
+  currency?: string;
+  description: string;
+  returnUrl: string;
+  metadata?: Record<string, string>;
+  receipt?: any;
+};`,
+  "yookassa.ts: тип CreatePaymentInput"
+);
+
+patchFile(
+  "src/lib/yookassa.ts",
+  `        capture: true,
+        description: input.description,
+        metadata: input.metadata ?? {},
+      },`,
+  `        capture: true,
+        description: input.description,
+        metadata: input.metadata ?? {},
+        receipt: input.receipt,
+      },`,
+  "yookassa.ts: передача receipt в API ЮKassa"
+);
+
+// ════════════════════════════════════════════════════════════
+// 2. БЭКЕНД: Формируем чек в payments.routes.ts
 // ════════════════════════════════════════════════════════════
 patchFile(
   "src/modules/payments/payments.routes.ts",
-  `const TARIFF_PRICES: Record<string, number[]> = {
-  pro: [990, 9480],
-  business: [2490, 23880],
-};`,
-  `const TARIFF_PRICES: Record<string, number[]> = {
-  pro: [990, 9480, 1], // 1 ₽ — для тестовой оплаты через реальный кошелёк
-  business: [2490, 23880],
-};`,
-  "payments.routes.ts: разрешена тестовая сумма 1₽"
+  `import { db } from "../../../db/client.js";
+import { payments } from "../../../db/schema.js";`,
+  `import { db } from "../../../db/client.js";
+import { payments, users } from "../../../db/schema.js";
+import { eq, desc } from "drizzle-orm";`,
+  "payments.routes.ts: импорт users и eq"
 );
 
-// ════════════════════════════════════════════════════════════
-// 2. ФРОНТЕНД: добавляем импорт useAuth и FlaskConical
-// ════════════════════════════════════════════════════════════
 patchFile(
-  "frontend/src/pages/WalletPage.tsx",
-  `import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { Wallet, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";`,
-  `import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { Wallet, CheckCircle2, AlertTriangle, Loader2, FlaskConical } from "lucide-react";
-import { useAuth } from "../store/auth";`,
-  "WalletPage.tsx: импорты"
+  "src/modules/payments/payments.routes.ts",
+  `    try {
+      const payment = await yookassaService.createPayment({
+        amount,
+        description,
+        returnUrl: \`\${process.env.FRONTEND_URL ?? "http://localhost:5173"}/payment/success\`,
+        metadata: {
+          userId,
+          orgId,
+          tariffId,
+          periodDays: periodDays.toString(),
+          isYearly: isYearly.toString(),
+        },
+      });`,
+  `    try {
+      // 🔥 Получаем email пользователя для чека по 54-ФЗ
+      const [user] = await db.select({ email: users.email }).from(users).where(eq(users.id, userId));
+      const email = user?.email || "test@shift-planner.ru";
+
+      const payment = await yookassaService.createPayment({
+        amount,
+        description,
+        returnUrl: \`\${process.env.FRONTEND_URL ?? "http://localhost:5173"}/payment/success\`,
+        metadata: {
+          userId,
+          orgId,
+          tariffId,
+          periodDays: periodDays.toString(),
+          isYearly: isYearly.toString(),
+        },
+        // 🔥 Формируем чек для ЮKassa
+        receipt: {
+          customer: { email },
+          items: [
+            {
+              description: description,
+              quantity: "1.00",
+              amount: { value: amount.toFixed(2), currency: "RUB" },
+              vat_code: 1, // 1 = Без НДС (если у тебя ОСНО и 20%, поменяй на 4)
+              payment_subject: "service",
+              payment_mode: "full_payment",
+            },
+          ],
+        },
+      });`,
+  "payments.routes.ts: генерация чека"
 );
 
-// ════════════════════════════════════════════════════════════
-// 3. ФРОНТЕНД: проверка админа + стейт для тестовой оплаты
-// ════════════════════════════════════════════════════════════
+// Убираем дублирующийся динамический импорт eq, desc
 patchFile(
-  "frontend/src/pages/WalletPage.tsx",
-  `export default function WalletPage() {
-  const [searchParams] = useSearchParams();`,
-  `export default function WalletPage() {
-  const { user } = useAuth();
-  const isAdmin = user?.email === import.meta.env.VITE_ADMIN_EMAIL;
-  const [testPaying, setTestPaying] = useState(false);
-  const [searchParams] = useSearchParams();`,
-  "WalletPage.tsx: проверка админа и testPaying"
-);
-
-// ════════════════════════════════════════════════════════════
-// 4. ФРОНТЕНД: обработчик тестовой оплаты
-// ════════════════════════════════════════════════════════════
-patchFile(
-  "frontend/src/pages/WalletPage.tsx",
-  `  const handlePay = async (tariffId: "pro" | "business", overrideYearly?: boolean) => {`,
-  `  const handleTestPay = async () => {
-    setTestPaying(true);
-    try {
-      const { confirmationUrl } = await paymentsApi.create(
-        "pro",
-        1,
-        "Тестовая оплата 1₽ (Pro на 30 дней)"
-      );
-      window.location.href = confirmationUrl;
-    } catch (e: any) {
-      alert(e.response?.data?.error ?? "Ошибка создания тестового платежа");
-      setTestPaying(false);
-    }
-  };
-
-  const handlePay = async (tariffId: "pro" | "business", overrideYearly?: boolean) => {`,
-  "WalletPage.tsx: handleTestPay"
-);
-
-// ════════════════════════════════════════════════════════════
-// 5. ФРОНТЕНД: кнопка "Тест 1₽" после карточки текущего тарифа
-// ════════════════════════════════════════════════════════════
-patchFile(
-  "frontend/src/pages/WalletPage.tsx",
-  `        </div>
-
-        {/* Переключатель месяц/год */}`,
-  `        </div>
-
-        {/* 🧪 Тестовая оплата (только для админа) */}
-        {isAdmin && (
-          <div className="mb-6 p-4 bg-amber-50 border-2 border-dashed border-amber-300 rounded-2xl flex items-center justify-between gap-3 flex-wrap">
-            <div className="min-w-0">
-              <div className="font-semibold text-amber-900 flex items-center gap-2">
-                <FlaskConical className="w-4 h-4" />
-                Тестовая оплата
-              </div>
-              <div className="text-xs text-amber-700 mt-0.5">
-                Реальный платёж 1 ₽ через YooKassa. Pro активируется на 30 дней.
-              </div>
-            </div>
-            <button
-              onClick={handleTestPay}
-              disabled={testPaying}
-              className="inline-flex items-center gap-2 bg-amber-600 text-white px-4 py-2 rounded-xl hover:bg-amber-700 disabled:opacity-50 text-sm font-medium shadow-sm whitespace-nowrap"
-            >
-              {testPaying && <Loader2 className="w-4 h-4 animate-spin" />}
-              {testPaying ? "Создание..." : "Оплатить 1 ₽"}
-            </button>
-          </div>
-        )}
-
-        {/* Переключатель месяц/год */}`,
-  "WalletPage.tsx: кнопка тестовой оплаты"
+  "src/modules/payments/payments.routes.ts",
+  `  app.get("/history", async (req) => {
+    const { sub: userId } = req.user!;
+    const { eq, desc } = await import("drizzle-orm");`,
+  `  app.get("/history", async (req) => {
+    const { sub: userId } = req.user!;`,
+  "payments.routes.ts: чистим дублирующийся импорт"
 );
 
 console.log("\n──────────────────────────────────────");
 if (touched > 0) {
-  console.log("🎉 Готово! Тестовая оплата 1₽ добавлена (видна только админу).");
+  console.log("🎉 Готово! Чек для ЮKassa добавлен.");
 } else {
   console.log("⚠️ Изменений не внесено.");
 }

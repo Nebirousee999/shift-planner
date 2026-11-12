@@ -1,7 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { db } from "../../../db/client.js";
-import { payments } from "../../../db/schema.js";
+import { payments, users } from "../../../db/schema.js";
+import { eq, desc } from "drizzle-orm";
 import { yookassaService } from "../../lib/yookassa.js";
 import { paymentsService } from "./payments.service.js";
 
@@ -37,6 +38,10 @@ export async function paymentsRoutes(app: FastifyInstance) {
     const periodDays = isYearly ? 365 : 30;
 
     try {
+      // 🔥 Получаем email пользователя для чека по 54-ФЗ
+      const [user] = await db.select({ email: users.email }).from(users).where(eq(users.id, userId));
+      const email = user?.email || "test@shift-planner.ru";
+
       const payment = await yookassaService.createPayment({
         amount,
         description,
@@ -47,6 +52,20 @@ export async function paymentsRoutes(app: FastifyInstance) {
           tariffId,
           periodDays: periodDays.toString(),
           isYearly: isYearly.toString(),
+        },
+        // 🔥 Формируем чек для ЮKassa
+        receipt: {
+          customer: { email },
+          items: [
+            {
+              description: description,
+              quantity: "1.00",
+              amount: { value: amount.toFixed(2), currency: "RUB" },
+              vat_code: 1, // 1 = Без НДС (если у тебя ОСНО и 20%, поменяй на 4)
+              payment_subject: "service",
+              payment_mode: "full_payment",
+            },
+          ],
         },
       });
 

@@ -25,6 +25,7 @@ export type CreatePaymentInput = {
   description: string;
   returnUrl: string;
   metadata?: Record<string, string>;
+  receipt?: any;
 };
 
 export const yookassaService = {
@@ -60,6 +61,7 @@ export const yookassaService = {
         capture: true,
         description: input.description,
         metadata: input.metadata ?? {},
+        receipt: input.receipt,
       },
       {
         headers: {
