@@ -7,6 +7,19 @@ import { useAreas } from "../store/areas";
 import { useShiftTemplates } from "../store/shiftTemplates";
 import { useWeeks } from "../store/weeks";
 
+
+// Хелпер для выделения текста в кавычках «...» жирным и цветом
+const formatDesc = (text: string) => {
+  const parts = text.split(/(«[^»]+»)/g);
+  return parts.map((part, i) =>
+    part.startsWith("«") && part.endsWith("»") ? (
+      <strong key={i} className="text-brand-600 font-bold">{part}</strong>
+    ) : (
+      <span key={i}>{part}</span>
+    )
+  );
+};
+
 export default function OnboardingWidget() {
   const { user } = useAuth();
   // По умолчанию виджет всегда открыт (isOpen = true)
@@ -148,7 +161,7 @@ export default function OnboardingWidget() {
                       {!step.done && (
                         <>
                           <div className="text-[11px] text-slate-500 mt-0.5 leading-snug">
-                            {step.desc}
+                            {formatDesc(step.desc)}
                           </div>
                           <Link to={step.link} className="text-[11px] font-medium text-brand-600 hover:text-brand-700 hover:underline mt-1 inline-block">
                             Перейти →
