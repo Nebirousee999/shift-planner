@@ -3,251 +3,50 @@ import fs from "node:fs";
 import path from "node:path";
 
 const ROOT = process.cwd();
+const FILE = path.join(ROOT, "frontend/src/components/OnboardingWidget.tsx");
+
+if (!fs.existsSync(FILE)) {
+  console.error("❌ Файл OnboardingWidget.tsx не найден");
+  process.exit(1);
+}
+
+let content = fs.readFileSync(FILE, "utf-8");
+const hadCRLF = content.includes("\r\n");
+if (hadCRLF) content = content.replace(/\r\n/g, "\n");
+
 let touched = 0;
 
-function patchFile(relPath, search, replace, label) {
-  const filePath = path.join(ROOT, relPath);
-  if (!fs.existsSync(filePath)) { console.log(`⚠️  [${label}] файл не найден`); return; }
-  let content = fs.readFileSync(filePath, "utf-8");
-  const hadCRLF = content.includes("\r\n");
-  let normalized = hadCRLF ? content.replace(/\r\n/g, "\n") : content;
+// 1. Обновляем текст для шага "Привяжите сотрудников"
+const search1 = `desc: "В разделе «Сотрудники» (Матрица) отметьте, кто в какой локации работает.",`;
+const replace1 = `desc: "В разделе «Сотрудники», в блоке «Матрица привязок» нажмите на «Редактировать привязки» и отметьте, кто в какой локации работает.",`;
 
-  if (normalized.includes(replace)) { console.log(`⏭  [${label}] уже применено`); return; }
-
-  if (!normalized.includes(search)) {
-    console.log(`❌ [${label}] шаблон для замены не найден`);
-    return;
-  }
-
-  normalized = normalized.replace(search, replace);
-  fs.writeFileSync(filePath, hadCRLF ? normalized.replace(/\n/g, "\r\n") : normalized, "utf-8");
+if (content.includes(replace1)) {
+  console.log("⏭  [Привязка сотрудников] уже обновлено.");
+} else if (content.includes(search1)) {
+  content = content.replace(search1, replace1);
   touched++;
-  console.log(`✅ [${label}] применено`);
+  console.log("✅ [Привязка сотрудников] текст обновлен.");
+} else {
+  console.log("❌ Не удалось найти текст шага «Привяжите сотрудников».");
 }
 
-function writeFile(relPath, content, label) {
-  const filePath = path.join(ROOT, relPath);
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, content, "utf-8");
+// 2. Обновляем текст для шага "Создайте расписание"
+const search2 = `desc: "В разделе «Недели» расставьте смены и обязательно нажмите кнопку «Опубликовать».",`;
+const replace2 = `desc: "В разделе «Недели» нажмите на нужную неделю, расставьте смены и обязательно нажмите кнопку «Опубликовать».",`;
+
+if (content.includes(replace2)) {
+  console.log("⏭  [Создайте расписание] уже обновлено.");
+} else if (content.includes(search2)) {
+  content = content.replace(search2, replace2);
   touched++;
-  console.log(`✅ [${label}] Перезаписан`);
+  console.log("✅ [Создайте расписание] текст обновлен.");
+} else {
+  console.log("❌ Не удалось найти текст шага «Создайте расписание».");
 }
 
-// ════════════════════════════════════════════════════════════
-// 1. Очистка стора users при выходе из аккаунта (auth.ts)
-// ════════════════════════════════════════════════════════════
-patchFile(
-  "frontend/src/store/auth.ts",
-  `  logout: () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    localStorage.removeItem("support_session_token"); // Очищаем сессию чата
-    // Сбрасываем кэш организации, чтобы при следующем входе под другим
-    // пользователем NavBar не мигал чужой организацией
-    resetOrganizationStore();
-    set({ user: null, token: null });
-  },`,
-  `  logout: () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    localStorage.removeItem("support_session_token"); // Очищаем сессию чата
-    
-    // Сбрасываем кэш организации и пользователей, чтобы при следующем входе
-    // виджеты и таблицы не показывали данные предыдущего аккаунта
-    resetOrganizationStore();
-    import("./users").then(({ useUsers }) => {
-      useUsers.setState({ items: [] });
-    }).catch(() => {});
-
-    set({ user: null, token: null });
-  },`,
-  "auth.ts: очистка users при logout"
-);
-
-// ════════════════════════════════════════════════════════════
-// 2. Полная перезапись OnboardingWidget (правильный подсчет и открытый по умолчанию)
-// ════════════════════════════════════════════════════════════
-writeFile(
-  "frontend/src/components/OnboardingWidget.tsx",
-  `import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { CheckCircle2, Circle, ChevronUp, ChevronDown, ListChecks, X, AlertCircle } from "lucide-react";
-import { useAuth } from "../store/auth";
-import { useUsers } from "../store/users";
-import { useAreas } from "../store/areas";
-import { useShiftTemplates } from "../store/shiftTemplates";
-import { useWeeks } from "../store/weeks";
-
-export default function OnboardingWidget() {
-  const { user } = useAuth();
-  // По умолчанию виджет всегда открыт (isOpen = true)
-  const [isOpen, setIsOpen] = useState(true);
-  const [isDismissed, setIsDismissed] = useState(() => localStorage.getItem("onboarding_dismissed") === "true");
-
-  const { items: users, fetch: fetchUsers } = useUsers();
-  const { items: areas, fetch: fetchAreas } = useAreas();
-  const { items: templates, fetch: fetchTemplates } = useShiftTemplates();
-  const { weeks, fetchWeeks } = useWeeks();
-
-  const dismiss = () => {
-    setIsDismissed(true);
-    localStorage.setItem("onboarding_dismissed", "true");
-  };
-
-  useEffect(() => {
-    const handleOpen = () => {
-      setIsDismissed(false);
-      setIsOpen(true);
-      localStorage.removeItem("onboarding_dismissed");
-    };
-    window.addEventListener("show-onboarding", handleOpen);
-    return () => window.removeEventListener("show-onboarding", handleOpen);
-  }, []);
-
-  // Подгружаем данные, если их нет
-  useEffect(() => {
-    if (user && user.role !== "EMPLOYEE" && !isDismissed) {
-      fetchUsers();
-      if (areas.length === 0) fetchAreas();
-      if (templates.length === 0) fetchTemplates();
-      if (weeks.length === 0) fetchWeeks();
-    }
-  }, [user, isDismissed, areas.length, templates.length, weeks.length, fetchUsers, fetchAreas, fetchTemplates, fetchWeeks]);
-
-  // Показываем только авторизованным владельцам и менеджерам
-  if (!user || user.role === "EMPLOYEE" || isDismissed) return null;
-
-  // 🔥 Строгая фильтрация: не считаем текущего пользователя (Владельца) за добавленного сотрудника
-  const otherUsers = users.filter((u) => u.id !== user.id);
-  
-  const hasUsers = otherUsers.length > 0;
-  const hasAreas = areas.length > 0;
-  const hasAssignedUsers = otherUsers.some(
-    (u) => (u.areaIds && u.areaIds.length > 0) || (u.locationIds && u.locationIds.length > 0)
-  );
-  const hasTemplates = templates.length > 0;
-  const hasSchedule = weeks.some((w) => w.shifts && w.shifts.length > 0);
-
-  const steps = [
-    {
-      title: "Создайте сотрудников",
-      desc: "В разделе «Сотрудники» добавьте их вручную или загрузите Excel.",
-      done: hasUsers,
-      link: "/team",
-    },
-    {
-      title: "Создайте локацию",
-      desc: "В «Шаблоны» → «Локации» создайте помещение (Кухня, Зал и т.д.).",
-      done: hasAreas,
-      link: "/templates?tab=areas",
-    },
-    {
-      title: "Привяжите сотрудников",
-      desc: "В разделе «Сотрудники» (Матрица) отметьте, кто в какой локации работает.",
-      done: hasAssignedUsers,
-      link: "/team",
-    },
-    {
-      title: "Создайте шаблон смен",
-      desc: "В «Шаблоны» → «Смены» добавьте график (например, Утро 08:00–16:00).",
-      done: hasTemplates,
-      link: "/templates?tab=shifts",
-    },
-    {
-      title: "Создайте расписание",
-      desc: "В разделе «Недели» расставьте смены и обязательно нажмите кнопку «Опубликовать».",
-      done: hasSchedule,
-      link: "/weeks",
-    },
-  ];
-
-  return (
-    <div className="fixed top-20 right-4 sm:right-6 z-[90] w-80 max-w-[calc(100vw-2rem)] animate-fade-in">
-      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
-        {/* Заголовок */}
-        <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border-b border-slate-100">
-          <div className="flex items-center gap-2 cursor-pointer select-none" onClick={() => setIsOpen(!isOpen)}>
-            <div className="w-8 h-8 rounded-lg bg-brand-100 flex items-center justify-center shrink-0">
-              <ListChecks className="w-4 h-4 text-brand-600" />
-            </div>
-            <div>
-              <div className="font-semibold text-slate-900 text-sm">С чего начать</div>
-              <div className="text-[10px] text-slate-500">Шаги для запуска</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-1">
-            <button onClick={() => setIsOpen(!isOpen)} className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-200 transition-colors">
-              {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            </button>
-            <button onClick={dismiss} className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors" title="Скрыть подсказку">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
-        {/* Тело */}
-        {isOpen && (
-          <div className="p-3 max-h-[70vh] overflow-y-auto">
-            {!hasUsers ? (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span className="text-sm font-semibold text-amber-900">Никто не загружен</span>
-                </div>
-                <p className="text-xs text-amber-800 mb-2">
-                  У вас пока нет ни одного сотрудника. Без них невозможно составить график.
-                </p>
-                <Link to="/team" className="inline-block bg-white text-amber-700 border border-amber-300 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-amber-100 transition-colors">
-                  Перейти к сотрудникам
-                </Link>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {steps.map((step, i) => (
-                  <div key={i} className="flex items-start gap-3">
-                    <div className="shrink-0 mt-0.5">
-                      {step.done ? (
-                        <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                      ) : (
-                        <Circle className="w-5 h-5 text-slate-300" />
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <div className={\`text-sm font-medium \${step.done ? "text-slate-400 line-through" : "text-slate-900"}\`}>
-                        {step.title}
-                      </div>
-                      {!step.done && (
-                        <>
-                          <div className="text-[11px] text-slate-500 mt-0.5 leading-snug">
-                            {step.desc}
-                          </div>
-                          <Link to={step.link} className="text-[11px] font-medium text-brand-600 hover:text-brand-700 hover:underline mt-1 inline-block">
-                            Перейти →
-                          </Link>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {hasUsers && steps.every((s) => s.done) && (
-              <div className="mt-4 bg-emerald-50 rounded-xl p-3 border border-emerald-200 text-center">
-                <div className="text-lg mb-1">🎉</div>
-                <div className="text-sm font-semibold text-emerald-900">Всё готово!</div>
-                <div className="text-xs text-emerald-700">Вы настроили систему и можете работать.</div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
+if (touched > 0) {
+  fs.writeFileSync(FILE, hadCRLF ? content.replace(/\n/g, "\r\n") : content, "utf-8");
+  console.log("\n🎉 Готово! Тексты подсказок обновлены.");
+} else {
+  console.log("\n⚠️ Изменений не внесено (возможно, текст уже правильный).");
 }
-`,
-  "OnboardingWidget.tsx"
-);
-
-console.log("\n──────────────────────────────────────");
-console.log(touched > 0 ? "🎉 Готово! Виджет исправлен, кэш очищается при выходе." : "⚠️ Изменений не внесено.");
