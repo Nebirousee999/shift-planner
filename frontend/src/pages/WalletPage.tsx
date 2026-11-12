@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Wallet, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
+import { Wallet, CheckCircle2, AlertTriangle, Loader2, FlaskConical } from "lucide-react";
+import { useAuth } from "../store/auth";
 import { paymentsApi, type CurrentSubscription, type Payment } from "../api/payments";
 import { trackEvent } from "../lib/metrika";
 import NavBar from "../components/NavBar";
@@ -40,6 +41,9 @@ const PRICES = {
 const fmtMoney = (n: number) => new Intl.NumberFormat("ru-RU").format(n) + " ₽";
 
 export default function WalletPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.email === import.meta.env.VITE_ADMIN_EMAIL;
+  const [testPaying, setTestPaying] = useState(false);
   const [searchParams] = useSearchParams();
   const checkoutPlan = searchParams.get("checkout") as "pro" | "business" | null;
 
@@ -84,6 +88,21 @@ export default function WalletPage() {
         setLoading(false);
       });
   }, [checkoutPlan]);
+
+  const handleTestPay = async () => {
+    setTestPaying(true);
+    try {
+      const { confirmationUrl } = await paymentsApi.create(
+        "pro",
+        1,
+        "Тестовая оплата 1₽ (Pro на 30 дней)"
+      );
+      window.location.href = confirmationUrl;
+    } catch (e: any) {
+      alert(e.response?.data?.error ?? "Ошибка создания тестового платежа");
+      setTestPaying(false);
+    }
+  };
 
   const handlePay = async (tariffId: "pro" | "business", overrideYearly?: boolean) => {
     trackEvent("ym-begin-checkout", { tariff: tariffId });
@@ -232,6 +251,29 @@ export default function WalletPage() {
             </button>
           )}
         </div>
+
+        {/* 🧪 Тестовая оплата (только для админа) */}
+        {isAdmin && (
+          <div className="mb-6 p-4 bg-amber-50 border-2 border-dashed border-amber-300 rounded-2xl flex items-center justify-between gap-3 flex-wrap">
+            <div className="min-w-0">
+              <div className="font-semibold text-amber-900 flex items-center gap-2">
+                <FlaskConical className="w-4 h-4" />
+                Тестовая оплата
+              </div>
+              <div className="text-xs text-amber-700 mt-0.5">
+                Реальный платёж 1 ₽ через YooKassa. Pro активируется на 30 дней.
+              </div>
+            </div>
+            <button
+              onClick={handleTestPay}
+              disabled={testPaying}
+              className="inline-flex items-center gap-2 bg-amber-600 text-white px-4 py-2 rounded-xl hover:bg-amber-700 disabled:opacity-50 text-sm font-medium shadow-sm whitespace-nowrap"
+            >
+              {testPaying && <Loader2 className="w-4 h-4 animate-spin" />}
+              {testPaying ? "Создание..." : "Оплатить 1 ₽"}
+            </button>
+          </div>
+        )}
 
         {/* Переключатель месяц/год */}
         {currentTariffId !== "business" && (

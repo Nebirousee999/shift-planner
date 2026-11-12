@@ -13,7 +13,7 @@ const createSchema = z.object({
 
 // Цены для проверки (защита от подмены суммы на фронте)
 const TARIFF_PRICES: Record<string, number[]> = {
-  pro: [990, 9480],
+  pro: [990, 9480, 1], // 1 ₽ — для тестовой оплаты через реальный кошелёк
   business: [2490, 23880],
 };
 
