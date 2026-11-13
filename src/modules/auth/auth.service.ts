@@ -14,7 +14,7 @@ import {
   positionTemplates
 } from "../../../db/schema.js";
 import { mailerService } from "../../lib/mailer.service.js";
-import { exportWeekToExcel } from "../../lib/export/excel.js";
+import { exportMonthToExcel } from "../../lib/export/excel.js";
 import { getMonday } from "../../lib/time.js";
 
 function generateTempPassword(length = 8): string {
@@ -122,7 +122,7 @@ export const authService = {
         }
       }
 
-      let weekDataForExport = null;
+      let excelDataForExport = null;
       let firstWeekId = null;
 
       if (createdEmployees.length > 0 && input.guestData.startDate) {
@@ -215,30 +215,32 @@ export const authService = {
           await tx.insert(scheduledShifts).values(shiftsToInsert);
         }
 
-        const firstWeekShifts = shiftsToInsert.filter(s => s.weekId === weeksMap[0].id);
-        weekDataForExport = {
-          weekStartDate: monday,
+        const allShiftsForExport = shiftsToInsert.map(s => ({
+          userId: s.userId,
+          userName: createdEmployees.find(e => e.id === s.userId)?.name || "—",
+          shiftDate: s.shiftDate,
+          startTime: s.startTime,
+          endTime: s.endTime,
+          templateName: "Смена",
+          templateColor: "#3B82F6"
+        }));
+
+        excelDataForExport = {
           orgName: org.name,
-          shifts: firstWeekShifts.map(s => ({
-            id: Math.random().toString(),
-            shiftDate: s.shiftDate,
-            startTime: s.startTime,
-            endTime: s.endTime,
-            userName: createdEmployees.find(e => e.id === s.userId)?.name || "—",
-            templateName: "Смена",
-            templateColor: "#3B82F6"
-          }))
+          monthStartDate: monday,
+          employees: createdEmployees.map(e => ({ id: e.id, name: e.name })),
+          shifts: allShiftsForExport
         };
       }
 
-      return { org, user, weekDataForExport, firstWeekId };
+      return { org, user, excelDataForExport, firstWeekId };
     });
 
     // Генерируем Excel, если есть смены
     let excelBuffer = null;
-    if (result.weekDataForExport && result.weekDataForExport.shifts.length > 0) {
+    if (result.excelDataForExport && result.excelDataForExport.shifts.length > 0) {
       try {
-        excelBuffer = await exportWeekToExcel(result.weekDataForExport);
+        excelBuffer = await exportMonthToExcel(result.excelDataForExport);
       } catch (e) {
         console.error("Ошибка генерации Excel:", e);
       }

@@ -98,7 +98,7 @@ export const mailerService = {
       const attachments = [];
       if (excelBuffer) {
         attachments.push({
-          filename: "График_смен.xlsx",
+          filename: "График_на_месяц.xlsx",
           content: excelBuffer,
           contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         });

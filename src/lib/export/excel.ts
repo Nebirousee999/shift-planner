@@ -382,3 +382,104 @@ export async function exportTimesheetToExcel(
 
   return (await wb.xlsx.writeBuffer()) as Buffer;
 }
+
+// ─── Экспорт графика на месяц (по вкладкам для каждого сотрудника) ─────────────────────────
+export async function exportMonthToExcel(input: {
+  orgName: string;
+  monthStartDate: string;
+  employees: { id: string; name: string }[];
+  shifts: {
+    userId: string;
+    userName: string;
+    shiftDate: string;
+    startTime: string;
+    endTime: string;
+    templateName: string | null;
+    templateColor: string | null;
+  }[];
+}): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "Планировщик смен";
+
+  // Группируем смены по сотрудникам
+  const shiftsByUser = new Map<string, typeof input.shifts>();
+  for (const s of input.shifts) {
+    if (!shiftsByUser.has(s.userId)) shiftsByUser.set(s.userId, []);
+    shiftsByUser.get(s.userId)!.push(s);
+  }
+
+  // Сортируем смены внутри каждого сотрудника
+  for (const userShifts of shiftsByUser.values()) {
+    userShifts.sort((a, b) => a.shiftDate.localeCompare(b.shiftDate));
+  }
+
+  // Создаем вкладку для каждого сотрудника
+  for (const emp of input.employees) {
+    const userShifts = shiftsByUser.get(emp.id) || [];
+    let sheetName = emp.name.replace(/[\\\/?*\[\]:]/g, "").slice(0, 31) || "Сотрудник";
+    
+    const ws = wb.addWorksheet(sheetName);
+    ws.pageSetup = { orientation: "portrait", fitToPage: true, fitToWidth: 1 };
+
+    // Заголовок
+    ws.mergeCells("A1:D1");
+    ws.getCell("A1").value = `${input.orgName} — ${emp.name}`;
+    ws.getCell("A1").font = { bold: true, size: 14 };
+    ws.getCell("A1").alignment = { horizontal: "center", vertical: "middle" };
+    ws.getRow(1).height = 30;
+
+    ws.mergeCells("A2:D2");
+    ws.getCell("A2").value = `График смен на месяц (с ${new Date(input.monthStartDate + "T00:00:00Z").toLocaleDateString("ru-RU", { timeZone: "UTC" })})`;
+    ws.getCell("A2").font = { size: 11, color: { argb: "FF6B7280" } };
+    ws.getCell("A2").alignment = { horizontal: "center" };
+
+    // Шапка таблицы
+    const headerRow = ws.getRow(4);
+    headerRow.values = ["Дата", "День недели", "Время смены", "Шаблон"];
+    headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    headerRow.eachCell((c) => {
+      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2563EB" } };
+      c.alignment = { horizontal: "center", vertical: "middle" };
+      c.border = { bottom: { style: "thin" } };
+    });
+    headerRow.height = 24;
+
+    // Данные
+    let rowIdx = 5;
+    for (const s of userShifts) {
+      const d = new Date(s.shiftDate + "T00:00:00Z");
+      const dateStr = d.toLocaleDateString("ru-RU", { timeZone: "UTC", day: "2-digit", month: "2-digit", year: "numeric" });
+      const dow = d.getUTCDay();
+      const dowStr = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"][dow];
+
+      const row = ws.getRow(rowIdx);
+      row.values = [dateStr, dowStr, `${s.startTime}–${s.endTime}`, s.templateName || "—"];
+      
+      if (s.templateColor) {
+        const hex = s.templateColor.replace("#", "").toUpperCase();
+        const colorCell = row.getCell(3);
+        colorCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF" + hex } };
+        colorCell.font = { color: { argb: "FFFFFFFF" }, bold: true };
+      }
+
+      row.eachCell((c) => {
+        c.alignment = { vertical: "middle", horizontal: "center" };
+        c.border = {
+          bottom: { style: "thin", color: { argb: "FFE5E7EB" } },
+          right: { style: "thin", color: { argb: "FFE5E7EB" } },
+        };
+      });
+      row.height = 22;
+      rowIdx++;
+    }
+
+    ws.columns = [
+      { width: 14 },
+      { width: 14 },
+      { width: 20 },
+      { width: 25 },
+    ];
+  }
+
+  return (await wb.xlsx.writeBuffer()) as Buffer;
+}
