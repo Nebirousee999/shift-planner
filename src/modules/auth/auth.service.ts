@@ -157,7 +157,7 @@ export const authService = {
           if (!templatesMap.has(key)) {
             const [newTpl] = await tx.insert(shiftTemplates).values({
               orgId: org.id,
-              name: `Смена ${templatesMap.size + 1} (${sTime}-${eTime})`,
+              name: `Смена ${templatesMap.size + 1}`,
               startTime: sTime,
               endTime: eTime,
               color: "#3B82F6"
