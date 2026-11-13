@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Wallet, CheckCircle2, AlertTriangle, Loader2, FlaskConical } from "lucide-react";
+import { Wallet, CheckCircle2, AlertTriangle, Loader2, FlaskConical, Sparkles } from "lucide-react";
 import { useAuth } from "../store/auth";
 import { paymentsApi, type CurrentSubscription, type Payment } from "../api/payments";
 import { trackEvent } from "../lib/metrika";
@@ -43,6 +43,7 @@ const fmtMoney = (n: number) => new Intl.NumberFormat("ru-RU").format(n) + " ₽
 export default function WalletPage() {
   const { user, token } = useAuth();
   const isAdmin = user?.email === import.meta.env.VITE_ADMIN_EMAIL;
+  const [searchParams] = useSearchParams();
   const isTrialRequest = searchParams.get("trial") === "true";
   const [activatingTrial, setActivatingTrial] = useState(false);
 
@@ -61,7 +62,6 @@ export default function WalletPage() {
     }
   };
   const [testPaying, setTestPaying] = useState<"monthly" | "yearly" | null>(null);
-  const [searchParams] = useSearchParams();
   const checkoutPlan = searchParams.get("checkout") as "pro" | "business" | null;
 
   const [current, setCurrent] = useState<CurrentSubscription | null>(null);

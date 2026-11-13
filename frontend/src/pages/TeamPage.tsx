@@ -1104,8 +1104,8 @@ export default function TeamPage() {
               await fetchAreas();
               setEditingUser(null);
               
-              if (res && (res as any).tempPassword) {
-                if (confirm(`Сотруднику сгенерирован новый пароль: ${(res as any).tempPassword}\n\nОтправить его сотруднику на почту?`)) {
+              if (res && res.tempPassword) {
+                if (confirm(`Сотруднику сгенерирован новый пароль: ${res.tempPassword}\n\nОтправить его сотруднику на почту?`)) {
                    try {
                      await usersApi.sendPasswords([editingUser.id]);
                      await alertDialog("Пароль успешно отправлен!", { variant: "success" });

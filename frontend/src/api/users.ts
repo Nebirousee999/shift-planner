@@ -62,6 +62,8 @@ export const usersApi = {
       areaIds: string[];
       paymentType?: "HOURLY" | "MONTHLY";
       employmentType?: "GPH" | "SHTAT";
+      email?: string;
+      tempPassword?: string | null;
     }>
   ): Promise<TeamUser> => {
     const { data } = await api.patch<TeamUser>(`/users/${id}`, input);

@@ -285,6 +285,8 @@ export default function ProfilePage() {
                   register={register}
                   errors={errors}
                   onSubmit={handleSubmit(onSubmitPassword)}
+                  showPass={showPass}
+                  setShowPass={setShowPass}
                 />
               )}
 
@@ -439,13 +441,15 @@ function SidebarGroup({
 // Профиль (карточка + смена пароля)
 // ═══════════════════════════════════════════════════
 function ProfileSection({
-  profile, saving, register, errors, onSubmit,
+  profile, saving, register, errors, onSubmit, showPass, setShowPass,
 }: {
   profile: MyProfile;
   saving: boolean;
   register: any;
   errors: any;
   onSubmit: (e: React.FormEvent) => void;
+  showPass: boolean;
+  setShowPass: (v: boolean) => void;
 }) {
   return (
     <div className="space-y-6 animate-fade-in">

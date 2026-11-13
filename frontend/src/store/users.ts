@@ -29,7 +29,7 @@ type State = {
       locationIds?: string[];
       areaIds?: string[];
     }>
-  ) => Promise<void>;
+  ) => Promise<TeamUser>;
 
   remove: (id: string) => Promise<void>;
 
@@ -74,6 +74,7 @@ export const useUsers = create<State>((set) => ({
     set((s) => ({
       items: s.items.map((u) => (u.id === id ? updated : u)),
     }));
+    return updated;
   },
 
   remove: async (id) => {

@@ -4,7 +4,7 @@ import { useLocations } from "../store/locations";
 import { useOrganization } from "../store/organization";
 import { locationsApi, type Location, type LocationEmployee } from "../api/locations";
 import { usersApi, type TeamUser } from "../api/users";
-import { alertDialog } from "../store/dialogs";
+import { alertDialog, confirmDialog } from "../store/dialogs";
 import NavBar from "../components/NavBar";
 import { useNavigate } from "react-router-dom";
 
