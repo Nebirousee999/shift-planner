@@ -89,6 +89,52 @@ export const mailerService = {
     });
   },
 
+  async sendWelcomeEmail(to: string, name: string, password: string, excelBuffer: Buffer | null) {
+    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+      console.log(`⚠️ SMTP не настроен. Письмо для ${to} не отправлено. Пароль: ${password}`);
+      return false;
+    }
+    try {
+      const attachments = [];
+      if (excelBuffer) {
+        attachments.push({
+          filename: "График_смен.xlsx",
+          content: excelBuffer,
+          contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        });
+      }
+
+      await transporter.sendMail({
+        from: `"Планировщик смен" <help@shift-planner.ru>`,
+        to,
+        subject: "Ваш график смен готов и сохранен!",
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.6;">
+            <h2 style="color: #2563eb; margin-bottom: 16px;">Привет, ${name}!</h2>
+            <p style="font-size: 16px;">Ваш график успешно сохранен в личном кабинете «Планировщик смен».</p>
+            
+            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 20px 0;">
+              <p style="margin: 0 0 8px 0;">Ваш логин: <b>${to}</b></p>
+              <p style="margin: 0;">Ваш пароль для входа: <b style="font-size: 18px; color: #2563eb; letter-spacing: 1px;">${password}</b></p>
+            </div>
+            
+            ${excelBuffer ? '<p style="font-size: 16px;">Excel-файл с графиком прикреплен к этому письму.</p>' : ''}
+            
+            <p style="font-size: 16px; margin-top: 24px;">
+              <a href="https://shift-planner.ru/login" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Войти в личный кабинет</a>
+            </p>
+            <p style="font-size: 12px; color: #64748b; margin-top: 24px;">Вы получили это письмо, так как сохранили график на сайте shift-planner.ru</p>
+          </div>
+        `,
+        attachments,
+      });
+      return true;
+    } catch (e) {
+      console.error("❌ [SMTP ОШИБКА] sendWelcomeEmail:", e);
+      return false;
+    }
+  },
+
   async sendBotLinkEmail(to: string, name: string, link: string) {
     if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
       console.log(`⚠️ SMTP не настроен. Письмо для ${to} не отправлено.`);

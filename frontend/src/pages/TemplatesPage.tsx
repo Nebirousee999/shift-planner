@@ -59,8 +59,9 @@ export default function TemplatesPage() {
   }, [urlTab]);
 
   // Смены
-  const { items: shifts, fetch: fetchShifts, create: createShift, remove: removeShift } = useShiftTemplates();
+  const { items: shifts, fetch: fetchShifts, create: createShift, update: updateShift, remove: removeShift } = useShiftTemplates();
   const [showShiftForm, setShowShiftForm] = useState(false);
+  const [editingShift, setEditingShift] = useState<any>(null);
   const shiftForm = useForm<ShiftForm>({
     resolver: zodResolver(shiftSchema),
     defaultValues: { name: "", startTime: "09:00", endTime: "18:00", color: "#3B82F6" },
@@ -99,9 +100,14 @@ export default function TemplatesPage() {
       return;
     }
     try {
-      await createShift(data);
+      if (editingShift) {
+        await updateShift(editingShift.id, data);
+      } else {
+        await createShift(data);
+      }
       shiftForm.reset();
       setShowShiftForm(false);
+      setEditingShift(null);
     } catch (e: any) {
       await alertDialog(e.response?.data?.error ?? "Ошибка", { variant: "error" });
     }
@@ -259,7 +265,17 @@ export default function TemplatesPage() {
           <>
             <div className="flex justify-end mb-4">
               <button
-                onClick={() => setShowShiftForm((v) => !v)}
+                onClick={() => {
+                  if (showShiftForm) {
+                    setShowShiftForm(false);
+                    setEditingShift(null);
+                    shiftForm.reset();
+                  } else {
+                    setShowShiftForm(true);
+                    setEditingShift(null);
+                    shiftForm.reset({ name: "", startTime: "09:00", endTime: "18:00", color: "#3B82F6" });
+                  }
+                }}
                 className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2.5 rounded-xl hover:bg-brand-700 text-sm font-medium shadow-sm"
               >
                 {showShiftForm ? <><X className="w-4 h-4" /> Отмена</> : <><Plus className="w-4 h-4" /> Новый шаблон</>}
@@ -288,9 +304,20 @@ export default function TemplatesPage() {
                       />
                     ))}
                   </div>
-                  <button type="submit" className="bg-brand-600 text-white px-5 py-2.5 rounded-xl hover:bg-brand-700 text-sm font-medium">
-                    Сохранить
-                  </button>
+                  <div className="flex gap-2">
+                    <button type="submit" className="bg-brand-600 text-white px-5 py-2.5 rounded-xl hover:bg-brand-700 text-sm font-medium">
+                      {editingShift ? "Обновить" : "Сохранить"}
+                    </button>
+                    {editingShift && (
+                      <button 
+                        type="button" 
+                        onClick={() => { setShowShiftForm(false); setEditingShift(null); shiftForm.reset(); }} 
+                        className="px-5 py-2.5 rounded-xl text-slate-600 hover:bg-slate-100 text-sm font-medium"
+                      >
+                        Отмена
+                      </button>
+                    )}
+                  </div>
                 </form>
               </div>
             )}
@@ -309,13 +336,27 @@ export default function TemplatesPage() {
                           <span className="bg-slate-100 px-2 py-0.5 rounded">{t.endTime}</span>
                         </div>
                       </div>
-                      <button
-                        onClick={() => removeShift(t.id)}
-                        className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-600 p-1.5 rounded-lg"
-                        title="Удалить"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => {
+                            setEditingShift(t);
+                            shiftForm.reset({ name: t.name, startTime: t.startTime, endTime: t.endTime, color: t.color });
+                            setShowShiftForm(true);
+                            window.scrollTo({ top: 0, behavior: "smooth" });
+                          }}
+                          className="text-slate-400 hover:text-brand-600 p-1.5 rounded-lg"
+                          title="Редактировать"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => removeShift(t.id)}
+                          className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg"
+                          title="Удалить"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>

@@ -15,6 +15,7 @@ type State = {
   fetchWeek: (id: string) => Promise<void>;
   createWeek: (input: { weekStartDate: string; locationId: string }) => Promise<ScheduleWeek>;
   publishWeek: (id: string) => Promise<{ ok: boolean; week?: ScheduleWeek; violations?: string[] }>;
+  unpublishWeek: (id: string) => Promise<ScheduleWeek>;
   duplicateWeek: (id: string) => Promise<ScheduleWeek>;
   removeWeek: (id: string) => Promise<void>;
   addShift: (input: Parameters<typeof shiftsApi.create>[0]) => Promise<ShiftUpdateResult>;
@@ -68,6 +69,15 @@ export const useWeeks = create<State>((set, get) => ({
       }
       throw e;
     }
+  },
+
+  unpublishWeek: async (id) => {
+    const week = await weeksApi.unpublish(id);
+    set((s) => ({
+      weeks: s.weeks.map((w) => (w.id === id ? { ...w, ...week } : w)),
+      currentWeek: s.currentWeek?.id === id ? { ...s.currentWeek, ...week } : s.currentWeek,
+    }));
+    return week;
   },
 
   duplicateWeek: async (id) => {

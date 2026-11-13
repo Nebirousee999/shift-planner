@@ -99,15 +99,21 @@ export async function supportRoutes(app: FastifyInstance) {
   app.get("/admin/unread-count", async (req, reply) => {
     const userId = (req as any).user?.sub;
     if (!(await checkAdmin(userId))) return reply.code(403).send({ error: "Forbidden" });
-    const unread = await db.select().from(supportMessages).where(and(eq(supportMessages.sender, "USER"), eq(supportMessages.isReadByAdmin, false)));
-    return { count: unread.length };
+    try {
+      const unread = await db.select().from(supportMessages).where(and(eq(supportMessages.sender, "USER"), eq(supportMessages.isReadByAdmin, false)));
+      return { count: unread.length };
+    } catch (e) {
+      // 🔥 Если таблицы нет (старая база), просто возвращаем 0 вместо ошибки 500
+      return { count: 0 };
+    }
   });
 
   app.get("/admin/tickets", async (req, reply) => {
     const userId = (req as any).user?.sub;
     if (!(await checkAdmin(userId))) return reply.code(403).send({ error: "Forbidden" });
 
-    const tickets = await db.select().from(supportTickets).orderBy(desc(supportTickets.createdAt));
+    try {
+      const tickets = await db.select().from(supportTickets).orderBy(desc(supportTickets.createdAt));
     const allMessages = await db.select().from(supportMessages).orderBy(desc(supportMessages.createdAt));
     const orgs = await db.select().from(organizations);
     const usersList = await db.select().from(users);
@@ -150,6 +156,9 @@ export async function supportRoutes(app: FastifyInstance) {
       }
     }
     return Array.from(uniqueTickets.values());
+    } catch (e) {
+      return []; // Если таблиц нет, возвращаем пустой массив
+    }
   });
 
   app.get("/admin/tickets/:id/messages", async (req, reply) => {

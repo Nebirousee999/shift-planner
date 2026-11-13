@@ -6,8 +6,10 @@ import { locationsApi, type Location, type LocationEmployee } from "../api/locat
 import { usersApi, type TeamUser } from "../api/users";
 import { alertDialog } from "../store/dialogs";
 import NavBar from "../components/NavBar";
+import { useNavigate } from "react-router-dom";
 
 export default function LocationsPage() {
+  const navigate = useNavigate();
   const { items, fetch, create, update } = useLocations();
   const org = useOrganization((s) => s.org);
   const [showForm, setShowForm] = useState(false);
@@ -34,10 +36,11 @@ export default function LocationsPage() {
     } catch (e: any) {
       const code = e.response?.data?.code;
       if (code === "LOCATION_LIMIT_REACHED") {
-        await alertDialog(
-          "На вашем тарифе доступна только одна точка. Обновите тариф, чтобы добавить больше.",
-          { title: "Лимит точек", variant: "error" }
+        const ok = await confirmDialog(
+          "Доступно только для Pro.\n\nНа бесплатном тарифе доступна только 1 точка. Разблокировать функции на 14 дней?",
+          { title: "Лимит точек", confirmLabel: "Разблокировать" }
         );
+        if (ok) navigate("/wallet?trial=true");
       } else {
         await alertDialog(e.response?.data?.error ?? "Ошибка", { variant: "error" });
       }

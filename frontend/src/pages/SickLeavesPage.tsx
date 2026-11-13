@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import { Plus, X, Trash2, Stethoscope, Pencil, Check } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Plus, X, Trash2, Stethoscope, Pencil, Check, Lock, Sparkles } from "lucide-react";
 import { useSickLeaves } from "../store/sickLeaves";
 import { useUsers } from "../store/users";
+import { useOrganization } from "../store/organization";
 import { alertDialog, confirmDialog } from "../store/dialogs";
 import NavBar from "../components/NavBar";
 import VacationsGantt from "../components/VacationsGantt";
@@ -25,7 +27,6 @@ function formatDateTime(iso: string | null | undefined): string {
   return d.toLocaleString("ru-RU", { timeZone: "Europe/Moscow" });
 }
 
-// Приводим SickLeave к Vacation-совместимому виду для ганта
 function toGanttVacation(s: SickLeave): Vacation {
   return {
     id: s.id,
@@ -46,8 +47,15 @@ function toGanttVacation(s: SickLeave): Vacation {
 }
 
 export default function SickLeavesPage() {
+  const navigate = useNavigate();
   const { all, loading, fetchAll, create, update, remove } = useSickLeaves();
   const { items: users, fetch: fetchUsers } = useUsers();
+
+  const org = useOrganization((s) => s.org);
+  const isTrial = org?.trialEndsAt && new Date(org.trialEndsAt) > new Date();
+  const isPaid = org?.tariffExpiresAt && new Date(org.tariffExpiresAt) > new Date();
+  const effectiveTariff = isTrial ? "pro" : (isPaid ? org?.tariffId : "free");
+  const isFree = effectiveTariff === "free";
 
   const [editMode, setEditMode] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -165,140 +173,162 @@ export default function SickLeavesPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <NavBar />
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-        <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">Больничные</h1>
-            <p className="text-sm text-slate-500 mt-1">Учёт отсутствия сотрудников по болезни</p>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              onClick={() => { setEditMode((v) => !v); closeForm(); }}
-              className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                editMode
-                  ? "bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
-                  : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
-              }`}
-            >
-              {editMode ? <><Check className="w-4 h-4" /> Готово</> : <><Pencil className="w-4 h-4" /> Редактировать</>}
-            </button>
-
-            {editMode && (
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 relative">
+        
+        {isFree && (
+          <div className="absolute inset-0 z-50 bg-slate-50/60 backdrop-blur-md flex items-start justify-center pt-20 sm:pt-32">
+            <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-md w-full p-8 text-center animate-fade-in mx-4">
+              <div className="w-20 h-20 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Lock className="w-10 h-10 text-amber-600" />
+              </div>
+              <h2 className="text-2xl font-bold text-slate-900 mb-3">Доступно только для Pro</h2>
+              <p className="text-slate-500 mb-8 text-sm leading-relaxed">
+                Учёт больничных и управление отсутствиями сотрудников доступны на тарифе Pro.
+              </p>
               <button
-                onClick={showForm && !editingId ? closeForm : openCreate}
-                className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm ${
-                  showForm && !editingId
-                    ? "bg-slate-200 text-slate-700"
-                    : "bg-brand-600 text-white hover:bg-brand-700"
-                }`}
+                onClick={() => navigate("/wallet?trial=true")}
+                className="w-full bg-brand-600 text-white py-3.5 rounded-xl font-bold hover:bg-brand-700 shadow-lg shadow-brand-500/30 transition-all flex items-center justify-center gap-2 mb-3"
               >
-                {showForm && !editingId ? <><X className="w-4 h-4" /> Отмена</> : <><Plus className="w-4 h-4" /> Добавить больничный</>}
+                <Sparkles className="w-5 h-5" /> Разблокировать на 14 дней
               </button>
-            )}
-          </div>
-        </div>
-
-        {showForm && (
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6 animate-fade-in">
-            <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
-              <Stethoscope className="w-4 h-4 text-rose-500" />
-              {editingId ? "Редактировать запись" : "Новая запись"}
-            </h3>
-            <form onSubmit={onSave} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Сотрудник</label>
-                  <select
-                    value={form.userId}
-                    onChange={(e) => setForm((f) => ({ ...f, userId: e.target.value }))}
-                    disabled={!!editingId}
-                  >
-                    <option value="">— Выберите —</option>
-                    {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Дата начала</label>
-                  <input type="date" value={form.startDate} onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))} />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Дата окончания</label>
-                  <input type="date" value={form.endDate} onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value }))} />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Комментарий</label>
-                <input value={form.comment} onChange={(e) => setForm((f) => ({ ...f, comment: e.target.value }))} placeholder="Например: ОРВИ" maxLength={255} />
-              </div>
-              <div className="flex gap-2">
-                <button type="submit" disabled={busy} className="bg-brand-600 text-white px-5 py-2.5 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium transition-colors">
-                  {busy ? "Сохранение..." : "Сохранить"}
-                </button>
-                <button type="button" onClick={closeForm} className="px-5 py-2.5 rounded-xl text-slate-600 hover:bg-slate-100 text-sm font-medium">
-                  Отмена
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {users.length > 0 && all.length > 0 ? (
-          <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-            <VacationsGantt
-              users={ganttUsers}
-              vacations={ganttVacations}
-              canEdit={() => editMode}
-              onBarClick={(v) => {
-                if (!editMode) return;
-                const s = all.find((x) => x.id === v.id);
-                if (s) openEdit(s);
-              }}
-              onUpdate={editMode ? onGanttUpdate : undefined}
-              barTooltip={barTooltip}
-            />
-          </div>
-        ) : (
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center text-slate-500 h-[50vh] flex items-center justify-center">
-            {loading ? "Загрузка..." : "Нет данных для отображения таблицы"}
-          </div>
-        )}
-
-        {/* Список для удаления — компактный, снизу, только в режиме редактирования */}
-        {editMode && all.length > 0 && (
-          <div className="mt-6 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-slate-100 font-semibold text-slate-900">Все записи</div>
-            <div className="divide-y divide-slate-100 max-h-[30vh] overflow-y-auto">
-              {all.map((item) => (
-                <div key={item.id} className="flex items-center justify-between p-3 hover:bg-slate-50 transition-colors">
-                  <div className="min-w-0">
-                    <div className="font-medium text-slate-900 text-sm truncate">{item.userName}</div>
-                    <div className="text-[11px] text-slate-500 truncate">
-                      {formatDateRU(item.startDate)} — {formatDateRU(item.endDate)}
-                      {item.comment && ` · ${item.comment}`}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      onClick={() => openEdit(item)}
-                      className="text-slate-400 hover:text-brand-600 p-1.5 rounded-lg transition-colors"
-                      title="Редактировать"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => onDelete(item.id)}
-                      className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg transition-colors"
-                      title="Удалить"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
             </div>
           </div>
         )}
+
+        <div className={isFree ? "opacity-40 pointer-events-none select-none" : ""}>
+          <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900">Больничные</h1>
+              <p className="text-sm text-slate-500 mt-1">Учёт отсутствия сотрудников по болезни</p>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => { setEditMode((v) => !v); closeForm(); }}
+                className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                  editMode
+                    ? "bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
+                    : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                {editMode ? <><Check className="w-4 h-4" /> Готово</> : <><Pencil className="w-4 h-4" /> Редактировать</>}
+              </button>
+
+              {editMode && (
+                <button
+                  onClick={showForm && !editingId ? closeForm : openCreate}
+                  className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm ${
+                    showForm && !editingId
+                      ? "bg-slate-200 text-slate-700"
+                      : "bg-brand-600 text-white hover:bg-brand-700"
+                  }`}
+                >
+                  {showForm && !editingId ? <><X className="w-4 h-4" /> Отмена</> : <><Plus className="w-4 h-4" /> Добавить больничный</>}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {showForm && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6 animate-fade-in">
+              <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                <Stethoscope className="w-4 h-4 text-rose-500" />
+                {editingId ? "Редактировать запись" : "Новая запись"}
+              </h3>
+              <form onSubmit={onSave} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Сотрудник</label>
+                    <select
+                      value={form.userId}
+                      onChange={(e) => setForm((f) => ({ ...f, userId: e.target.value }))}
+                      disabled={!!editingId}
+                    >
+                      <option value="">— Выберите —</option>
+                      {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Дата начала</label>
+                    <input type="date" value={form.startDate} onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Дата окончания</label>
+                    <input type="date" value={form.endDate} onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value }))} />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Комментарий</label>
+                  <input value={form.comment} onChange={(e) => setForm((f) => ({ ...f, comment: e.target.value }))} placeholder="Например: ОРВИ" maxLength={255} />
+                </div>
+                <div className="flex gap-2">
+                  <button type="submit" disabled={busy} className="bg-brand-600 text-white px-5 py-2.5 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium transition-colors">
+                    {busy ? "Сохранение..." : "Сохранить"}
+                  </button>
+                  <button type="button" onClick={closeForm} className="px-5 py-2.5 rounded-xl text-slate-600 hover:bg-slate-100 text-sm font-medium">
+                    Отмена
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {users.length > 0 && all.length > 0 ? (
+            <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+              <VacationsGantt
+                users={ganttUsers}
+                vacations={ganttVacations}
+                canEdit={() => editMode}
+                onBarClick={(v) => {
+                  if (!editMode) return;
+                  const s = all.find((x) => x.id === v.id);
+                  if (s) openEdit(s);
+                }}
+                onUpdate={editMode ? onGanttUpdate : undefined}
+                barTooltip={barTooltip}
+              />
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center text-slate-500 h-[50vh] flex items-center justify-center">
+              {loading ? "Загрузка..." : "Нет данных для отображения таблицы"}
+            </div>
+          )}
+
+          {editMode && all.length > 0 && (
+            <div className="mt-6 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="p-4 border-b border-slate-100 font-semibold text-slate-900">Все записи</div>
+              <div className="divide-y divide-slate-100 max-h-[30vh] overflow-y-auto">
+                {all.map((item) => (
+                  <div key={item.id} className="flex items-center justify-between p-3 hover:bg-slate-50 transition-colors">
+                    <div className="min-w-0">
+                      <div className="font-medium text-slate-900 text-sm truncate">{item.userName}</div>
+                      <div className="text-[11px] text-slate-500 truncate">
+                        {formatDateRU(item.startDate)} — {formatDateRU(item.endDate)}
+                        {item.comment && ` · ${item.comment}`}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => openEdit(item)}
+                        className="text-slate-400 hover:text-brand-600 p-1.5 rounded-lg transition-colors"
+                        title="Редактировать"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => onDelete(item.id)}
+                        className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg transition-colors"
+                        title="Удалить"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </main>
     </div>
   );

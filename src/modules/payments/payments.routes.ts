@@ -98,6 +98,27 @@ export async function paymentsRoutes(app: FastifyInstance) {
     }
   });
 
+  app.post("/start-trial", async (req, reply) => {
+    const { orgId } = req.user!;
+    try {
+      const { db } = await import("../../../db/client.js");
+      const { organizations } = await import("../../../db/schema.js");
+      const { eq } = await import("drizzle-orm");
+
+      const trialEndsAt = new Date();
+      trialEndsAt.setDate(trialEndsAt.getDate() + 14);
+
+      await db.update(organizations).set({
+        trialEndsAt,
+        tariffId: "pro",
+      }).where(eq(organizations.id, orgId));
+
+      return { success: true, trialEndsAt };
+    } catch (e: any) {
+      return reply.code(500).send({ error: "Ошибка активации триала" });
+    }
+  });
+
   app.get("/current", async (req) => {
     const { orgId } = req.user!;
     return paymentsService.current(orgId);

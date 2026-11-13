@@ -55,6 +55,10 @@ function elapsedSince(iso: string): string {
 export default function MySchedulePage() {
   const { user } = useAuth();
   const org = useOrganization((s) => s.org);
+  const isTrial = org?.trialEndsAt && new Date(org.trialEndsAt) > new Date();
+  const isPaid = org?.tariffExpiresAt && new Date(org.tariffExpiresAt) > new Date();
+  const effectiveTariff = isTrial ? "pro" : (isPaid ? org?.tariffId : "free");
+  const isFree = effectiveTariff === "free";
   const timeTrackingOn = org?.timeTrackingEnabled === true;
 
   const [tab, setTab] = useState<Tab>("schedule");
@@ -840,7 +844,8 @@ export default function MySchedulePage() {
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 mb-6">
             <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
               <h3 className="font-semibold text-slate-900 flex items-center gap-2"><Palmtree className="w-4 h-4 text-emerald-600" /> Мои отпуска {upcomingVacations.length > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-medium ring-1 ring-emerald-200">{upcomingVacations.length} предстоящих</span>}</h3>
-              <button onClick={() => showVacForm ? closeVacForm() : openCreateForm()} className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700 px-3 py-1.5 rounded-lg hover:bg-brand-50 transition-colors"><Plus className="w-3.5 h-3.5" />{showVacForm ? "Отмена" : "Добавить отпуск"}</button>
+              {!isFree && <button onClick={() => showVacForm ? closeVacForm() : openCreateForm()} className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700 px-3 py-1.5 rounded-lg hover:bg-brand-50 transition-colors"><Plus className="w-3.5 h-3.5" />{showVacForm ? "Отмена" : "Добавить отпуск"}</button>}
+              {isFree && <span className="text-xs text-amber-600 font-medium bg-amber-50 px-2 py-1 rounded-md">Доступно только на Pro</span>}
             </div>
 
             {showVacForm && (

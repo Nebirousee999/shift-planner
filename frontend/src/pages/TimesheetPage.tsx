@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
-  ChevronLeft, ChevronRight, Download, Loader2, CalendarDays, AlertTriangle,
+  ChevronLeft, ChevronRight, Download, Loader2, CalendarDays, AlertTriangle, Sparkles,
 } from "lucide-react";
 import { timesheetApi, type TimesheetResponse, type TimesheetCellStatus } from "../api/timesheet";
 import { exportApi } from "../api/export";
 import NavBar from "../components/NavBar";
+import { confirmDialog } from "../store/dialogs";
+import { useOrganization } from "../store/organization";
 import { useDragScroll } from "../hooks/useDragScroll";
 
 const MONTHS_RU = [
@@ -32,6 +35,12 @@ const COL_GROSS_W = 120;
 const COL_NET_W = 120;
 
 export default function TimesheetPage() {
+  const navigate = useNavigate();
+  const org = useOrganization((s) => s.org);
+  const isTrial = org?.trialEndsAt && new Date(org.trialEndsAt) > new Date();
+  const isPaid = org?.tariffExpiresAt && new Date(org.tariffExpiresAt) > new Date();
+  const effectiveTariff = isTrial ? "pro" : (isPaid ? org?.tariffId : "free");
+  const isFree = effectiveTariff === "free";
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
@@ -61,6 +70,20 @@ export default function TimesheetPage() {
     finally { setExporting(false); }
   };
 
+  const handleExportClick = async () => {
+    if (isFree) {
+      const ok = await confirmDialog(
+        "Скачивание табеля в Excel доступно только на Pro. Разблокировать все функции на 14 дней?",
+        { title: "Доступно только для Pro", confirmLabel: "Разблокировать" }
+      );
+      if (ok) {
+        navigate("/wallet?trial=true");
+      }
+      return;
+    }
+    onExport();
+  };
+
   const filteredUsers = data?.users.filter((u) =>
     !search.trim() || u.name.toLowerCase().includes(search.toLowerCase().trim())
   ) ?? [];
@@ -74,11 +97,12 @@ export default function TimesheetPage() {
             <h1 className="text-3xl font-bold text-slate-900">Табель</h1>
             <p className="text-sm text-slate-500 mt-1">Электронный табель за месяц</p>
           </div>
-          <button onClick={onExport} disabled={exporting || !data}
-            className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2.5 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium shadow-sm">
-            {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            Скачать Excel
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={handleExportClick} disabled={exporting || !data}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium shadow-sm transition-all bg-brand-600 text-white hover:bg-brand-700">
+                <Download className="w-4 h-4" /> Скачать Excel
+            </button>
+          </div>
         </div>
 
         {data && !data.timeTrackingOn && (

@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  Info,
   ChevronLeft,
   ChevronRight,
   Plus,
@@ -512,6 +513,21 @@ export default function WeeksPage() {
           </div>
         )}
 
+        {/* Зеленый баннер-подсказка */}
+        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 mb-6 flex items-start gap-3 shadow-sm animate-fade-in">
+          <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
+            <FileEdit className="w-5 h-5 text-emerald-600" />
+          </div>
+          <div className="text-sm flex-1">
+            <div className="font-semibold text-emerald-900 mb-1">
+              Как работать с неделями
+            </div>
+            <div className="text-emerald-700 leading-relaxed">
+              Нажми на неделю, чтобы её отредактировать. Дублируй недели, публикуй их, чтобы сотрудники увидели своё расписание.
+            </div>
+          </div>
+        </div>
+
         {/* ═══════════════════════════════════════════════════ */}
         {/* СВОДКА ЗА МЕСЯЦ — только активная точка             */}
         {/* свёрнута по умолчанию, фильтры внутри,              */}
@@ -641,9 +657,9 @@ export default function WeeksPage() {
               <div
                 key={key}
                 onClick={() => onWeekClick(weekStart)}
-                className={`flex w-full border-b border-slate-100 last:border-0 relative text-left transition-colors group cursor-pointer ${
-                  hasToday ? "bg-blue-50/60" : "hover:bg-slate-50/70"
-                }`}
+                className={`flex w-full border-b border-slate-100 last:border-0 relative text-left transition-all group cursor-pointer ${
+                  hasToday ? "bg-blue-50/60" : "hover:bg-blue-50/30"
+                } hover:ring-2 hover:ring-inset hover:ring-blue-500/40 hover:z-10`}
               >
                 {meta && (
                   <div className={`absolute left-0 top-0 bottom-0 w-1 ${meta.bar}`} />
@@ -765,6 +781,15 @@ export default function WeeksPage() {
                   <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                     <span className="text-xs text-slate-500 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full border border-slate-200 shadow-sm">
                       + Создать неделю
+                    </span>
+                  </div>
+                )}
+
+                {existing && (
+                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none z-20 bg-blue-500/10">
+                    <span className="text-xs text-slate-700 bg-white/95 px-3 py-1.5 rounded-full border border-slate-200 shadow-md font-medium flex items-center gap-1.5">
+                      <FileEdit className="w-3.5 h-3.5 text-brand-600" />
+                      Редактировать неделю
                     </span>
                   </div>
                 )}

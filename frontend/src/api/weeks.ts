@@ -61,6 +61,10 @@ export const weeksApi = {
     const { data } = await api.post<ScheduleWeek>("/schedule-weeks", input);
     return data;
   },
+  unpublish: async (id: string): Promise<ScheduleWeek> => {
+    const { data } = await api.post<ScheduleWeek>(`/schedule-weeks/${id}/unpublish`);
+    return data;
+  },
   publish: async (id: string): Promise<ScheduleWeek> => {
     const { data } = await api.post<ScheduleWeek>(`/schedule-weeks/${id}/publish`);
     return data;

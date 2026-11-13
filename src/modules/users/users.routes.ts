@@ -20,10 +20,12 @@ const createSchema = z.object({
   areaIds: z.array(z.string().uuid()).optional(),
   paymentType: z.enum(["HOURLY", "MONTHLY"]).optional(),
   employmentType: z.enum(["GPH", "SHTAT"]).optional(),
+  tempPassword: z.string().max(50).nullable().optional(),
 });
 
 const updateSchema = z.object({
   name: z.string().min(2).max(255).optional(),
+  email: z.string().email().optional(),
   phone: z.string().max(20).nullable().optional(),
   position: z.string().max(255).nullable().optional(),
   role: z.enum(["OWNER", "MANAGER", "EMPLOYEE"]).optional(),

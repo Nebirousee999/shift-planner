@@ -10,6 +10,7 @@ export type MyProfile = {
   position: string | null;
   hourlyRate: string | null;
   createdAt: string;
+  tempPassword?: string | null;
 };
 
 export type MyShift = {

@@ -19,6 +19,10 @@ export const areasApi = {
     const { data } = await api.post<Area>("/areas", input);
     return data;
   },
+  update: async (id: string, input: { name: string }): Promise<Area> => {
+    const { data } = await api.patch<Area>(`/areas/${id}`, input);
+    return data;
+  },
   remove: async (id: string): Promise<void> => {
     await api.delete(`/areas/${id}`);
   },

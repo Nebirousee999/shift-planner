@@ -6,6 +6,7 @@ import { useOrganization } from "./store/organization";
 // Основные страницы (Lazy Loading)
 const LoginPage = lazy(() => import("./pages/LoginPage"));
 const LandingPage = lazy(() => import("./pages/LandingPage"));
+const CalculatorPage = lazy(() => import("./pages/CalculatorPage"));
 const AdminSupportPage = lazy(() => import("./pages/AdminSupportPage"));
 const AdminDatabasePage = lazy(() => import("./pages/AdminDatabasePage"));
 const BlogPage = lazy(() => import("./pages/BlogPage"));
@@ -85,6 +86,7 @@ export default function App() {
       <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-slate-500">Загрузка...</div>}>
         <Routes>
           <Route path="/login" element={token ? <Navigate to="/" replace /> : <LoginPage />} />
+          <Route path="/calc" element={token ? <Navigate to="/weeks" replace /> : <CalculatorPage />} />
           <Route path="/" element={token ? <DashboardPage /> : <LandingPage />} />
           <Route path="/welcome" element={token ? <Navigate to="/" replace /> : <LandingPage />} />
           

@@ -1,4 +1,4 @@
-import { eq, and, gte, lte, isNotNull, count, sql } from "drizzle-orm";
+import { eq, and, gte, lte, isNotNull, count, sql, desc } from "drizzle-orm";
 import { db } from "../../../db/client.js";
 import {
   users,
@@ -20,11 +20,24 @@ export const dashboardService = {
     ];
     if (locationId) weekConditions.push(eq(scheduleWeeks.locationId, locationId));
 
-    const [currentWeek] = await db
+    let [currentWeek] = await db
       .select()
       .from(scheduleWeeks)
       .where(and(...weekConditions))
       .limit(1);
+
+    // 🔥 Если текущая неделя не найдена (например, создали на будущее) — берем самую свежую
+    if (!currentWeek) {
+      const fallbackConditions = [eq(scheduleWeeks.orgId, orgId)];
+      if (locationId) fallbackConditions.push(eq(scheduleWeeks.locationId, locationId));
+      
+      [currentWeek] = await db
+        .select()
+        .from(scheduleWeeks)
+        .where(and(...fallbackConditions))
+        .orderBy(desc(scheduleWeeks.weekStartDate))
+        .limit(1);
+    }
 
     let weekShifts: any[] = [];
     let weekTimeEntries: any[] = [];

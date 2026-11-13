@@ -3,9 +3,10 @@ import {
   UserPlus, Search, Trash2, X, Check, Pencil, Save,
   MapPin, Briefcase, Layers, ChevronDown,
   FileSpreadsheet, Upload, Users as UsersIcon,
-  LayoutList, LayoutGrid, HelpCircle, Send, Info,
+  LayoutList, LayoutGrid, HelpCircle, Send, Info, Plus,
 } from "lucide-react";
 import { Link } from "react-router-dom";
+import { Shield } from "lucide-react";
 import { useUsers } from "../store/users";
 import { usersApi } from "../api/users";
 import { useAuth } from "../store/auth";
@@ -115,6 +116,7 @@ export default function TeamPage() {
     phone: "",
   });
   const [creating, setCreating] = useState(false);
+  const [managePosOpen, setManagePosOpen] = useState(false);
 
   // Матрица
   const [matrixEditMode, setMatrixEditMode] = useState(false);
@@ -429,14 +431,26 @@ export default function TeamPage() {
       if (e.response?.status === 409) {
         msg = "Сотрудник с таким Email уже существует. Пожалуйста, укажите другой Email.";
       } else if (e.response?.status === 403) {
-        msg = e.response?.data?.error || "Достигнут лимит сотрудников на вашем тарифе.";
-      } else if (e.response?.data?.error) {
+            const ok = await confirmDialog(
+              "Доступно только для Pro.\n\nВы достигли лимита сотрудников на бесплатном тарифе (макс. 3). Разблокировать функции на 14 дней?",
+              { title: "Лимит тарифа", confirmLabel: "Разблокировать" }
+            );
+            if (ok) {
+              window.location.href = "/wallet?trial=true";
+              return;
+            }
+            msg = "Создание отменено.";
+          } else if (e.response?.data?.error) {
         msg = typeof e.response.data.error === "string" 
                 ? e.response.data.error 
                 : JSON.stringify(e.response.data.error);
       }
 
-      await alertDialog(msg, { title: "Ошибка создания", variant: "error" });
+      if (msg !== "Создание отменено.") {
+        if (msg !== "Создание отменено.") {
+            await alertDialog(msg, { title: "Ошибка создания", variant: "error" });
+          }
+      }
     } finally {
       setCreating(false);
     }
@@ -578,6 +592,28 @@ export default function TeamPage() {
     <div className="min-h-screen bg-slate-50">
       <NavBar />
 
+      {org?.tariffId === "free" && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
+            <div>
+              <div className="font-bold text-blue-900 flex items-center gap-2">
+                <Shield className="w-5 h-5" />
+                Тариф Free: {filtered.length} из 4 сотрудников
+              </div>
+              <p className="text-xs text-blue-700 mt-1">
+                На бесплатном тарифе доступно не более 4 сотрудников и 1 точка. А также нет уведомлений в MAX.
+              </p>
+            </div>
+            <Link
+              to="/wallet?trial=true"
+              className="shrink-0 bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors whitespace-nowrap shadow-sm"
+            >
+              Разблокировать Pro
+            </Link>
+          </div>
+        </div>
+      )}
+
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
         {/* Шапка */}
         <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
@@ -605,6 +641,21 @@ export default function TeamPage() {
             >
               {showForm ? <><X className="w-4 h-4" /> Отмена</> : <><UserPlus className="w-4 h-4" /> Добавить</>}
             </button>
+          </div>
+        </div>
+
+        {/* Зеленый баннер-подсказка */}
+        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 mb-4 flex items-start gap-3 shadow-sm animate-fade-in">
+          <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
+            <Info className="w-5 h-5 text-emerald-600" />
+          </div>
+          <div className="text-sm flex-1">
+            <div className="font-semibold text-emerald-900 mb-1">
+              Личный кабинет сотрудника
+            </div>
+            <div className="text-emerald-700 leading-relaxed">
+              Каждый сотрудник может зайти в свой профиль под своей почтой и паролем, чтобы увидеть свое личное расписание, согласовывать изменение смен, больничных, добавлять свой отпуск, получать оповещения и много другое. Почта и пароль каждого сотрудника находятся в настройках (карточке) сотрудника.
+            </div>
           </div>
         </div>
 
@@ -666,10 +717,15 @@ export default function TeamPage() {
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="block text-sm font-medium text-slate-700">Должность</label>
-                    <div className="group relative flex items-center">
-                      <HelpCircle className="w-4 h-4 text-slate-400 hover:text-brand-600 cursor-help transition-colors" />
-                      <div className="absolute bottom-full right-0 mb-2 w-64 p-2.5 bg-slate-800 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none leading-relaxed">
-                        Создавать и редактировать должности можно в разделе «Шаблоны» → «Должности».
+                    <div className="flex items-center gap-1">
+                      <button type="button" onClick={() => setManagePosOpen(true)} className="text-brand-600 hover:bg-brand-50 p-1 rounded transition-colors" title="Управлять должностями">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <div className="group relative flex items-center">
+                        <HelpCircle className="w-4 h-4 text-slate-400 hover:text-brand-600 cursor-help transition-colors" />
+                        <div className="absolute bottom-full right-0 mb-2 w-64 p-2.5 bg-slate-800 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none leading-relaxed">
+                          Создавать и редактировать должности можно в разделе «Шаблоны» → «Должности».
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1026,6 +1082,10 @@ export default function TeamPage() {
         </div>
       )}
 
+      {managePosOpen && (
+        <ManageTemplatesModal type="position" onClose={() => setManagePosOpen(false)} />
+      )}
+
       {editingUser && (
         <EditUserModal
           user={editingUser}
@@ -1039,10 +1099,21 @@ export default function TeamPage() {
           }}
           onSave={async (data) => {
             try {
-              await update(editingUser.id, data);
+              const res = await update(editingUser.id, data);
               await fetch();
               await fetchAreas();
               setEditingUser(null);
+              
+              if (res && (res as any).tempPassword) {
+                if (confirm(`Сотруднику сгенерирован новый пароль: ${(res as any).tempPassword}\n\nОтправить его сотруднику на почту?`)) {
+                   try {
+                     await usersApi.sendPasswords([editingUser.id]);
+                     await alertDialog("Пароль успешно отправлен!", { variant: "success" });
+                   } catch (e: any) {
+                     await alertDialog("Ошибка отправки: " + (e.message || "неизвестно"), { variant: "error" });
+                   }
+                }
+              }
             } catch (e: any) {
               await alertDialog(e.response?.data?.error ?? "Ошибка", { variant: "error" });
             }
@@ -1356,6 +1427,7 @@ function EditUserModal({
   onDelete?: () => void;
   onSave: (data: Partial<{
     name: string;
+    email: string;
     phone: string | null;
     role: "OWNER" | "MANAGER" | "EMPLOYEE";
     position: string | null;
@@ -1364,19 +1436,37 @@ function EditUserModal({
     employmentType: "GPH" | "SHTAT";
     locationIds: string[];
     areaIds: string[];
+    tempPassword?: string | null;
   }>) => Promise<void>;
 }) {
   const [name, setName] = useState(user.name);
+  const [email, setEmail] = useState(user.email);
   const [role, setRole] = useState<"OWNER" | "MANAGER" | "EMPLOYEE">(user.role);
   const [position, setPosition] = useState(user.position ?? "");
   const [hourlyRate, setHourlyRate] = useState(user.hourlyRate ?? "");
   const [paymentType, setPaymentType] = useState<"HOURLY" | "MONTHLY">(user.paymentType ?? "HOURLY");
   const [employmentType, setEmploymentType] = useState<"GPH" | "SHTAT">(user.employmentType ?? "SHTAT");
   const [phone, setPhone] = useState(user.phone ?? "");
+  const [tempPassword, setTempPassword] = useState(user.tempPassword ?? "");
+  const [managePosOpen, setManagePosOpen] = useState(false);
+  const [manageAreaOpen, setManageAreaOpen] = useState(false);
   const [locationIds, setLocationIds] = useState<Set<string>>(new Set(user.locationIds ?? []));
   const [areaIds, setAreaIds] = useState<Set<string>>(new Set(user.areaIds ?? []));
   const [activeAreaTab, setActiveAreaTab] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const org = useOrganization((s) => s.org);
+
+  // Автоматически ставим галочку на первую точку, если тариф Free
+  useEffect(() => {
+    if (org?.tariffId === "free" && locations.length > 0) {
+      setLocationIds(prev => {
+        if (prev.has(locations[0].id)) return prev;
+        const next = new Set(prev);
+        next.add(locations[0].id);
+        return next;
+      });
+    }
+  }, [org, locations]);
 
   const selectedLocations = useMemo(
     () => locations.filter((l) => locationIds.has(l.id)),
@@ -1423,7 +1513,7 @@ function EditUserModal({
     setBusy(true);
     try {
       await onSave({
-        name, role,
+        name, email, role,
         position: position.trim() || null,
         hourlyRate: hourlyRate.trim() || null,
         paymentType,
@@ -1431,6 +1521,7 @@ function EditUserModal({
         phone: phone.trim() || null,
         locationIds: Array.from(locationIds),
         areaIds: Array.from(areaIds),
+        tempPassword: tempPassword.trim() || null,
       });
     } finally {
       setBusy(false);
@@ -1439,7 +1530,7 @@ function EditUserModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto animate-fade-in" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-4xl w-full p-6 md:p-8 max-h-[90vh] overflow-y-auto animate-fade-in" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between mb-5">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center">
@@ -1455,128 +1546,173 @@ function EditUserModal({
           </button>
         </div>
 
-        <form onSubmit={submit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">Имя</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} required />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Роль</label>
-              <select value={role} onChange={(e) => setRole(e.target.value as any)}>
-                <option value="EMPLOYEE">Сотрудник</option>
-                <option value="MANAGER">Менеджер</option>
-                <option value="OWNER">Владелец</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                {paymentType === "HOURLY" ? "Ставка, ₽/ч" : "Оклад, ₽/мес"}
-              </label>
-              <input value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} placeholder={paymentType === "HOURLY" ? "350" : "50000"} />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Форма оплаты</label>
-              <select value={paymentType} onChange={(e) => setPaymentType(e.target.value as any)}>
-                <option value="HOURLY">Почасовая</option>
-                <option value="MONTHLY">Месячный оклад</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Трудоустройство</label>
-              <select value={employmentType} onChange={(e) => setEmploymentType(e.target.value as any)}>
-                <option value="SHTAT">В штате</option>
-                <option value="GPH">ГПХ</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">Должность</label>
-            <div className="relative">
-              <select value={position} onChange={(e) => setPosition(e.target.value)} className="!pl-8">
-                <option value="">Без должности</option>
-                {positions.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
-                {position && !positions.some((p) => p.name === position) && (
-                  <option value={position}>{position} (не в шаблонах)</option>
-                )}
-              </select>
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full pointer-events-none" style={{ backgroundColor: positions.find((p) => p.name === position)?.color ?? "#E2E8F0" }} />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">Точки</label>
-            <div className="border border-slate-200 rounded-xl p-2 max-h-32 overflow-y-auto">
-              {locations.length === 0 && <div className="text-xs text-slate-400 p-2">Нет точек.</div>}
-              {locations.map((loc) => (
-                <label key={loc.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
-                  <input type="checkbox" checked={locationIds.has(loc.id)} onChange={() => toggleLocation(loc.id)} className="!w-4 !h-4 !p-0" />
-                  <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                  <span className="text-sm text-slate-800">{loc.name}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
-              Локации {selectedLocations.length > 0 && <span className="text-xs text-slate-500 font-normal">({areaIds.size} выбрано)</span>}
-            </label>
-
-            {selectedLocations.length === 0 ? (
-              <div className="border border-slate-200 rounded-xl p-3 text-xs text-slate-400">
-                Выберите хотя бы одну точку — покажем её локации.
+<form onSubmit={submit} className="space-y-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 md:gap-x-0 gap-y-8">
+            
+            {/* ЛЕВАЯ КОЛОНКА: ЛИЧНЫЕ ДАННЫЕ */}
+            <div className="space-y-5 md:border-r md:border-slate-200 md:pr-8">
+              <h4 className="font-semibold text-slate-900 border-b border-slate-200 pb-2 mb-4 text-sm uppercase tracking-wide">
+                Личные данные
+              </h4>
+              
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Имя</label>
+                <input value={name} onChange={(e) => setName(e.target.value)} required />
               </div>
-            ) : (
-              <>
-                <div className="flex gap-1 overflow-x-auto pb-1 mb-2">
-                  {selectedLocations.map((loc) => {
-                    const active = effectiveTab === loc.id;
-                    const countSelected = areas.filter((a) => a.locationId === loc.id && areaIds.has(a.id)).length;
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Email (для доступа к сайту)</label>
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                  Временный пароль
+                </label>
+                <input
+                  value={tempPassword}
+                  onChange={(e) => setTempPassword(e.target.value)}
+                  placeholder="Оставьте пустым, чтобы не менять"
+                  className="w-full font-mono text-sm"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Если изменить пароль, сотруднику нужно будет сообщить новый.
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Телефон</label>
+                <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+7 999 123-45-67" />
+              </div>
+            </div>
+
+            {/* ПРАВАЯ КОЛОНКА: РАБОЧИЕ НАСТРОЙКИ */}
+            <div className="space-y-6 md:pl-8">
+              <h4 className="font-semibold text-slate-900 border-b border-slate-200 pb-2 mb-4 text-sm uppercase tracking-wide">
+                Рабочие настройки
+              </h4>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Роль</label>
+                  <select value={role} onChange={(e) => setRole(e.target.value as any)}>
+                    <option value="EMPLOYEE">Сотрудник</option>
+                    <option value="MANAGER">Менеджер</option>
+                    <option value="OWNER">Владелец</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                    {paymentType === "HOURLY" ? "Ставка, ₽/ч" : "Оклад, ₽/мес"}
+                  </label>
+                  <input value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} placeholder={paymentType === "HOURLY" ? "350" : "50000"} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Форма оплаты</label>
+                  <select value={paymentType} onChange={(e) => setPaymentType(e.target.value as any)}>
+                    <option value="HOURLY">Почасовая</option>
+                    <option value="MONTHLY">Месячный оклад</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Трудоустройство</label>
+                  <select value={employmentType} onChange={(e) => setEmploymentType(e.target.value as any)}>
+                    <option value="SHTAT">В штате</option>
+                    <option value="GPH">ГПХ</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-sm font-medium text-slate-700">Должность</label>
+                  <button type="button" onClick={() => setManagePosOpen(true)} className="text-brand-600 hover:bg-brand-50 p-1 rounded transition-colors" title="Управлять должностями">
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div className="relative">
+                  <select value={position} onChange={(e) => setPosition(e.target.value)} className="!pl-8">
+                    <option value="">Без должности</option>
+                    {positions.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+                    {position && !positions.some((p) => p.name === position) && (
+                      <option value={position}>{position} (не в шаблонах)</option>
+                    )}
+                  </select>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full pointer-events-none" style={{ backgroundColor: positions.find((p) => p.name === position)?.color ?? "#E2E8F0" }} />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Точки</label>
+                <div className="border border-slate-200 rounded-xl p-2 max-h-32 overflow-y-auto">
+                  {locations.length === 0 && <div className="text-xs text-slate-400 p-2">Нет точек.</div>}
+                  {locations.map((loc, idx) => {
+                    const isFirstFree = org?.tariffId === "free" && idx === 0;
+                    const isChecked = isFirstFree ? true : locationIds.has(loc.id);
                     return (
-                      <button key={loc.id} type="button" onClick={() => setActiveAreaTab(loc.id)}
-                        className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
-                          active ? "bg-brand-600 text-white shadow-sm" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                        }`}>
-                        <MapPin className="w-3 h-3" /> {loc.name}
-                        {countSelected > 0 && (
-                          <span className={`text-[10px] px-1.5 rounded-full ${active ? "bg-white/20 text-white" : "bg-white text-brand-600"}`}>
-                            {countSelected}
-                          </span>
-                        )}
-                      </button>
+                      <label key={loc.id} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg ${isFirstFree ? 'cursor-not-allowed opacity-75' : 'hover:bg-slate-50 cursor-pointer'}`}>
+                        <input type="checkbox" checked={isChecked} onChange={() => !isFirstFree && toggleLocation(loc.id)} disabled={isFirstFree} className="!w-4 !h-4 !p-0" />
+                        <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                        <span className="text-sm text-slate-800">{loc.name}</span>
+                      </label>
                     );
                   })}
                 </div>
+              </div>
 
-                <div className="border border-slate-200 rounded-xl p-2 max-h-40 overflow-y-auto">
-                  {areasForTab.length === 0 ? (
-                    <div className="text-xs text-slate-400 p-2">В этой точке пока нет локаций.</div>
-                  ) : (
-                    areasForTab.map((a) => (
-                      <label key={a.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
-                        <input type="checkbox" checked={areaIds.has(a.id)} onChange={() => toggleArea(a.id)} className="!w-4 !h-4 !p-0" />
-                        <Layers className="w-3.5 h-3.5 text-slate-400" />
-                        <span className="text-sm text-slate-800">{a.name}</span>
-                      </label>
-                    ))
-                  )}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-sm font-medium text-slate-700">
+                    Локации {selectedLocations.length > 0 && <span className="text-xs text-slate-500 font-normal">({areaIds.size} выбрано)</span>}
+                  </label>
+                  <button type="button" onClick={() => setManageAreaOpen(true)} className="text-brand-600 hover:bg-brand-50 p-1 rounded transition-colors" title="Управлять локациями">
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
                 </div>
-              </>
-            )}
+
+                {selectedLocations.length === 0 ? (
+                  <div className="border border-slate-200 rounded-xl p-3 text-xs text-slate-400">
+                    Выберите хотя бы одну точку — покажем её локации.
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex gap-1 overflow-x-auto pb-1 mb-2">
+                      {selectedLocations.map((loc) => {
+                        const active = effectiveTab === loc.id;
+                        const countSelected = areas.filter((a) => a.locationId === loc.id && areaIds.has(a.id)).length;
+                        return (
+                          <button key={loc.id} type="button" onClick={() => setActiveAreaTab(loc.id)}
+                            className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+                              active ? "bg-brand-600 text-white shadow-sm" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                            }`}>
+                            <MapPin className="w-3 h-3" /> {loc.name}
+                            {countSelected > 0 && (
+                              <span className={`text-[10px] px-1.5 rounded-full ${active ? "bg-white/20 text-white" : "bg-white text-brand-600"}`}>
+                                {countSelected}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="border border-slate-200 rounded-xl p-2 max-h-40 overflow-y-auto">
+                      {areasForTab.length === 0 ? (
+                        <div className="text-xs text-slate-400 p-2">В этой точке пока нет локаций.</div>
+                      ) : (
+                        areasForTab.map((a) => (
+                          <label key={a.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
+                            <input type="checkbox" checked={areaIds.has(a.id)} onChange={() => toggleArea(a.id)} className="!w-4 !h-4 !p-0" />
+                            <Layers className="w-3.5 h-3.5 text-slate-400" />
+                            <span className="text-sm text-slate-800">{a.name}</span>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">Телефон</label>
-            <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+7 999 123-45-67" />
-          </div>
-
-          <div className="flex gap-2 pt-2">
+          <div className="flex gap-2 pt-6 border-t border-slate-100">
             <button type="submit" disabled={busy} className="flex-1 inline-flex items-center justify-center gap-2 bg-brand-600 text-white px-4 py-2.5 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium">
               <Save className="w-4 h-4" />
               {busy ? "Сохранение..." : "Сохранить"}
@@ -1586,6 +1722,148 @@ function EditUserModal({
             </button>
           </div>
         </form>
+      </div>
+
+      {managePosOpen && (
+        <ManageTemplatesModal type="position" onClose={() => setManagePosOpen(false)} />
+      )}
+      {manageAreaOpen && (
+        <ManageTemplatesModal type="area" onClose={() => setManageAreaOpen(false)} />
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// МОДАЛКА УПРАВЛЕНИЯ ШАБЛОНАМИ (Должности / Локации)
+// ═══════════════════════════════════════════════════════
+function ManageTemplatesModal({ type, onClose }: { type: 'position' | 'area', onClose: () => void }) {
+  const { items: positions, create: createPos, update: updatePos, remove: removePos } = usePositions();
+  const { items: areas, create: createArea, update: updateArea, remove: removeArea } = useAreas();
+  const { items: locations } = useLocations();
+  const [newName, setNewName] = useState("");
+  const [selectedLocId, setSelectedLocId] = useState(locations[0]?.id || "");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (type === 'area' && locations.length > 0 && !selectedLocId) {
+      setSelectedLocId(locations[0].id);
+    }
+  }, [type, locations, selectedLocId]);
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newName.trim()) return;
+    setBusy(true);
+    try {
+      if (type === 'position') {
+        await createPos({ name: newName.trim() });
+      } else {
+        if (!selectedLocId) return alert("Сначала создайте точку");
+        await createArea({ name: newName.trim(), locationId: selectedLocId });
+      }
+      setNewName("");
+    } catch (err: any) {
+      alert(err.response?.data?.error ?? "Ошибка");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDelete = async (id: string, name: string) => {
+    if (!confirm(`Удалить "${name}"?`)) return;
+    try {
+      if (type === 'position') await removePos(id);
+      else await removeArea(id);
+    } catch (err: any) {
+      alert(err.response?.data?.error ?? "Ошибка");
+    }
+  };
+
+  const startEdit = (item: any) => {
+    setEditingId(item.id);
+    setEditName(item.name);
+  };
+
+  const saveEdit = async () => {
+    if (!editingId || !editName.trim()) return;
+    try {
+      if (type === 'position') await updatePos(editingId, { name: editName.trim() });
+      else await updateArea(editingId, { name: editName.trim() });
+      setEditingId(null);
+    } catch (err: any) {
+      alert(err.response?.data?.error ?? "Ошибка");
+    }
+  };
+
+  const currentList = type === 'position' 
+    ? positions 
+    : areas.filter(a => a.locationId === selectedLocId);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 animate-fade-in" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-6 max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-slate-900 text-lg">
+            Управление {type === 'position' ? 'должностями' : 'локациями'}
+          </h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {type === 'area' && (
+          <div className="mb-4">
+            <label className="block text-xs font-medium text-slate-700 mb-1.5">Выберите точку</label>
+            <select value={selectedLocId} onChange={e => setSelectedLocId(e.target.value)} className="!text-sm !py-2">
+              {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          </div>
+        )}
+
+        <form onSubmit={handleCreate} className="flex gap-2 mb-4">
+          <input 
+            value={newName} 
+            onChange={e => setNewName(e.target.value)} 
+            placeholder={type === 'position' ? "Новая должность" : "Новая локация"} 
+            className="!text-sm !py-2 flex-1" 
+          />
+          <button type="submit" disabled={busy || !newName.trim()} className="bg-brand-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50">
+            <Plus className="w-4 h-4" />
+          </button>
+        </form>
+
+        <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+          {currentList.length === 0 && <p className="text-sm text-slate-500 text-center py-4">Список пуст</p>}
+          {currentList.map(item => (
+            <div key={item.id} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200">
+              {editingId === item.id ? (
+                <div className="flex items-center gap-1 flex-1">
+                  <input value={editName} onChange={e => setEditName(e.target.value)} className="!text-sm !py-1 !px-2 flex-1" autoFocus />
+                  <button type="button" onClick={saveEdit} className="text-emerald-600 p-1 hover:bg-emerald-50 rounded"><Check className="w-4 h-4" /></button>
+                  <button type="button" onClick={() => setEditingId(null)} className="text-slate-400 p-1 hover:bg-slate-100 rounded"><X className="w-4 h-4" /></button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 min-w-0">
+                    {type === 'position' && <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: (item as any).color }} />}
+                    <span className="text-sm font-medium text-slate-900 truncate">{item.name}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button type="button" onClick={() => startEdit(item)} className="text-slate-400 hover:text-brand-600 p-1.5 rounded-md hover:bg-brand-50 transition-colors">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button type="button" onClick={() => handleDelete(item.id, item.name)} className="text-slate-400 hover:text-red-600 p-1.5 rounded-md hover:bg-red-50 transition-colors">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

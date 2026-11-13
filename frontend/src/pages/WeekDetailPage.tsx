@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import {
   ChevronLeft, Copy, CheckCircle2, Plus, X, Trash2, Clock, CalendarDays,
   AlertCircle, Pencil, Check, ClipboardPaste, CopyPlus, GripVertical,
-  Maximize2, Minimize2, Bell, Wallet, CalendarX2, Stethoscope,
+  Maximize2, Minimize2, Bell, Wallet, CalendarX2, Stethoscope, Info, Undo2,
 } from "lucide-react";
 import { useWeeks } from "../store/weeks";
 import { useShiftTemplates } from "../store/shiftTemplates";
@@ -54,6 +54,7 @@ export default function WeekDetailPage() {
     error,
     fetchWeek,
     publishWeek,
+    unpublishWeek,
     addShift,
     updateShift,
     removeShift,
@@ -86,6 +87,7 @@ export default function WeekDetailPage() {
     endTime: "18:00",
   });
   const [publishing, setPublishing] = useState(false);
+  const [reverting, setReverting] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
   const [checkingVacation, setCheckingVacation] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -99,6 +101,7 @@ export default function WeekDetailPage() {
   const [draggingShiftId, setDraggingShiftId] = useState<string | null>(null);
   const [dragOverDate, setDragOverDate] = useState<string | null>(null);
   const [editingShift, setEditingShift] = useState<ScheduledShift | null>(null);
+  const [manageTplOpen, setManageTplOpen] = useState(false);
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
   const [incomingShiftRequests, setIncomingShiftRequests] = useState<
              ShiftChangeRequest[]
@@ -429,6 +432,24 @@ export default function WeekDetailPage() {
     }
   };
 
+  const onRevertToDraft = async () => {
+    const ok = await confirmDialog(
+      "Вернуть неделю в статус «Черновик»?\n\nСотрудники больше не будут видеть этот график, пока вы снова его не опубликуете. Все изменения будут применяться сразу, без согласования.",
+      { title: "Вернуть в черновик", confirmLabel: "Вернуть", variant: "danger" }
+    );
+    if (!ok) return;
+
+    setReverting(true);
+    try {
+      await unpublishWeek(currentWeek.id);
+      await alertDialog("Неделя возвращена в черновик", { variant: "success" });
+    } catch (e: any) {
+      await alertDialog(e.response?.data?.error ?? "Ошибка возврата", { variant: "error" });
+    } finally {
+      setReverting(false);
+    }
+  };
+
   const onDuplicate = async () => {
     setDuplicating(true);
     try {
@@ -661,6 +682,26 @@ export default function WeekDetailPage() {
     <div className="min-h-screen bg-slate-50">
       <NavBar />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+        {/* Зеленый баннер-подсказка */}
+        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 mb-6 flex items-start gap-3 shadow-sm animate-fade-in">
+          <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
+            <Pencil className="w-5 h-5 text-emerald-600" />
+          </div>
+          <div className="text-sm flex-1">
+            <div className="font-semibold text-emerald-900 mb-1">
+              Как редактировать смены
+            </div>
+            <div className="text-emerald-700 leading-relaxed space-y-1.5">
+              <p>
+                Жми <b>«Редактировать»</b>, чтобы добавить или изменить смены. Смены можно перетаскивать между днями, копировать по одной или копировать целым днём.
+              </p>
+              <p>
+                Когда создашь смены на всю неделю, жми <b>«Опубликовать»</b>, чтобы сотрудники увидели своё расписание у себя в профиле. В профиль сотрудники могут зайти по своей почте и паролю.
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* Шапка */}
         <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
           <button
@@ -695,6 +736,16 @@ export default function WeekDetailPage() {
                     <Pencil className="w-4 h-4" /> Редактировать
                   </>
                 )}
+              </button>
+            )}
+            {currentWeek.status === "PUBLISHED" && !isLocked && (
+              <button
+                onClick={onRevertToDraft}
+                disabled={reverting}
+                className="inline-flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-700 px-3.5 py-2 rounded-xl hover:bg-amber-100 disabled:opacity-50 text-sm font-medium transition-all"
+                title="Вернуть в черновик для редактирования без согласования"
+              >
+                <Undo2 className="w-4 h-4" /> {reverting ? "..." : "В черновик"}
               </button>
             )}
             <button
@@ -1045,6 +1096,7 @@ export default function WeekDetailPage() {
                     return (
                       <div
                         key={s.id}
+                        title={hasPending ? `${uInfo.name} у себя в профиле должен согласовать изменение смены` : undefined}
                         draggable={canEdit && !hasPending && !activeTimeOff}
                         onDragStart={(e) => onDragStart(e, s.id)}
                         onDragEnd={onDragEnd}
@@ -1126,6 +1178,19 @@ export default function WeekDetailPage() {
                               {uInfo.position || "—"}
                             </span>
                           </div>
+
+                        {/* Красивая всплывающая подсказка при наведении */}
+                        {hasPending && (
+                          <div className="absolute bottom-[calc(100%+8px)] left-1/2 -translate-x-1/2 w-64 bg-slate-800 text-white p-3 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[60] pointer-events-none text-center leading-snug">
+                            <div className="font-bold text-sm mb-1 text-white">
+                      {pending?.kind === "CREATE" ? "Новая смена" : "Изменение смены"}
+                    </div>
+                    <div className="text-slate-300 text-xs">
+                      {uInfo.name} должен согласовать изменение смены в своём профиле
+                    </div>
+                            <div className="absolute top-full left-1/2 -translate-x-1/2 border-[6px] border-transparent border-t-slate-800" />
+                          </div>
+                        )}
                           {dateChanged && (
                             <div className="flex items-center gap-1 mt-1 text-[10px] flex-wrap">
                               <CalendarDays className="w-2.5 h-2.5 text-slate-400 shrink-0" />
@@ -1234,6 +1299,7 @@ export default function WeekDetailPage() {
                   {(virtualCreateOutgoingByDate[date] ?? []).map((r) => (
                     <div
                       key={`virt-out-${r.id}`}
+                            title={`${getUserInfo(r.newUserId).name} у себя в профиле должен согласовать изменение смены`}
                       className="group relative rounded-lg border-l-4 border-amber-400 bg-amber-50 ring-2 ring-amber-200/50 text-xs p-2"
                     >
                       <div className="flex items-center gap-1.5 font-medium text-slate-900 flex-wrap">
@@ -1257,7 +1323,31 @@ export default function WeekDetailPage() {
                         <Clock className="w-3 h-3 shrink-0" />
                         <span>Ждёт согласования</span>
                       </div>
-                      <button
+                      
+                      {/* Красивая всплывающая подсказка */}
+                      <div className="absolute bottom-[calc(100%+8px)] left-1/2 -translate-x-1/2 w-64 bg-slate-800 text-white p-3 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[60] pointer-events-none text-center leading-snug">
+                        <div className="font-bold text-sm mb-1 text-white">
+                      {r.kind === "CREATE" ? "Новая смена" : "Изменение смены"}
+                    </div>
+                    <div className="text-slate-300 text-xs">
+                      {getUserInfo(r.newUserId).name} должен согласовать изменение смены в своём профиле
+                    </div>
+                        <div className="absolute top-full left-1/2 -translate-x-1/2 border-[6px] border-transparent border-t-slate-800" />
+                      </div>
+
+
+                      {/* Красивая всплывающая подсказка */}
+                      <div className="absolute bottom-[calc(100%+8px)] left-1/2 -translate-x-1/2 w-64 bg-slate-800 text-white p-3 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[60] pointer-events-none text-center leading-snug">
+                        <div className="font-bold text-sm mb-1 text-white">
+                          {r.kind === "CREATE" ? "Новая смена" : "Изменение смены"}
+                        </div>
+                        <div className="text-slate-300 text-xs">
+                          {getUserInfo(r.newUserId).name} должен согласовать изменение смены в своём профиле
+                        </div>
+                        <div className="absolute top-full left-1/2 -translate-x-1/2 border-[6px] border-transparent border-t-slate-800" />
+                      </div>
+
+<button
                         onClick={(e) => { e.stopPropagation(); onCancelShiftChange(r.id); }}
                         disabled={moderating === r.id}
                         className="mt-1 w-full bg-white border border-rose-200 text-rose-600 text-[10px] py-1 rounded hover:bg-rose-50 font-medium transition-colors disabled:opacity-50"
@@ -1303,18 +1393,32 @@ export default function WeekDetailPage() {
                     className="mt-2 space-y-1.5 text-xs animate-fade-in"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <select
-                      value={form.templateId}
-                      onChange={(e) => onTemplateChange(e.target.value)}
-                      className="!text-xs !py-1.5"
-                    >
-                      <option value="">Без шаблона</option>
-                      {templates.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="bg-blue-50 text-blue-800 p-2 rounded-lg mb-2 flex items-start gap-1.5 border border-blue-100">
+                      <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span className="leading-tight text-[10px]">При добавлении смены в опубликованную неделю, сотруднику придёт запрос на согласование.</span>
+                    </div>
+                    <div className="flex gap-1 items-stretch">
+                      <select
+                        value={form.templateId}
+                        onChange={(e) => onTemplateChange(e.target.value)}
+                        className="!text-xs !py-1.5 flex-1 min-w-0"
+                      >
+                        <option value="">Без шаблона</option>
+                        {templates.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setManageTplOpen(true); }}
+                        className="px-2 bg-brand-50 text-brand-600 rounded border border-brand-200 hover:bg-brand-100 flex items-center justify-center shrink-0 transition-colors"
+                        title="Управлять шаблонами смен"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
 
                     <select
                       value={form.userId}
@@ -1457,6 +1561,10 @@ export default function WeekDetailPage() {
       </main>
 
       {/* Модалка редактирования смены */}
+      {manageTplOpen && (
+        <ManageShiftTemplatesModal onClose={() => setManageTplOpen(false)} />
+      )}
+
       {editingShift && (
         <ShiftEditModal
           shift={editingShift}
@@ -1496,6 +1604,7 @@ function ShiftEditModal({
   const [endTime, setEndTime] = useState(shift.endTime);
   const [shiftDate, setShiftDate] = useState(String(shift.shiftDate).slice(0, 10));
   const [busy, setBusy] = useState(false);
+  const [manageTplOpen, setManageTplOpen] = useState(false);
 
   const onTemplateChange = (id: string) => {
     setTemplateId(id);
@@ -1625,9 +1734,19 @@ function ShiftEditModal({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
-              Шаблон
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-sm font-medium text-slate-700">
+                Шаблон
+              </label>
+              <button
+                type="button"
+                onClick={() => setManageTplOpen(true)}
+                className="text-brand-600 hover:bg-brand-50 p-1 rounded transition-colors"
+                title="Управлять шаблонами смен"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+            </div>
             <select
               value={templateId}
               onChange={(e) => onTemplateChange(e.target.value)}
@@ -1704,6 +1823,119 @@ function ShiftEditModal({
             </button>
           </div>
         </form>
+      </div>
+      {manageTplOpen && (
+        <ManageShiftTemplatesModal onClose={() => setManageTplOpen(false)} />
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// МОДАЛКА УПРАВЛЕНИЯ ШАБЛОНАМИ СМЕН
+// ═══════════════════════════════════════════════════════
+function ManageShiftTemplatesModal({ onClose }: { onClose: () => void }) {
+  const { items, create, update, remove } = useShiftTemplates();
+  const [newName, setNewName] = useState("");
+  const [newStart, setNewStart] = useState("09:00");
+  const [newEnd, setNewEnd] = useState("18:00");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editStart, setEditStart] = useState("");
+  const [editEnd, setEditEnd] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newName.trim()) return;
+    setBusy(true);
+    try {
+      await create({ name: newName.trim(), startTime: newStart, endTime: newEnd });
+      setNewName("");
+    } catch (err: any) {
+      alert(err.response?.data?.error ?? "Ошибка");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDelete = async (id: string, name: string) => {
+    if (!confirm(`Удалить "${name}"?`)) return;
+    try { await remove(id); } catch (err: any) { alert(err.response?.data?.error ?? "Ошибка"); }
+  };
+
+  const startEdit = (item: any) => {
+    setEditingId(item.id);
+    setEditName(item.name);
+    setEditStart(item.startTime);
+    setEditEnd(item.endTime);
+  };
+
+  const saveEdit = async () => {
+    if (!editingId || !editName.trim()) return;
+    try {
+      await update(editingId, { name: editName.trim(), startTime: editStart, endTime: editEnd });
+      setEditingId(null);
+    } catch (err: any) { alert(err.response?.data?.error ?? "Ошибка"); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 animate-fade-in" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-6 max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-slate-900 text-lg">Управление шаблонами смен</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <form onSubmit={handleCreate} className="flex flex-col gap-2 mb-4 bg-slate-50 p-3 rounded-xl border border-slate-200">
+          <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Название (напр. Утренняя)" className="!text-sm !py-1.5" required />
+          <div className="flex gap-2">
+            <input type="time" value={newStart} onChange={e => setNewStart(e.target.value)} className="!text-sm !py-1.5 flex-1" required />
+            <span className="flex items-center text-slate-400">—</span>
+            <input type="time" value={newEnd} onChange={e => setNewEnd(e.target.value)} className="!text-sm !py-1.5 flex-1" required />
+          </div>
+          <button type="submit" disabled={busy || !newName.trim()} className="mt-1 bg-brand-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50 flex items-center justify-center gap-1">
+            <Plus className="w-3.5 h-3.5" /> Добавить
+          </button>
+        </form>
+
+        <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+          {items.length === 0 && <p className="text-sm text-slate-500 text-center py-4">Список пуст</p>}
+          {items.map(item => (
+            <div key={item.id} className="flex flex-col p-2 rounded-lg bg-white border border-slate-200 shadow-sm">
+              {editingId === item.id ? (
+                <div className="flex flex-col gap-2">
+                  <input value={editName} onChange={e => setEditName(e.target.value)} className="!text-sm !py-1" autoFocus />
+                  <div className="flex gap-2">
+                    <input type="time" value={editStart} onChange={e => setEditStart(e.target.value)} className="!text-sm !py-1 flex-1" />
+                    <input type="time" value={editEnd} onChange={e => setEditEnd(e.target.value)} className="!text-sm !py-1 flex-1" />
+                  </div>
+                  <div className="flex justify-end gap-1 mt-1">
+                    <button onClick={saveEdit} className="text-emerald-600 p-1 hover:bg-emerald-50 rounded text-xs font-medium">Сохранить</button>
+                    <button onClick={() => setEditingId(null)} className="text-slate-400 p-1 hover:bg-slate-100 rounded text-xs">Отмена</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-slate-900 truncate">{item.name}</div>
+                    <div className="text-xs text-slate-500">{item.startTime} – {item.endTime}</div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button type="button" onClick={() => startEdit(item)} className="text-slate-400 hover:text-brand-600 p-1.5 rounded hover:bg-brand-50">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button type="button" onClick={() => handleDelete(item.id, item.name)} className="text-slate-400 hover:text-red-600 p-1.5 rounded hover:bg-red-50">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

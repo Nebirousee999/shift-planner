@@ -183,6 +183,23 @@ export const scheduleWeeksService = {
     return { ok: true, week: updated };
   },
 
+  async unpublish(id: string, orgId: string) {
+    const [week] = await db
+      .select()
+      .from(scheduleWeeks)
+      .where(and(eq(scheduleWeeks.id, id), eq(scheduleWeeks.orgId, orgId)));
+    if (!week) throw new Error("WEEK_NOT_FOUND");
+    if (week.status !== "PUBLISHED") throw new Error("ONLY_PUBLISHED_CAN_BE_REVERTED");
+
+    const [updated] = await db
+      .update(scheduleWeeks)
+      .set({ status: "DRAFT", publishedAt: null })
+      .where(eq(scheduleWeeks.id, id))
+      .returning();
+
+    return updated;
+  },
+
   async duplicate(id: string, orgId: string) {
     const [source] = await db
       .select()

@@ -39,6 +39,16 @@ export const areasService = {
     return created;
   },
 
+  async update(id: string, orgId: string, name: string) {
+    const [updated] = await db
+      .update(areas)
+      .set({ name: name.trim() })
+      .where(and(eq(areas.id, id), eq(areas.orgId, orgId)))
+      .returning();
+    if (!updated) throw new Error("NOT_FOUND");
+    return updated;
+  },
+
   async remove(id: string, orgId: string) {
     const [deleted] = await db
       .delete(areas)

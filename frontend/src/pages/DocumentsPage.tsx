@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   FileText,
   Download,
@@ -20,12 +21,14 @@ import {
   HelpCircle,
   FileSpreadsheet,
   Package,
+  Lock,
 } from "lucide-react";
 import { useDocuments } from "../store/documents";
 import { documentsApi, type DocumentType } from "../api/documents";
 import { customTemplatesApi } from "../api/customTemplates";
 import { batchApi } from "../api/batch";
 import { organizationApi, type Organization } from "../api/organization";
+import { useOrganization } from "../store/organization";
 import { meApi, type Colleague } from "../api/me";
 import NavBar from "../components/NavBar";
 import DocxPreviewModal from "../components/DocxPreviewModal";
@@ -140,6 +143,14 @@ export default function DocumentsPage() {
   const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
   const [previewName, setPreviewName] = useState("");
 
+  const orgStore = useOrganization((s) => s.org);
+  const isTrial = orgStore?.trialEndsAt && new Date(orgStore.trialEndsAt) > new Date();
+  const isPaid = orgStore?.tariffExpiresAt && new Date(orgStore.tariffExpiresAt) > new Date();
+  const effectiveTariff = isTrial ? "pro" : (isPaid ? orgStore?.tariffId : "free");
+  const isFree = effectiveTariff === "free";
+
+  const navigate = useNavigate();
+  const [lockedModalOpen, setLockedModalOpen] = useState(false);
   const [org, setOrg] = useState<Organization | null>(null);
   const [colleagues, setColleagues] = useState<Colleague[]>([]);
 
@@ -488,6 +499,7 @@ export default function DocumentsPage() {
         {!selected && (
           <>
             {Object.entries(byCategory).map(([category, docs]) => {
+              const isCategoryLocked = isFree && category !== "Приказы";
               const CategoryIcon = getCategoryIcon(category);
               return (
                 <div key={category} className="mb-8">
@@ -508,8 +520,14 @@ export default function DocumentsPage() {
                       return (
                         <button
                           key={t.id}
-                          onClick={() => openForm(t)}
-                          className="group bg-white rounded-2xl border border-slate-200 shadow-sm p-5 text-left hover:shadow-md hover:border-slate-300 transition-all animate-fade-in"
+                          onClick={() => {
+                            if (isCategoryLocked) {
+                              setLockedModalOpen(true);
+                            } else {
+                              openForm(t);
+                            }
+                          }}
+                          className={`group bg-white rounded-2xl border border-slate-200 shadow-sm p-5 text-left transition-all animate-fade-in ${isCategoryLocked ? "opacity-70 grayscale cursor-pointer hover:border-amber-300" : "hover:shadow-md hover:border-slate-300"}`}
                         >
                           <div className="flex items-start gap-4 mb-3">
                             <div
@@ -526,10 +544,17 @@ export default function DocumentsPage() {
                               </p>
                             </div>
                           </div>
-                          <div className="flex items-center gap-1 text-xs font-medium text-brand-600 group-hover:text-brand-700 pt-2 border-t border-slate-100">
-                            <Sparkles className="w-3.5 h-3.5" />
-                            Заполнить и скачать
-                          </div>
+                          {isCategoryLocked ? (
+                            <div className="flex items-center gap-1 text-xs font-medium text-amber-600 pt-2 border-t border-slate-100">
+                              <Lock className="w-3.5 h-3.5" />
+                              Доступно только для Pro
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1 text-xs font-medium text-brand-600 group-hover:text-brand-700 pt-2 border-t border-slate-100">
+                              <Sparkles className="w-3.5 h-3.5" />
+                              Заполнить и скачать
+                            </div>
+                          )}
                         </button>
                       );
                     })}
@@ -1072,6 +1097,32 @@ export default function DocumentsPage() {
           </div>
         )}
       </main>
+
+      {lockedModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-fade-in" onClick={() => setLockedModalOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-sm w-full p-6 text-center" onClick={(e) => e.stopPropagation()}>
+            <div className="w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Lock className="w-8 h-8 text-amber-600" />
+            </div>
+            <h3 className="text-xl font-bold text-slate-900 mb-2">Документ заблокирован</h3>
+            <p className="text-slate-500 mb-6 text-sm">
+              Создание документов в этой категории доступно только на тарифе <b>Pro</b>.
+            </p>
+            <button
+              onClick={() => navigate("/wallet?trial=true")}
+              className="w-full bg-amber-600 text-white py-3 rounded-xl font-bold hover:bg-amber-700 shadow-sm transition-all flex items-center justify-center gap-2 mb-2"
+            >
+              <Sparkles className="w-5 h-5" /> Разблокировать Pro на 14 дней
+            </button>
+            <button
+              onClick={() => setLockedModalOpen(false)}
+              className="w-full py-2 text-sm text-slate-500 hover:text-slate-900 font-medium"
+            >
+              Закрыть
+            </button>
+          </div>
+        </div>
+      )}
 
       {previewBlob && (
         <DocxPreviewModal

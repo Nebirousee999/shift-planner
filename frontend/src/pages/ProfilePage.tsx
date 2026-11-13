@@ -5,7 +5,7 @@ import { z } from "zod";
 import {
   Mail, Phone, Coins, Shield, KeyRound, Save, CalendarDays, Building2,
   Lock, Pencil, Settings as SettingsIcon, Clock, Percent, Palette, AlertCircle,
-  Bell, Send, MessageSquare, Check, Loader2, X, User as UserIcon, Info, HelpCircle, CheckCircle2, Database,
+  Bell, Send, MessageSquare, Check, Loader2, X, User as UserIcon, Info, HelpCircle, CheckCircle2, Database, Eye, EyeOff,
 } from "lucide-react";
 import { useAuth } from "../store/auth";
 import { useUsers } from "../store/users";
@@ -86,6 +86,7 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [section, setSection] = useState<SectionId>("profile");
+  const [showPass, setShowPass] = useState(false);
 
   const [org, setOrg] = useState<Organization | null>(null);
   const [orgForm, setOrgForm] = useState({
@@ -466,6 +467,30 @@ function ProfileSection({
             </div>
           </div>
 
+          {profile.tempPassword && (
+            <div className="mt-4 bg-blue-50 border border-blue-200 rounded-xl p-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-xs font-semibold text-blue-900 mb-1">Пароль для входа</div>
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type={showPass ? "text" : "password"} 
+                      value={profile.tempPassword} 
+                      readOnly 
+                      className="!bg-white !border-blue-200 !text-sm !py-1.5 !px-3 !w-48 font-mono font-bold"
+                    />
+                    <button onClick={() => setShowPass(!showPass)} className="text-blue-600 hover:text-blue-800 p-1">
+                      {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+                <div className="text-[10px] text-blue-700 max-w-[200px]">
+                  Этот пароль сгенерирован автоматически. Вы можете сменить его ниже.
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
             <ProfileField icon={Mail} label="Email" value={profile.email} />
             {profile.phone && (
@@ -567,6 +592,10 @@ function MessengerSection({ userId }: { userId: string }) {
   const isStep2 = !!org?.maxBotLink;
   const isStep3 = !!bindings.max;
   const isOwner = useAuth(s => s.user?.role) === "OWNER";
+     const isTrial = org?.trialEndsAt && new Date(org.trialEndsAt) > new Date();
+     const isPaid = org?.tariffExpiresAt && new Date(org.tariffExpiresAt) > new Date();
+     const effectiveTariff = isTrial ? "pro" : (isPaid ? org?.tariffId : "free");
+     const isFree = effectiveTariff === "free";
 
   // Исправление ссылки (добавляем https://max.ru/ если нет)
   const maxLink = org?.maxBotLink
@@ -678,7 +707,25 @@ function MessengerSection({ userId }: { userId: string }) {
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 animate-fade-in">
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 animate-fade-in relative">
+      {isFree && (
+        <div className="absolute inset-0 z-30 bg-white/60 backdrop-blur-sm flex items-center justify-center rounded-2xl p-4">
+          <div className="bg-white rounded-2xl shadow-xl border border-amber-200 p-6 max-w-sm w-full text-center">
+            <div className="w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Lock className="w-8 h-8 text-amber-600" />
+            </div>
+            <h3 className="text-xl font-bold text-slate-900 mb-2">Доступно только для Pro</h3>
+            <p className="text-sm text-slate-500 mb-6">Уведомления в мессенджер (Telegram / MAX) доступны на тарифах Pro и Business.</p>
+            <button
+              onClick={() => window.location.href = "/wallet?trial=true"}
+              className="w-full bg-amber-600 text-white py-3 rounded-xl font-bold hover:bg-amber-700 shadow-sm transition-all"
+            >
+              Разблокировать на 14 дней
+            </button>
+          </div>
+        </div>
+      )}
+      <div className={isFree ? "opacity-40 pointer-events-none select-none" : ""}>
       <div className="flex items-center gap-3 mb-5">
         <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center">
           <MessageSquare className="w-5 h-5 text-brand-600" />
@@ -868,6 +915,7 @@ function MessengerSection({ userId }: { userId: string }) {
           Настройки уведомлений станут доступны после того, как вы привяжете свой ID.
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -1334,6 +1382,22 @@ function PasswordsSection() {
   const { items, fetch } = useUsers();
   const [sendingAll, setSendingAll] = useState(false);
   const [sendingId, setSendingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editEmail, setEditEmail] = useState("");
+
+  const handleSaveEmail = async (id: string) => {
+    if (!editEmail.trim() || !editEmail.includes("@")) {
+      alert("Введите корректный email");
+      return;
+    }
+    try {
+      await usersApi.update(id, { email: editEmail.trim() });
+      setEditingId(null);
+      fetch();
+    } catch (e: any) {
+      await alertDialog(e.response?.data?.error ?? "Ошибка сохранения", { variant: "error" });
+    }
+  };
 
   useEffect(() => { fetch(); }, [fetch]);
 
@@ -1400,7 +1464,42 @@ function PasswordsSection() {
               {items.map(u => (
                 <tr key={u.id} className="hover:bg-slate-50">
                   <td className="px-4 py-3 font-medium text-slate-900">{u.name}</td>
-                  <td className="px-4 py-3 text-slate-600 select-all">{u.email}</td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {editingId === u.id ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          value={editEmail}
+                          onChange={(e) => setEditEmail(e.target.value)}
+                          className="!py-1 !px-2 !text-xs !w-48"
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleSaveEmail(u.id);
+                            if (e.key === "Escape") setEditingId(null);
+                          }}
+                        />
+                        <button onClick={() => handleSaveEmail(u.id)} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded" title="Сохранить">
+                          <Check className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => setEditingId(null)} className="p-1 text-slate-400 hover:bg-slate-100 rounded" title="Отмена">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 group">
+                        <span className="select-all">{u.email}</span>
+                        <button
+                          onClick={() => {
+                            setEditingId(u.id);
+                            setEditEmail(u.email);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded transition-all"
+                          title="Редактировать email"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     {u.tempPassword ? (
                       <div className="flex flex-col gap-1">
@@ -1437,9 +1536,17 @@ function PasswordsSection() {
           </table>
         </div>
       )}
-      <p className="text-xs text-slate-400 mt-4">
-        * Если сотрудник уже сменил пароль, при отправке ему будет сгенерирован новый временный пароль.
-      </p>
+      <div className="mt-4 space-y-3">
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-start gap-2.5 shadow-sm">
+          <AlertCircle className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+          <p className="text-xs text-blue-900 font-medium leading-relaxed">
+            <b>Чтобы отправить пароль на почту отсюда,</b> сначала нажмите на карандаш рядом с email сотрудника и укажите его реальный адрес вместо временного.
+          </p>
+        </div>
+        <p className="text-xs text-slate-400">
+          * Если сотрудник уже сменил пароль, при отправке ему будет сгенерирован новый временный пароль.
+        </p>
+      </div>
     </div>
   );
 }

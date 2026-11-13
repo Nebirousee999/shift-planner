@@ -176,7 +176,7 @@ export const usersService = {
       const [userCountRow] = await db.select({ count: count() }).from(users).where(eq(users.orgId, input.orgId));
       const countVal = Number(userCountRow.count);
 
-      if (effectiveTariff === "free" && countVal >= 3) throw new Error("LIMIT_REACHED");
+      if (effectiveTariff === "free" && countVal >= 4) throw new Error("LIMIT_REACHED");
       if (effectiveTariff === "pro" && countVal >= 20) throw new Error("LIMIT_REACHED");
     }
 
@@ -249,12 +249,14 @@ export const usersService = {
     id: string;
     orgId: string;
     name?: string;
+    email?: string;
     phone?: string | null;
     position?: string | null;
     role?: "OWNER" | "MANAGER" | "EMPLOYEE";
     hourlyRate?: string | null;
     paymentType?: "HOURLY" | "MONTHLY";
     employmentType?: "GPH" | "SHTAT";
+    tempPassword?: string | null;
     locationIds?: string[];
     areaIds?: string[];
   }) {
@@ -267,7 +269,22 @@ export const usersService = {
 
     // 2. Собираем поля для UPDATE (только присланные)
     const userSet: Record<string, any> = {};
+    let generatedTempPassword = undefined;
     if (input.name !== undefined) userSet.name = input.name;
+    if (input.email !== undefined && input.email !== existing.email) {
+      userSet.email = input.email;
+      generatedTempPassword = generateTempPassword();
+      userSet.passwordHash = await bcrypt.hash(generatedTempPassword, 10);
+      userSet.tempPassword = generatedTempPassword;
+      userSet.isTempPasswordSent = false;
+    }
+    if (input.tempPassword !== undefined) {
+      userSet.tempPassword = input.tempPassword;
+      if (input.tempPassword) {
+        userSet.passwordHash = await bcrypt.hash(input.tempPassword, 10);
+        userSet.isTempPasswordSent = false;
+      }
+    }
     if (input.phone !== undefined) userSet.phone = input.phone;
     if (input.position !== undefined) userSet.position = input.position;
     if (input.role !== undefined) userSet.role = input.role;
@@ -342,6 +359,7 @@ export const usersService = {
 
     return {
       ...finalUser,
+      tempPassword: generatedTempPassword,
       locationIds: locs.map((l) => l.locationId),
       areaIds: ars.map((a) => a.areaId),
     };

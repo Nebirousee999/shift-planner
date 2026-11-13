@@ -41,8 +41,25 @@ const PRICES = {
 const fmtMoney = (n: number) => new Intl.NumberFormat("ru-RU").format(n) + " ₽";
 
 export default function WalletPage() {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const isAdmin = user?.email === import.meta.env.VITE_ADMIN_EMAIL;
+  const isTrialRequest = searchParams.get("trial") === "true";
+  const [activatingTrial, setActivatingTrial] = useState(false);
+
+  const handleStartTrial = async () => {
+    setActivatingTrial(true);
+    try {
+      await fetch(`${import.meta.env.VITE_API_URL ?? "http://localhost:3001/api"}/payments/start-trial`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      window.location.reload();
+    } catch (e) {
+      alert("Ошибка активации");
+    } finally {
+      setActivatingTrial(false);
+    }
+  };
   const [testPaying, setTestPaying] = useState<"monthly" | "yearly" | null>(null);
   const [searchParams] = useSearchParams();
   const checkoutPlan = searchParams.get("checkout") as "pro" | "business" | null;
@@ -160,6 +177,23 @@ export default function WalletPage() {
                 Все Pro-функции активны. Чтобы сохранить их, оформите подписку до окончания триала — данные и настройки не потеряются.
               </div>
             </div>
+          </div>
+        )}
+
+        {isTrialRequest && currentTariffId === "free" && (
+          <div className="mb-6 rounded-2xl p-6 bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 shadow-sm text-center animate-fade-in">
+            <h3 className="text-xl font-bold text-amber-900 mb-2">Разблокировать Pro на 14 дней</h3>
+            <p className="text-amber-800 mb-4 text-sm">
+              Вам доступны все функции: до 20 сотрудников, уведомления в MAX, аналитика и документы.
+            </p>
+            <button
+              onClick={handleStartTrial}
+              disabled={activatingTrial}
+              className="inline-flex items-center gap-2 bg-amber-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-amber-700 shadow-md transition-all disabled:opacity-50"
+            >
+              {activatingTrial ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
+              {activatingTrial ? "Активация..." : "Активировать Pro"}
+            </button>
           </div>
         )}
 

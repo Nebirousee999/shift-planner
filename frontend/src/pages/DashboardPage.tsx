@@ -146,7 +146,21 @@ export default function DashboardPage() {
   const canNext = dates.length > 0 && selectedDate < dates[6];
   const dateInWeek = dates.includes(selectedDate);
 
-  // Сброс даты убран, чтобы можно было свободно переключать недели
+  // 🔥 Автоматический выбор правильной даты, если текущая не попадает в загруженную неделю
+  useEffect(() => {
+    if (!data?.currentWeek) return;
+    const weekStart = data.currentWeek.weekStartDate;
+    const weekDays = weekDates(weekStart);
+    
+    if (!weekDays.includes(selectedDate)) {
+      const todayStr = new Intl.DateTimeFormat('en-CA').format(new Date());
+      if (weekDays.includes(todayStr)) {
+        setSelectedDate(todayStr); // Если сегодня в этой неделе — ставим на сегодня
+      } else {
+        setSelectedDate(weekDays[0]); // Иначе ставим на понедельник этой недели
+      }
+    }
+  }, [data?.currentWeek?.id]);
 
   const hourlyRate = profile?.hourlyRate ? Number(profile.hourlyRate) : 0;
 

@@ -62,6 +62,19 @@ export async function scheduleWeeksRoutes(app: FastifyInstance) {
     }
   });
 
+  app.post<{ Params: { id: string } }>("/:id/unpublish", async (req, reply) => {
+    try {
+      const { orgId } = req.user!;
+      const updated = await scheduleWeeksService.unpublish(req.params.id, orgId);
+      return updated;
+    } catch (e: any) {
+      if (e.message === "WEEK_NOT_FOUND") return reply.code(404).send({ error: "Неделя не найдена" });
+      if (e.message === "ONLY_PUBLISHED_CAN_BE_REVERTED") return reply.code(400).send({ error: "Вернуть в черновик можно только опубликованную неделю" });
+      app.log.error(e);
+      return reply.code(500).send({ error: "Ошибка возврата в черновик" });
+    }
+  });
+
   app.post<{ Params: { id: string } }>("/:id/duplicate", async (req, reply) => {
     try {
       const { orgId } = req.user!;

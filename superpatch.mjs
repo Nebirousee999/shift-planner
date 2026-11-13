@@ -3,29 +3,45 @@ import fs from "node:fs";
 import path from "node:path";
 
 const ROOT = process.cwd();
-const FILE = path.join(ROOT, "frontend/vite.config.ts");
+const filePath = path.join(ROOT, "frontend/src/pages/ProfilePage.tsx");
 
-if (!fs.existsSync(FILE)) {
-  console.error("❌ Файл vite.config.ts не найден");
+if (!fs.existsSync(filePath)) {
+  console.log("❌ Файл не найден:", filePath);
   process.exit(1);
 }
 
-let content = fs.readFileSync(FILE, "utf-8");
-const hadCRLF = content.includes("\r\n");
-if (hadCRLF) content = content.replace(/\r\n/g, "\n");
+const raw = fs.readFileSync(filePath, "utf-8");
+const hadCRLF = raw.includes("\r\n");
+let normalized = hadCRLF ? raw.replace(/\r\n/g, "\n") : raw;
+let touched = 0;
 
-// Проверяем, есть ли уже envDir
-if (content.includes('envDir: ".."')) {
-  console.log("⏭  [vite.config.ts] envDir уже настроен.");
+// Ищем конец компонента MessengerSection и добавляем недостающий </div>
+const searchStr = `          Настройки уведомлений станут доступны после того, как вы привяжете свой ID.
+        </div>
+      )}
+    </div>
+  );
+}`;
+
+const replaceStr = `          Настройки уведомлений станут доступны после того, как вы привяжете свой ID.
+        </div>
+      )}
+      </div>
+    </div>
+  );
+}`;
+
+if (normalized.includes(searchStr)) {
+  normalized = normalized.replace(searchStr, replaceStr);
+  touched++;
+  console.log("✅ Добавлен недостающий закрывающий тег </div>.");
 } else {
-  // Ищем начало defineConfig и вставляем envDir сразу после открывающей скобки
-  const searchRegex = /export default defineConfig\(\{/;
-  
-  if (searchRegex.test(content)) {
-    content = content.replace(searchRegex, 'export default defineConfig({\n  envDir: "..", // 🔥 Позволяет Vite читать корневой .env');
-    fs.writeFileSync(FILE, hadCRLF ? content.replace(/\n/g, "\r\n") : content, "utf-8");
-    console.log("✅ [vite.config.ts] Успешно добавлен envDir: '..' (Vite будет видеть корневой .env).");
-  } else {
-    console.log("❌ Не удалось найти defineConfig в файле.");
-  }
+  console.log("⚠️ Не найдено место для вставки. Возможно, ошибка в другом месте.");
+}
+
+if (touched > 0) {
+  fs.writeFileSync(filePath, hadCRLF ? normalized.replace(/\n/g, "\r\n") : normalized, "utf-8");
+  console.log("🎉 Готово! Обновите страницу в браузере.");
+} else {
+  console.log("✨ Изменений не внесено.");
 }

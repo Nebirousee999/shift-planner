@@ -6,6 +6,7 @@ type State = {
   loading: boolean;
   fetch: () => Promise<void>;
   create: (input: { locationId: string; name: string }) => Promise<Area>;
+  update: (id: string, input: { name: string }) => Promise<void>;
   remove: (id: string) => Promise<void>;
   copy: (input: {
     areaIds: string[];
@@ -37,6 +38,13 @@ export const useAreas = create<State>((set, get) => ({
       };
     });
     return created;
+  },
+
+  update: async (id, input) => {
+    const updated = await areasApi.update(id, input);
+    set((s) => ({
+      items: s.items.map((a) => (a.id === id ? updated : a)),
+    }));
   },
 
   remove: async (id) => {
