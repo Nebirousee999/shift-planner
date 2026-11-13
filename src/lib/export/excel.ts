@@ -384,10 +384,12 @@ export async function exportTimesheetToExcel(
 }
 
 // ─── Экспорт графика на месяц (по вкладкам для каждого сотрудника) ─────────────────────────
+
+// ─── Экспорт графика на месяц в виде календарной сетки ───
 export async function exportMonthToExcel(input: {
   orgName: string;
   monthStartDate: string;
-  employees: { id: string; name: string }[];
+  employees: { id: string; name: string; hourlyRate?: number }[];
   shifts: {
     userId: string;
     userName: string;
@@ -408,77 +410,156 @@ export async function exportMonthToExcel(input: {
     shiftsByUser.get(s.userId)!.push(s);
   }
 
-  // Сортируем смены внутри каждого сотрудника
-  for (const userShifts of shiftsByUser.values()) {
-    userShifts.sort((a, b) => a.shiftDate.localeCompare(b.shiftDate));
-  }
+  const monthStart = new Date(input.monthStartDate + "T00:00:00Z");
+  const year = monthStart.getUTCFullYear();
+  const month = monthStart.getUTCMonth();
+  const monthName = monthStart.toLocaleString("ru-RU", { month: "long", timeZone: "UTC" });
 
-  // Создаем вкладку для каждого сотрудника
+  // Вычисляем границы для сетки (с понедельника первой недели по воскресенье последней)
+  const firstDay = new Date(Date.UTC(year, month, 1));
+  const dow = firstDay.getUTCDay() === 0 ? 7 : firstDay.getUTCDay(); // 1=Пн, 7=Вс
+  const gridStart = new Date(firstDay);
+  gridStart.setUTCDate(gridStart.getUTCDate() - dow + 1);
+
+  const lastDay = new Date(Date.UTC(year, month + 1, 0));
+  const dowEnd = lastDay.getUTCDay() === 0 ? 7 : lastDay.getUTCDay();
+  const gridEnd = new Date(lastDay);
+  gridEnd.setUTCDate(gridEnd.getUTCDate() + (7 - dowEnd));
+
+  const WEEKDAYS = ["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС"];
+
   for (const emp of input.employees) {
     const userShifts = shiftsByUser.get(emp.id) || [];
     let sheetName = emp.name.replace(/[\\\/?*\[\]:]/g, "").slice(0, 31) || "Сотрудник";
-    
     const ws = wb.addWorksheet(sheetName);
+    
     ws.pageSetup = { orientation: "portrait", fitToPage: true, fitToWidth: 1 };
+    ws.columns = [
+      { width: 14 }, { width: 14 }, { width: 14 }, { width: 14 },
+      { width: 14 }, { width: 14 }, { width: 14 }, { width: 18 },
+    ];
 
-    // Заголовок
-    ws.mergeCells("A1:D1");
+    // --- Шапка ---
+    ws.mergeCells("A1:F1");
     ws.getCell("A1").value = `${input.orgName} — ${emp.name}`;
     ws.getCell("A1").font = { bold: true, size: 14 };
-    ws.getCell("A1").alignment = { horizontal: "center", vertical: "middle" };
+    ws.getCell("A1").alignment = { vertical: "middle" };
     ws.getRow(1).height = 30;
 
-    ws.mergeCells("A2:D2");
-    ws.getCell("A2").value = `График смен на месяц (с ${new Date(input.monthStartDate + "T00:00:00Z").toLocaleDateString("ru-RU", { timeZone: "UTC" })})`;
-    ws.getCell("A2").font = { size: 11, color: { argb: "FF6B7280" } };
-    ws.getCell("A2").alignment = { horizontal: "center" };
-
-    // Шапка таблицы
-    const headerRow = ws.getRow(4);
-    headerRow.values = ["Дата", "День недели", "Время смены", "Шаблон"];
-    headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
-    headerRow.eachCell((c) => {
-      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2563EB" } };
-      c.alignment = { horizontal: "center", vertical: "middle" };
-      c.border = { bottom: { style: "thin" } };
-    });
-    headerRow.height = 24;
-
-    // Данные
-    let rowIdx = 5;
+    // --- Сводка (Часы, Смены, Затраты) ---
+    let totalHours = 0;
     for (const s of userShifts) {
-      const d = new Date(s.shiftDate + "T00:00:00Z");
-      const dateStr = d.toLocaleDateString("ru-RU", { timeZone: "UTC", day: "2-digit", month: "2-digit", year: "numeric" });
-      const dow = d.getUTCDay();
-      const dowStr = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"][dow];
+      totalHours += hoursBetween(s.startTime, s.endTime);
+    }
+    const totalCost = Math.round(totalHours * (emp.hourlyRate || 0));
 
-      const row = ws.getRow(rowIdx);
-      row.values = [dateStr, dowStr, `${s.startTime}–${s.endTime}`, s.templateName || "—"];
+    ws.mergeCells("A2:C2");
+    ws.getCell("A2").value = `${monthName} ${year}`;
+    ws.getCell("A2").font = { bold: true, size: 12, color: { argb: "FF6B7280" } };
+
+    ws.getCell("D2").value = "СМЕН ЗА МЕСЯЦ:";
+    ws.getCell("D2").font = { size: 9, color: { argb: "FF6B7280" }, bold: true };
+    ws.getCell("D2").alignment = { horizontal: "right" };
+    ws.getCell("E2").value = userShifts.length;
+    ws.getCell("E2").font = { bold: true, size: 12 };
+
+    ws.getCell("F2").value = "ЧАСОВ ЗА МЕСЯЦ:";
+    ws.getCell("F2").font = { size: 9, color: { argb: "FF6B7280" }, bold: true };
+    ws.getCell("F2").alignment = { horizontal: "right" };
+    ws.getCell("G2").value = Math.round(totalHours * 10) / 10;
+    ws.getCell("G2").font = { bold: true, size: 12 };
+
+    ws.getCell("H2").value = "ЗАТРАТЫ:";
+    ws.getCell("H2").font = { size: 9, color: { argb: "FF6B7280" }, bold: true };
+    ws.getCell("H2").alignment = { horizontal: "right" };
+    ws.getCell("I2").value = `${new Intl.NumberFormat("ru-RU").format(totalCost)} ₽`;
+    ws.getCell("I2").font = { bold: true, size: 12, color: { argb: "FF10B981" } };
+    ws.getRow(2).height = 24;
+
+    ws.mergeCells("A1:I1"); // Расширяем шапку до 9 колонок
+    ws.mergeCells("A2:C2");
+
+    // --- Шапка календаря ---
+    const headerRow = ws.getRow(4);
+    headerRow.values = [...WEEKDAYS, "ИТОГО ЗА НЕДЕЛЮ"];
+    headerRow.font = { bold: true, size: 10, color: { argb: "FF64748B" } };
+    headerRow.eachCell((c, col) => {
+      c.alignment = { horizontal: "center", vertical: "middle" };
+      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8FAFC" } };
+      c.border = { bottom: { style: "thin", color: { argb: "FFE2E8F0" } } };
+      if (col === 8) { // Итого
+        c.font = { bold: true, size: 9, color: { argb: "FF475569" } };
+        ws.getCell(`H${headerRow.number}`).value = "ИТОГО ЗА\nНЕДЕЛЮ";
+        c.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+      }
+    });
+    headerRow.height = 36;
+    // Заполняем 8-ю колонку (H) для всей сетки
+    ws.getColumn(8).width = 18;
+
+    // --- Отрисовка сетки ---
+    let rowIdx = 5;
+    let currentDay = new Date(gridStart);
+
+    while (currentDay <= gridEnd) {
+      let weekShifts = 0;
+      let weekHours = 0;
       
-      if (s.templateColor) {
-        const hex = s.templateColor.replace("#", "").toUpperCase();
-        const colorCell = row.getCell(3);
-        colorCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF" + hex } };
-        colorCell.font = { color: { argb: "FFFFFFFF" }, bold: true };
+      // Начинаем новую строку для недели
+      const weekRow = ws.getRow(rowIdx);
+
+      for (let i = 0; i < 7; i++) {
+        const dateStr = currentDay.toISOString().slice(0, 10);
+        const cell = weekRow.getCell(i + 1);
+        
+        const isOtherMonth = currentDay.getUTCMonth() !== month;
+        const dayNum = currentDay.getUTCDate();
+        
+        // Ищем смену на этот день
+        const dayShift = userShifts.find(s => s.shiftDate === dateStr);
+
+        if (dayShift) {
+          cell.value = `${dayShift.startTime}-\n${dayShift.endTime}`;
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF3B82F6" } }; // Синий
+          cell.font = { color: { argb: "FFFFFFFF" }, size: 9, bold: true };
+          weekShifts++;
+          weekHours += hoursBetween(dayShift.startTime, dayShift.endTime);
+        } else if (isOtherMonth) {
+          cell.value = dayNum;
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF1F5F9" } }; // Светло-серый для чужих месяцев
+          cell.font = { color: { argb: "FFCBD5E1" }, size: 9 };
+        } else {
+          cell.value = dayNum;
+          cell.font = { color: { argb: "FF94A3B8" }, size: 9 };
+        }
+
+        cell.alignment = { horizontal: "left", vertical: "top", wrapText: true };
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFE2E8F0" } },
+          left: { style: "thin", color: { argb: "FFE2E8F0" } },
+          bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+          right: { style: "thin", color: { argb: "FFE2E8F0" } },
+        };
+
+        currentDay.setUTCDate(currentDay.getUTCDate() + 1);
       }
 
-      row.eachCell((c) => {
-        c.alignment = { vertical: "middle", horizontal: "center" };
-        c.border = {
-          bottom: { style: "thin", color: { argb: "FFE5E7EB" } },
-          right: { style: "thin", color: { argb: "FFE5E7EB" } },
-        };
-      });
-      row.height = 22;
+      // Итоговая колонка за неделю
+      const totalCell = weekRow.getCell(8);
+      totalCell.value = `${weekShifts} см.\n${Math.round(weekHours * 10) / 10} ч.`;
+      totalCell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+      totalCell.font = { size: 9, bold: true, color: { argb: "FF334155" } };
+      totalCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8FAFC" } };
+      totalCell.border = {
+        top: { style: "thin", color: { argb: "FFE2E8F0" } },
+        left: { style: "thin", color: { argb: "FFE2E8F0" } },
+        bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+        right: { style: "thin", color: { argb: "FFE2E8F0" } },
+      };
+
+      weekRow.height = 45; // Высота строки смены
       rowIdx++;
     }
-
-    ws.columns = [
-      { width: 14 },
-      { width: 14 },
-      { width: 20 },
-      { width: 25 },
-    ];
   }
 
   return (await wb.xlsx.writeBuffer()) as Buffer;

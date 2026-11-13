@@ -228,7 +228,7 @@ export const authService = {
         excelDataForExport = {
           orgName: org.name,
           monthStartDate: monday,
-          employees: createdEmployees.map(e => ({ id: e.id, name: e.name })),
+          employees: createdEmployees.map(e => ({ id: e.id, name: e.name, hourlyRate: Number(e.hourlyRate || 0) })),
           shifts: allShiftsForExport
         };
       }
