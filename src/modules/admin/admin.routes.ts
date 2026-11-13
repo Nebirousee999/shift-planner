@@ -2,54 +2,63 @@ import type { FastifyInstance } from "fastify";
 import { eq, desc } from "drizzle-orm";
 import { db } from "../../../db/client.js";
 import { users, organizations } from "../../../db/schema.js";
+import { usersService } from "../users/users.service.js";
 
 export async function adminRoutes(app: FastifyInstance) {
   app.addHook("preHandler", app.authenticate);
   app.addHook("preHandler", app.requireRole(["OWNER"]));
 
+  // ─── Получение списка ВСЕХ пользователей ───
   app.get("/db-info", async (req, reply) => {
     const { sub: userId } = req.user!;
     const [user] = await db.select({ email: users.email }).from(users).where(eq(users.id, userId));
     
-    // 🔒 Строгая проверка на супер-админа
     const superAdmin = process.env.ADMIN_EMAIL || "prihodko999@inbox.ru";
     if (user?.email !== superAdmin) {
       return reply.code(403).send({ error: "Доступ только для администратора сервиса" });
     }
 
-    const allOrgs = await db.select().from(organizations).orderBy(desc(organizations.createdAt));
-    const allUsers = await db.select().from(users);
+    const allUsers = await db.select().from(users).orderBy(desc(users.createdAt));
+    const allOrgs = await db.select().from(organizations);
+    const orgMap = new Map(allOrgs.map(o => [o.id, o.name]));
 
-    const result = allOrgs.map((org) => {
-      const orgUsers = allUsers.filter((u) => u.orgId === org.id);
-      const owner = orgUsers.find((u) => u.role === "OWNER");
-      
-      // Считаем только реальных сотрудников (не владельца и не менеджеров, если хочешь чисто рядовых - поменяй условие)
-      const employeeCount = orgUsers.filter((u) => u.role === "EMPLOYEE" || u.role === "MANAGER").length;
+    return allUsers.map((u) => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      role: u.role,
+      orgName: orgMap.get(u.orgId) || "—",
+      createdAt: u.createdAt,
+    }));
+  });
 
-      const now = new Date();
-      let tariff = "Free";
-      let expiresAt = null;
+  // ─── Массовое удаление пользователей ───
+  app.delete("/users", async (req, reply) => {
+    const { sub: adminId } = req.user!;
+    const [admin] = await db.select({ email: users.email }).from(users).where(eq(users.id, adminId));
+    
+    const superAdmin = process.env.ADMIN_EMAIL || "prihodko999@inbox.ru";
+    if (admin?.email !== superAdmin) {
+      return reply.code(403).send({ error: "Доступ только для администратора сервиса" });
+    }
 
-      if (org.tariffExpiresAt && new Date(org.tariffExpiresAt) > now) {
-        tariff = org.tariffId === "business" ? "Business" : "Pro";
-        expiresAt = org.tariffExpiresAt;
-      } else if (org.trialEndsAt && new Date(org.trialEndsAt) > now) {
-        tariff = "Trial (Pro)";
-        expiresAt = org.trialEndsAt;
+    const { userIds } = req.body as { userIds: string[] };
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return reply.code(400).send({ error: "Нет ID для удаления" });
+    }
+
+    let deletedCount = 0;
+    for (const id of userIds) {
+      const [targetUser] = await db.select({ orgId: users.orgId }).from(users).where(eq(users.id, id));
+      if (targetUser) {
+        try {
+          await usersService.remove(id, targetUser.orgId, adminId);
+          deletedCount++;
+        } catch (e) {
+          console.error("Admin delete error for user", id, e);
+        }
       }
-
-      return {
-        id: org.id,
-        orgName: org.name,
-        email: owner?.email || "—",
-        createdAt: org.createdAt,
-        tariff,
-        expiresAt,
-        employeeCount,
-      };
-    });
-
-    return result;
+    }
+    return { success: true, deletedCount };
   });
 }

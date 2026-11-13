@@ -1,18 +1,21 @@
 import { api } from "./client";
 
-export type DbUserInfo = {
+export type AdminUserInfo = {
   id: string;
-  orgName: string;
+  name: string;
   email: string;
+  role: "OWNER" | "MANAGER" | "EMPLOYEE";
+  orgName: string;
   createdAt: string;
-  tariff: string;
-  expiresAt: string | null;
-  employeeCount: number;
 };
 
 export const adminApi = {
-  getDatabase: async (): Promise<DbUserInfo[]> => {
-    const { data } = await api.get<DbUserInfo[]>("/admin/db-info");
+  getDatabase: async (): Promise<AdminUserInfo[]> => {
+    const { data } = await api.get<AdminUserInfo[]>("/admin/db-info");
     return data;
   },
+  deleteUsers: async (userIds: string[]) => {
+    const { data } = await api.delete("/admin/users", { data: { userIds } });
+    return data;
+  }
 };
