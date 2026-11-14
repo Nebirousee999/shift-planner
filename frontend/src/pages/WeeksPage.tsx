@@ -120,13 +120,12 @@ function ShiftLines({
 }) {
   if (shifts.length === 0) return null;
 
-  // 1. Подготавливаем данные: переводим время в минуты, определяем цвет
   const parsedShifts = shifts.map((s) => {
     const [sh, sm] = s.startTime.split(":").map(Number);
     const [eh, em] = s.endTime.split(":").map(Number);
     let startMins = sh * 60 + sm;
     let endMins = eh * 60 + em;
-    if (endMins <= startMins) endMins += 24 * 60; // если смена ночная
+    if (endMins <= startMins) endMins += 24 * 60;
 
     return {
       ...s,
@@ -136,62 +135,99 @@ function ShiftLines({
     };
   });
 
-  // 2. Сортируем смены по времени начала
   parsedShifts.sort((a, b) => a.startMins - b.startMins);
 
-  // 3. Распределяем по "этажам" (Lane Packing)
   const lanes: typeof parsedShifts[] = [];
   for (const shift of parsedShifts) {
     let placed = false;
     for (let i = 0; i < lanes.length; i++) {
       const lane = lanes[i];
       const lastShift = lane[lane.length - 1];
-      // Если смена начинается позже, чем закончилась предыдущая в этом этаже — кладем сюда
       if (shift.startMins >= lastShift.endMins) {
         lane.push(shift);
         placed = true;
         break;
       }
     }
-    // Если места нет — создаем новый этаж
     if (!placed) {
       lanes.push([shift]);
     }
   }
 
-  const totalLanes = lanes.length;
-  const laneHeightPct = 100 / totalLanes;
+  // Функция смешивания цвета с белым
+  const getLightColor = (hex: string, opacity: number) => {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    const mix = 1 - opacity;
+    const nr = Math.round(r + (255 - r) * mix);
+    const ng = Math.round(g + (255 - g) * mix);
+    const nb = Math.round(b + (255 - b) * mix);
+    return `#${nr.toString(16).padStart(2, '0')}${ng.toString(16).padStart(2, '0')}${nb.toString(16).padStart(2, '0')}`;
+  };
 
   return (
-    <div className="relative flex-1 w-full my-1 min-h-[40px]">
-      {parsedShifts.map((s, i) => {
-        // Ищем, на каком этаже лежит смена
-        let laneIdx = 0;
-        for (let l = 0; l < lanes.length; l++) {
-          if (lanes[l].includes(s)) {
-            laneIdx = l;
-            break;
+    <div className="absolute inset-0 flex flex-col w-full h-full pointer-events-none z-0">
+      {lanes.map((lane, idx) => {
+        const topPct = (idx / lanes.length) * 100;
+        const heightPct = (1 / lanes.length) * 100;
+        
+        // Строим градиент для заливки всей ширины (0-100%)
+        const stops: string[] = [];
+        for (let i = 0; i < lane.length; i++) {
+          const s = lane[i];
+          const light = getLightColor(s.color, 0.85);
+          const startPct = (s.startMins / 1440) * 100;
+          const endPct = (s.endMins / 1440) * 100;
+          
+          if (i === 0) {
+            stops.push(`${light} 0%`);
+            stops.push(`${light} ${startPct}%`);
+          } else {
+            const prev = lane[i-1];
+            const prevEndPct = (prev.endMins / 1440) * 100;
+            const mid = (prevEndPct + startPct) / 2;
+            stops.push(`${light} ${mid}%`);
+            stops.push(`${light} ${startPct}%`);
+          }
+          
+          if (i === lane.length - 1) {
+            stops.push(`${light} ${endPct}%`);
+            stops.push(`${light} 100%`);
           }
         }
 
-        // Считаем позиции
-        const leftPct = (s.startMins / (24 * 60)) * 100;
-        const widthPct = ((s.endMins - s.startMins) / (24 * 60)) * 100;
-        const topPct = laneIdx * laneHeightPct;
+        const backgroundStyle = lane.length > 0 
+          ? `linear-gradient(to right, ${stops.join(", ")})` 
+          : "transparent";
 
         return (
-          <div
-            key={s.id || i}
-            className="absolute rounded-[3px] shadow-sm hover:z-10 hover:ring-2 hover:ring-white hover:scale-y-105 transition-all cursor-pointer"
-            style={{
-              left: `${leftPct}%`,
-              width: `${Math.max(widthPct, 1.5)}%`,
-              top: `calc(${topPct}% + 0.5px)`,
-              height: `calc(${laneHeightPct}% - 1px)`,
-              backgroundColor: s.color,
+          <div 
+            key={idx} 
+            className="absolute w-full" 
+            style={{ 
+              top: `${topPct}%`, 
+              height: `${heightPct}%`,
+              background: backgroundStyle
             }}
-            title={`${s.startTime}–${s.endTime} | ${s.userName || "Сотрудник"}`}
-          />
+          >
+            {lane.map((s) => {
+              const leftPct = (s.startMins / 1440) * 100;
+              const widthPct = ((s.endMins - s.startMins) / 1440) * 100;
+
+              return (
+                <div
+                  key={s.id}
+                  className="absolute top-0 bottom-0 rounded-sm shadow-sm"
+                  style={{
+                    left: `${leftPct}%`,
+                    width: `${Math.max(widthPct, 1.5)}%`,
+                    backgroundColor: s.color,
+                  }}
+                />
+              );
+            })}
+          </div>
         );
       })}
     </div>
@@ -741,37 +777,38 @@ export default function WeeksPage() {
                     return (
                       <div
                         key={dateStr}
-                        className={`relative pt-1 px-1 pb-1 flex flex-col border-r border-slate-100 last:border-0 min-h-[85px] ${
+                        className={`relative pt-1 px-1 pb-1 flex flex-col border-r border-slate-100 last:border-0 min-h-[85px] overflow-hidden ${
                           isToday ? "bg-blue-100/60" : isWeekend ? "bg-slate-50/40" : ""
                         }`}
                       >
+                        <ShiftLines shifts={dayShifts} templateColorById={templateColorById} userColorById={userColorById} />
+
                         {hasPendingRequest && (
                           <span
-                            className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-amber-500 ring-2 ring-white z-10"
+                            className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-amber-500 ring-2 ring-white z-20 pointer-events-none"
                             title="Есть запрос"
                           />
                         )}
-                        <div className="flex items-start justify-start pl-1 pt-0.5 relative z-10">
+
+                        <div className="relative z-10 flex items-start justify-start pl-1 pt-0.5 pointer-events-none">
                           <div
-                            className={`text-sm font-semibold leading-none ${
+                            className={`text-sm font-bold leading-none ${
                               isToday
-                                ? "w-6 h-6 rounded-full bg-brand-600 text-white flex items-center justify-center text-xs shadow-sm"
-                                : isOtherMonth
-                                ? "text-slate-300"
-                                : isWeekend
-                                ? "text-slate-400"
+                                ? "w-6 h-6 rounded-full bg-brand-600 flex items-center justify-center text-xs text-white"
+                                : dayShifts.length > 0
+                                ? "text-white"
                                 : "text-slate-900"
                             }`}
                           >
                             {d.getUTCDate()}
                           </div>
                         </div>
-                        <ShiftLines shifts={dayShifts} templateColorById={templateColorById} userColorById={userColorById} />
 
                         {dayShifts.length > 0 && (
-                          <div className="mt-auto pt-1 text-center text-[10px] text-slate-600 leading-tight font-medium">
-                            {dayShifts.length} см. •{" "}
-                            {new Intl.NumberFormat("ru-RU").format(dayCost)} ₽
+                          <div className="absolute bottom-0 left-0 right-0 z-10 pb-1 flex justify-center w-full pointer-events-none">
+                            <div className="text-[10px] text-white font-bold leading-tight bg-black/20 px-1.5 py-0.5 rounded shadow-sm">
+                              {dayShifts.length} см. • {new Intl.NumberFormat("ru-RU").format(dayCost)} ₽
+                            </div>
                           </div>
                         )}
                       </div>
