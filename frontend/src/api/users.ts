@@ -15,6 +15,7 @@ export type TeamUser = {
   employmentType: "GPH" | "SHTAT";
   tempPassword?: string | null;
   isTempPasswordSent?: boolean;
+  color: string;
 };
 
 export type BulkActionPayload =
@@ -64,6 +65,7 @@ export const usersApi = {
       employmentType?: "GPH" | "SHTAT";
       email?: string;
       tempPassword?: string | null;
+      color?: string;
     }>
   ): Promise<TeamUser> => {
     const { data } = await api.patch<TeamUser>(`/users/${id}`, input);

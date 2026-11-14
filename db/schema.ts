@@ -90,6 +90,7 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 
   notificationSettings: jsonb("notification_settings").default({}).notNull(),
+  color: varchar("color", { length: 7 }).default("#3B82F6").notNull(),
 });
 
 // ─── USER LOCATIONS ────────────────────────────────────

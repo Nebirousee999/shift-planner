@@ -21,6 +21,7 @@ const createSchema = z.object({
   paymentType: z.enum(["HOURLY", "MONTHLY"]).optional(),
   employmentType: z.enum(["GPH", "SHTAT"]).optional(),
   tempPassword: z.string().max(50).nullable().optional(),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
 });
 
 const updateSchema = z.object({
@@ -34,6 +35,7 @@ const updateSchema = z.object({
   areaIds: z.array(z.string().uuid()).optional(),
   paymentType: z.enum(["HOURLY", "MONTHLY"]).optional(),
   employmentType: z.enum(["GPH", "SHTAT"]).optional(),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
 });
 
 const bulkSchema = z.object({
@@ -134,6 +136,7 @@ export async function usersRoutes(app: FastifyInstance) {
       ...parsed.data,
     });
     if (!updated) return reply.code(404).send({ error: "Сотрудник не найден" });
+    console.log("✅ [UPDATE USER RESPONSE]:", updated);
     return updated;
   });
 

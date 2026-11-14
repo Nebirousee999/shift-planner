@@ -890,7 +890,7 @@ export default function TeamPage() {
                                         <div>
                                           {list.map((u) => (
                                             <div key={u.id} className="flex items-center gap-3 px-3 py-2 transition-all border-b border-white/40 last:border-0" style={{ backgroundColor: withAlpha(posColor, rowOpacity) }}>
-                                              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold shrink-0 ${getAvatarColor(u.id)}`}>
+                                              <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold shrink-0" style={{ backgroundColor: u.color || "#3B82F6" }}>
                                                 {getInitials(u.name)}
                                               </div>
                                               <div className="flex-1 min-w-0">
@@ -1338,7 +1338,7 @@ function MatrixView({
                           style={{ left: editMode ? 40 : 0, backgroundColor: isSelected ? "#f0f9ff" : withAlpha(posColor, rowOpacity) }}
                         >
                           <div className="flex items-center gap-2">
-                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-semibold shrink-0 ${getAvatarColor(u.id)}`}>
+                            <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-semibold shrink-0" style={{ backgroundColor: u.color || "#3B82F6" }}>
                               {getInitials(u.name)}
                             </div>
                             <div className="min-w-0 flex-1 flex items-center justify-between group/name">
@@ -1448,6 +1448,7 @@ function EditUserModal({
   const [employmentType, setEmploymentType] = useState<"GPH" | "SHTAT">(user.employmentType ?? "SHTAT");
   const [phone, setPhone] = useState(user.phone ?? "");
   const [tempPassword, setTempPassword] = useState(user.tempPassword ?? "");
+  const [color, setColor] = useState(user.color ?? "#3B82F6");
   const [managePosOpen, setManagePosOpen] = useState(false);
   const [manageAreaOpen, setManageAreaOpen] = useState(false);
   const [locationIds, setLocationIds] = useState<Set<string>>(new Set(user.locationIds ?? []));
@@ -1512,7 +1513,7 @@ function EditUserModal({
     e.preventDefault();
     setBusy(true);
     try {
-      await onSave({
+      const payload: any = {
         name, email, role,
         position: position.trim() || null,
         hourlyRate: hourlyRate.trim() || null,
@@ -1521,8 +1522,13 @@ function EditUserModal({
         phone: phone.trim() || null,
         locationIds: Array.from(locationIds),
         areaIds: Array.from(areaIds),
-        tempPassword: tempPassword.trim() || null,
-      });
+        color,
+      };
+      // Отправляем пароль только если он был изменен вручную
+      if (tempPassword !== (user.tempPassword ?? "")) {
+        payload.tempPassword = tempPassword.trim() || null;
+      }
+      await onSave(payload);
     } finally {
       setBusy(false);
     }
@@ -1580,6 +1586,20 @@ function EditUserModal({
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">Телефон</label>
                 <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+7 999 123-45-67" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Цвет в календаре</label>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {["#3B82F6", "#8B5CF6", "#10B981", "#F59E0B", "#EF4444", "#06B6D4", "#6366F1", "#EC4899"].map(c => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setColor(c)}
+                      className={`w-7 h-7 rounded-full transition-all ${color === c ? "ring-2 ring-offset-2 ring-slate-900 scale-110" : "hover:scale-110"}`}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
 

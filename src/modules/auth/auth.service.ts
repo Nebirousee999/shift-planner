@@ -113,6 +113,7 @@ export const authService = {
             passwordHash: empHash,
             tempPassword: empPass,
             role: "EMPLOYEE",
+            color: emp.color || "#3B82F6",
             hourlyRate: emp.rate ? String(emp.rate) : "300",
             position: "Должность 1",
           }).returning();

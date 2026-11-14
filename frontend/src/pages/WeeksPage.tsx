@@ -112,32 +112,86 @@ const STATUS_META: Record<string, StatusMeta> = {
 function ShiftLines({
   shifts,
   templateColorById,
+  userColorById,
 }: {
   shifts: any[];
   templateColorById: (id: string | null) => string;
+  userColorById: (id: string | null) => string;
 }) {
   if (shifts.length === 0) return null;
+
+  // 1. Подготавливаем данные: переводим время в минуты, определяем цвет
+  const parsedShifts = shifts.map((s) => {
+    const [sh, sm] = s.startTime.split(":").map(Number);
+    const [eh, em] = s.endTime.split(":").map(Number);
+    let startMins = sh * 60 + sm;
+    let endMins = eh * 60 + em;
+    if (endMins <= startMins) endMins += 24 * 60; // если смена ночная
+
+    return {
+      ...s,
+      startMins,
+      endMins,
+      color: userColorById(s.userId) || templateColorById(s.templateId) || "#3B82F6",
+    };
+  });
+
+  // 2. Сортируем смены по времени начала
+  parsedShifts.sort((a, b) => a.startMins - b.startMins);
+
+  // 3. Распределяем по "этажам" (Lane Packing)
+  const lanes: typeof parsedShifts[] = [];
+  for (const shift of parsedShifts) {
+    let placed = false;
+    for (let i = 0; i < lanes.length; i++) {
+      const lane = lanes[i];
+      const lastShift = lane[lane.length - 1];
+      // Если смена начинается позже, чем закончилась предыдущая в этом этаже — кладем сюда
+      if (shift.startMins >= lastShift.endMins) {
+        lane.push(shift);
+        placed = true;
+        break;
+      }
+    }
+    // Если места нет — создаем новый этаж
+    if (!placed) {
+      lanes.push([shift]);
+    }
+  }
+
+  const totalLanes = lanes.length;
+  const laneHeightPct = 100 / totalLanes;
+
   return (
-    <div className="w-full mt-1 space-y-[3px]">
-      {shifts.map((s, i) => {
-        const start = timeToMinutes(s.startTime);
-        const end = timeToMinutes(s.endTime);
-        const endFixed = end <= start ? 24 * 60 : end;
-        const leftPct = (start / (24 * 60)) * 100;
-        const widthPct = ((endFixed - start) / (24 * 60)) * 100;
-        const color = templateColorById(s.templateId);
+    <div className="relative flex-1 w-full my-1 min-h-[40px]">
+      {parsedShifts.map((s, i) => {
+        // Ищем, на каком этаже лежит смена
+        let laneIdx = 0;
+        for (let l = 0; l < lanes.length; l++) {
+          if (lanes[l].includes(s)) {
+            laneIdx = l;
+            break;
+          }
+        }
+
+        // Считаем позиции
+        const leftPct = (s.startMins / (24 * 60)) * 100;
+        const widthPct = ((s.endMins - s.startMins) / (24 * 60)) * 100;
+        const topPct = laneIdx * laneHeightPct;
+
         return (
-          <div key={i} className="relative w-full h-[4px]">
-            <div
-              className="absolute top-0 bottom-0 rounded-full"
-              style={{
-                left: `${leftPct}%`,
-                width: `${Math.max(widthPct, 2)}%`,
-                backgroundColor: color,
-              }}
-              title={`${s.startTime}–${s.endTime}`}
-            />
-          </div>
+          <div
+            key={s.id || i}
+            className="absolute rounded-[3px] shadow-sm hover:z-10 hover:ring-2 hover:ring-white hover:scale-y-105 transition-all cursor-pointer"
+            style={{
+              left: `${leftPct}%`,
+              width: `${Math.max(widthPct, 1.5)}%`,
+              top: `calc(${topPct}% + 0.5px)`,
+              height: `calc(${laneHeightPct}% - 1px)`,
+              backgroundColor: s.color,
+            }}
+            title={`${s.startTime}–${s.endTime} | ${s.userName || "Сотрудник"}`}
+          />
         );
       })}
     </div>
@@ -269,6 +323,11 @@ export default function WeeksPage() {
   const templateColorById = (id: string | null): string => {
     if (!id) return "#94A3B8";
     return templates.find((t) => t.id === id)?.color ?? "#94A3B8";
+  };
+
+  const userColorById = (id: string | null): string => {
+    if (!id) return "#94A3B8";
+    return users.find((u) => u.id === id)?.color ?? "#3B82F6";
   };
 
   const currentMonthStr = `${year}-${pad2(month + 1)}`;
@@ -682,7 +741,7 @@ export default function WeeksPage() {
                     return (
                       <div
                         key={dateStr}
-                        className={`relative pt-2 px-1.5 pb-2 flex flex-col border-r border-slate-100 last:border-0 min-h-[85px] ${
+                        className={`relative pt-1 px-1 pb-1 flex flex-col border-r border-slate-100 last:border-0 min-h-[85px] ${
                           isToday ? "bg-blue-100/60" : isWeekend ? "bg-slate-50/40" : ""
                         }`}
                       >
@@ -692,11 +751,11 @@ export default function WeeksPage() {
                             title="Есть запрос"
                           />
                         )}
-                        <div className="flex items-center justify-center">
+                        <div className="flex items-start justify-start pl-1 pt-0.5 relative z-10">
                           <div
-                            className={`text-base font-semibold ${
+                            className={`text-sm font-semibold leading-none ${
                               isToday
-                                ? "w-7 h-7 rounded-full bg-brand-600 text-white flex items-center justify-center text-sm shadow-sm"
+                                ? "w-6 h-6 rounded-full bg-brand-600 text-white flex items-center justify-center text-xs shadow-sm"
                                 : isOtherMonth
                                 ? "text-slate-300"
                                 : isWeekend
@@ -707,7 +766,7 @@ export default function WeeksPage() {
                             {d.getUTCDate()}
                           </div>
                         </div>
-                        <ShiftLines shifts={dayShifts} templateColorById={templateColorById} />
+                        <ShiftLines shifts={dayShifts} templateColorById={templateColorById} userColorById={userColorById} />
 
                         {dayShifts.length > 0 && (
                           <div className="mt-auto pt-1 text-center text-[10px] text-slate-600 leading-tight font-medium">

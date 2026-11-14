@@ -107,6 +107,7 @@ export const usersService = {
         createdAt: users.createdAt,
         tempPassword: users.tempPassword,
         isTempPasswordSent: users.isTempPasswordSent,
+        color: users.color,
       })
       .from(users)
       .where(eq(users.orgId, orgId));
@@ -197,6 +198,7 @@ export const usersService = {
         hourlyRate: input.hourlyRate,
         paymentType: input.paymentType ?? "HOURLY",
         employmentType: input.employmentType ?? "SHTAT",
+        color: input.color ?? "#3B82F6",
         phone: input.phone,
       })
       .returning({
@@ -211,6 +213,7 @@ export const usersService = {
         employmentType: users.employmentType,
         createdAt: users.createdAt,
         isTempPasswordSent: users.isTempPasswordSent,
+        color: users.color,
       });
 
     if (input.position) {
@@ -245,21 +248,8 @@ export const usersService = {
     };
   },
 
-  async update(input: {
-    id: string;
-    orgId: string;
-    name?: string;
-    email?: string;
-    phone?: string | null;
-    position?: string | null;
-    role?: "OWNER" | "MANAGER" | "EMPLOYEE";
-    hourlyRate?: string | null;
-    paymentType?: "HOURLY" | "MONTHLY";
-    employmentType?: "GPH" | "SHTAT";
-    tempPassword?: string | null;
-    locationIds?: string[];
-    areaIds?: string[];
-  }) {
+  async update(input: any) {
+    console.log("🔍 [UPDATE USER PAYLOAD]:", input);
     // 1. Проверяем, что пользователь существует и принадлежит org
     const [existing] = await db
       .select({ id: users.id })
@@ -273,11 +263,9 @@ export const usersService = {
     if (input.name !== undefined) userSet.name = input.name;
     if (input.email !== undefined && input.email !== existing.email) {
       userSet.email = input.email;
-      generatedTempPassword = generateTempPassword();
-      userSet.passwordHash = await bcrypt.hash(generatedTempPassword, 10);
-      userSet.tempPassword = generatedTempPassword;
-      userSet.isTempPasswordSent = false;
     }
+    
+    if (input.color !== undefined) userSet.color = input.color;
     if (input.tempPassword !== undefined) {
       userSet.tempPassword = input.tempPassword;
       if (input.tempPassword) {
@@ -343,6 +331,7 @@ export const usersService = {
         employmentType: users.employmentType,
         createdAt: users.createdAt,
         isTempPasswordSent: users.isTempPasswordSent,
+        color: users.color,
       })
       .from(users)
       .where(eq(users.id, input.id));
