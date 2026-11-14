@@ -259,7 +259,10 @@ export default function CalculatorPage() {
           <div className="shrink-0">
             {!isSaving ? (
               <button 
-                onClick={() => setIsSaving(true)}
+                onClick={() => {
+              setIsSaving(true);
+              trackEvent("calc_save_click");
+            }}
                 className="inline-flex items-center gap-2 bg-brand-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-brand-700 shadow-sm transition-all w-full xl:w-auto justify-center"
               >
                 <Download className="w-5 h-5" /> Сохранить и скачать
