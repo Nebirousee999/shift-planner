@@ -66,7 +66,7 @@ export const useUsers = create<State>((set) => ({
   create: async (input) => {
     const result = await usersApi.create(input);
     set((s) => ({ items: [...s.items, result.user] }));
-    return result; // <--- Возвращаем весь объект, чтобы взять result.user.id
+    return result;
   },
 
   update: async (id, input) => {

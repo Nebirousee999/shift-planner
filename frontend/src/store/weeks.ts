@@ -1,10 +1,5 @@
 import { create } from "zustand";
-import {
-  weeksApi,
-  shiftsApi,
-  type ScheduleWeek,
-  type ShiftUpdateResult,
-} from "../api/weeks";
+import { weeksApi, shiftsApi, type ScheduleWeek, type ShiftUpdateResult,  } from "../api/weeks";
 
 type State = {
   weeks: ScheduleWeek[];

@@ -11,13 +11,7 @@ import { useAuth } from "../store/auth";
 import { useUsers } from "../store/users";
 import { usersApi } from "../api/users";
 import { api } from "../api/client";
-import {
-  meApi,
-  type MyProfile,
-  type MessengerProvider,
-  type NotificationSettings,
-  DEFAULT_NOTIFICATION_SETTINGS,
-} from "../api/me";
+import { meApi, type MyProfile, type MessengerProvider, type NotificationSettings } from "../api/me";
 import { organizationApi, type Organization } from "../api/organization";
 import { useOrganization } from "../store/organization";
 import { alertDialog } from "../store/dialogs";
@@ -36,6 +30,21 @@ const passwordSchema = z
     path: ["confirmPassword"],
   });
 type PasswordForm = z.infer<typeof passwordSchema>;
+
+
+// Локальный дефолтный объект для настроек мессенджера
+const DEFAULT_NOTIFICATION_SETTINGS: any = {
+  newSchedule: true,
+  shiftChanged: true,
+  shiftCreated: true,
+  shiftChangeApproval: true,
+  swapRequest: true,
+  vacationReviewed: true,
+  sickLeave: true,
+  timeOffReviewed: true,
+  remindHour: true,
+  remindFiveMin: false,
+};
 
 const ROLE_LABELS: Record<string, string> = {
   OWNER: "Владелец",
@@ -1569,5 +1578,22 @@ function NotifCheckbox({
       <input type="checkbox" checked={checked} onChange={onChange} className="!w-4 !h-4 !p-0" />
       <span className="text-sm text-slate-800">{label}</span>
     </label>
+  );
+}
+function MessengerTabFallback() {
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-sm">
+      <div className="w-16 h-16 rounded-2xl bg-brand-50 flex items-center justify-center mx-auto mb-4">
+        <Lock className="w-8 h-8 text-brand-600" />
+      </div>
+      <h3 className="text-xl font-bold text-slate-900 mb-2">Мессенджеры</h3>
+      <p className="text-slate-500 mb-6 max-w-md mx-auto">
+        Интеграция с Telegram, WhatsApp и MAX доступна в тарифе Pro. 
+        Привяжите бота, чтобы отправлять сотрудникам графики и уведомления в 1 клик.
+      </p>
+      <button className="bg-brand-600 text-white px-6 py-2.5 rounded-xl font-medium hover:bg-brand-700 transition-colors">
+        Перейти на Pro
+      </button>
+    </div>
   );
 }

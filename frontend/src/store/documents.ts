@@ -1,9 +1,5 @@
 import { create } from "zustand";
-import {
-  documentsApi,
-  type DocumentType,
-  type GeneratedDocument,
-} from "../api/documents";
+import { documentsApi, type DocumentType, type GeneratedDocument,  } from "../api/documents";
 
 type State = {
   templates: DocumentType[];

@@ -62,6 +62,23 @@ export async function authRoutes(app: FastifyInstance) {
         }
     });
 
+    app.post("/update-email", async (req, reply) => {
+      try {
+        const token = req.headers.authorization?.split(" ")[1];
+        if (!token) return reply.code(401).send({ error: "Unauthorized" });
+        const decoded = app.jwt.verify(token) as any;
+        
+        const { email } = req.body;
+        if (!email) return reply.code(400).send({ error: "Email обязателен" });
+
+        await authService.updateEmail(decoded.sub, email);
+        return { ok: true };
+      } catch (e: any) {
+        if (e.message === "EMAIL_TAKEN") return reply.code(409).send({ error: "Этот email уже занят" });
+        return reply.code(500).send({ error: "Ошибка обновления почты" });
+      }
+    });
+
     app.post("/login", async (req, reply) => {
         const parsed = loginSchema.safeParse(req.body);
         if (!parsed.success) {

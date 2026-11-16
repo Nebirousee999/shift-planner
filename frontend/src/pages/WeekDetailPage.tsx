@@ -18,10 +18,7 @@ import { useOrganization } from "../store/organization";
 import { useTimeOff } from "../store/timeOff";
 import { vacationsApi } from "../api/vacations";
 import { shiftsApi, type ScheduledShift } from "../api/weeks";
-import {
-  shiftChangeRequestsApi,
-  type ShiftChangeRequest,
-} from "../api/shiftChangeRequests";
+import { shiftChangeRequestsApi, type ShiftChangeRequest,  } from "../api/shiftChangeRequests";
 import { alertDialog, confirmDialog } from "../store/dialogs";
 import NavBar from "../components/NavBar";
 import TeamSummary from "../components/TeamSummary";
@@ -46,8 +43,33 @@ const formatMoney = (n: number) =>
   new Intl.NumberFormat("ru-RU").format(n) + " ₽";
 
 export default function WeekDetailPage() {
+    
+  // Мок-данные для отображения интерфейса в гостевом режиме
+  const mockWeek = {
+    id: "guest-week",
+    weekStartDate: new Date().toISOString().slice(0, 10),
+    status: "DRAFT",
+    shifts: [],
+  };
+  const mockUsers = [{ id: "g1", name: "Сотрудник 1", position: "Должность", hourlyRate: "300", areaIds: [] }];
+  
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  // ─── ТЕНЕВОЙ РЕЖИМ (Гость без токена) ───
+  const isGuestMode = !localStorage.getItem("token");
+  const [guestEmail, setGuestEmail] = useState("");
+  // ────────────────────────────────────────
+  
+  
+  
+  // ─── ТЕНЕВОЙ РЕЖИМ (Гость без токена) ───
+  
+  
+  // ────────────────────────────────────────
+  
+  
+  
+  
   const {
     currentWeek,
     loading,
@@ -112,7 +134,10 @@ export default function WeekDetailPage() {
   >([]);
   const [moderating, setModerating] = useState<string | null>(null);
 
+  
   useEffect(() => {
+    if (isGuestMode) return; // БЛОКИРОВКА API ДЛЯ ГОСТЯ
+  
     if (id) fetchWeek(id);
     fetchTemplates();
     fetchUsers();
@@ -177,7 +202,19 @@ export default function WeekDetailPage() {
     return Array.from(map.values());
   }, [positions, summaryUsers]);
 
-  if (loading && !currentWeek)
+  
+  
+  
+  
+  
+
+  const [guestShifts, setGuestShifts] = useState<any[]>(() => {
+    return JSON.parse(localStorage.getItem("guest_shifts") || "[]");
+  });
+  const activeWeek = isGuestMode ? { id: "week1", weekStartDate: new Date().toISOString().slice(0, 10), status: "DRAFT", shifts: guestShifts } : currentWeek;
+  const activeUsers = isGuestMode ? [{ id: "u1", name: "Алексей", position: "Бариста", hourlyRate: "300", color: "#3B82F6", locationIds: [], areaIds: [] }] : users;
+
+  if (loading && !activeWeek)
     return (
       <div className="min-h-screen bg-slate-50">
         <NavBar />
@@ -186,23 +223,23 @@ export default function WeekDetailPage() {
         </main>
       </div>
     );
-  if (error || !currentWeek)
+  if (error || !activeWeek)
     return (
       <div className="min-h-screen bg-slate-50">
         <NavBar />
         <main className="max-w-7xl mx-auto px-4 py-8">
-          <p className="text-red-500 text-sm">{error ?? "Неделя не найдена"}</p>
+          <p className="text-red-500 text-sm">{error ?? "Ошибка"} </p>
         </main>
       </div>
     );
 
-  const isDraft = currentWeek.status === "DRAFT";
-  const isLocked = currentWeek.status === "LOCKED";
+  const isDraft = activeWeek.status === "DRAFT";
+  const isLocked = activeWeek.status === "LOCKED";
   const canEdit = editMode && !isLocked;
-  const dates = weekDates(currentWeek.weekStartDate);
+  const dates = weekDates(activeWeek.weekStartDate);
   const weekStart = shortDate(dates[0]);
   const weekEnd = shortDate(dates[6]);
-  const shiftsByDate: Record<string, typeof currentWeek.shifts> = {};
+  const shiftsByDate: Record<string, typeof activeWeek.shifts> = {};
 
   const pendingIncomingByShift = new Map<string, ShiftChangeRequest>();
            for (const r of incomingShiftRequests) {
@@ -221,7 +258,7 @@ export default function WeekDetailPage() {
   }
 
   for (const d of dates) shiftsByDate[d] = [];
-  for (const s of currentWeek.shifts ?? []) {
+  for (const s of activeWeek.shifts ?? []) {
     const d = String(s.shiftDate).slice(0, 10);
     if (shiftsByDate[d]) shiftsByDate[d].push(s);
   }
@@ -242,7 +279,7 @@ export default function WeekDetailPage() {
   }
   const virtualCreateOutgoingByDate: Record<string, ShiftChangeRequest[]> = {};
   for (const r of outgoingShiftRequests) {
-    if (r.status === "PENDING" && r.kind === "CREATE" && r.weekId === currentWeek.id) {
+    if (r.status === "PENDING" && r.kind === "CREATE" && r.weekId === activeWeek.id) {
       const d = String(r.newShiftDate).slice(0, 10);
       if (!virtualCreateOutgoingByDate[d]) virtualCreateOutgoingByDate[d] = [];
       virtualCreateOutgoingByDate[d].push(r);
@@ -250,7 +287,7 @@ export default function WeekDetailPage() {
   }
 
   const userStats = summaryUsers.map((u) => {
-    const uShiftsWeek = currentWeek.shifts?.filter((s) => s.userId === u.id) || [];
+    const uShiftsWeek = activeWeek.shifts?.filter((s) => s.userId === u.id) || [];
     const weekHours = uShiftsWeek.reduce(
       (acc, s) => acc + calcHours(s.startTime, s.endTime),
       0
@@ -271,7 +308,7 @@ export default function WeekDetailPage() {
   });
 
   const weeklyCost = userStats.reduce((acc, u) => acc + u.weekCost, 0);
-  const totalWeekShifts = currentWeek.shifts?.length ?? 0;
+  const totalWeekShifts = activeWeek.shifts?.length ?? 0;
 
   // ═════════════════════════════════════════════════════════
   // Действия со сменами
@@ -286,6 +323,55 @@ export default function WeekDetailPage() {
   };
 
   const onAddShift = async (date: string, snapshot?: ShiftSnapshot) => {
+    // ГОСТЬ: ДОБАВЛЕНИЕ СМЕНЫ
+    if (isGuestMode) {
+      const newShift = {
+        id: Math.random().toString(),
+        shiftDate: date,
+        startTime: snapshot ? snapshot.startTime : form.startTime,
+        endTime: snapshot ? snapshot.endTime : form.endTime,
+        userId: snapshot ? snapshot.userId : form.userId,
+        templateId: snapshot ? snapshot.templateId : form.templateId,
+      };
+      const shifts = [...guestShifts, newShift];
+      
+      localStorage.setItem("guest_shifts", JSON.stringify(shifts));
+      setGuestShifts(shifts); // Обновляем стейт (без перезагрузки страницы!)
+      
+      if (!snapshot) {
+        setShowAddFor(null);
+        setForm({ templateId: "", userId: "", startTime: "09:00", endTime: "18:00" });
+      }
+      return;
+    }
+  
+    if (isGuestMode) {
+      const shifts = JSON.parse(localStorage.getItem("guest_shifts") || "[]");
+      shifts.push({
+        id: Math.random().toString(),
+        shiftDate: date,
+        startTime: snapshot ? snapshot.startTime : form.startTime,
+        endTime: snapshot ? snapshot.endTime : form.endTime,
+        userId: snapshot ? snapshot.userId : form.userId,
+        templateId: snapshot ? snapshot.templateId : form.templateId,
+      });
+      localStorage.setItem("guest_shifts", JSON.stringify(shifts));
+      window.location.reload(); // Перезагружаем, чтобы смена отрисовалась
+      return;
+    }
+  
+    
+    
+    // Ограничение для теневых аккаунтов
+    
+    // Ограничение для теневых аккаунтов (20 смен)
+    if (activeWeek.shifts.length >= 20 && !guestEmail) {
+      await alertDialog("Вы достигли лимита в 20 смен в демо-режиме.\n\nВведите почту вверху страницы, чтобы сохранить данные и снять ограничение.", {
+        title: "Демо-режим",
+        variant: "error",
+      });
+      return;
+    }
     const startTime = snapshot ? snapshot.startTime : form.startTime;
     const endTime = snapshot ? snapshot.endTime : form.endTime;
     const userId = snapshot ? snapshot.userId : form.userId;
@@ -303,7 +389,7 @@ export default function WeekDetailPage() {
       try {
         const { onVacation, vacation } = await vacationsApi.check(userId, date);
         if (onVacation) {
-          const userName = users.find((u) => u.id === userId)?.name ?? "Сотрудник";
+          const userName = activeUsers.find((u) => u.id === userId)?.name ?? "Сотрудник";
           const ok = await confirmDialog(
             `${userName} находится в отпуске с ${vacation!.startDate} по ${vacation!.endDate}.\n\nВсё равно назначить смену?`,
             { title: "В отпуске", confirmLabel: "Назначить", variant: "danger" }
@@ -324,7 +410,7 @@ export default function WeekDetailPage() {
       try {
         const check = await shiftsApi.checkLimits({
           userId,
-          weekId: currentWeek.id,
+          weekId: activeWeek.id,
           startTime,
           endTime,
         });
@@ -343,7 +429,7 @@ export default function WeekDetailPage() {
       try {
         const overlapCheck = await shiftsApi.checkOverlap({
           userId,
-          weekId: currentWeek.id,
+          weekId: activeWeek.id,
           shiftDate: date,
           startTime,
           endTime,
@@ -362,7 +448,7 @@ export default function WeekDetailPage() {
 
     try {
       const result = await addShift({
-        weekId: currentWeek.id,
+        weekId: activeWeek.id,
         templateId: templateId || undefined,
         userId: userId || undefined,
         shiftDate: date,
@@ -407,26 +493,55 @@ export default function WeekDetailPage() {
   };
 
   const onPublish = async () => {
+    // ГОСТЬ: ПУБЛИКАЦИЯ
+    if (isGuestMode) {
+      if (!guestEmail || !guestEmail.includes("@")) {
+        await alertDialog("Введите почту вверху страницы, чтобы сохранить ваш график.", { title: "Нужен Email", variant: "error" });
+        return;
+      }
+      setPublishing(true);
+      try {
+        const shifts = JSON.parse(localStorage.getItem("guest_shifts") || "[]");
+        const res = await fetch("http://localhost:3001/api/auth/quick-register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: guestEmail,
+            name: "Владелец",
+            guestData: { employees: [], shifts: shifts, startDate: new Date().toISOString().slice(0, 10) }
+          }),
+        });
+        if (!res.ok) throw new Error("Ошибка сервера");
+        const data = await res.json();
+        
+        localStorage.removeItem("guest_shifts");
+        localStorage.setItem("token", data.token);
+        
+        if ((window as any).ym) (window as any).ym(114078577, 'reachGoal', 'calc_register_success');
+        
+        window.location.href = "/dashboard"; // Перекидываем в полноценный кабинет
+      } catch (e: any) {
+        await alertDialog(e.message || "Ошибка", { title: "Ошибка", variant: "error" });
+      } finally {
+        setPublishing(false);
+      }
+      return;
+    }
+  
+    
+
+    // 2. Если это реальный пользователь — публикуем как обычно
     setPublishing(true);
     try {
-      const result = await publishWeek(currentWeek.id);
-      if (!result.ok)
-        await alertDialog(
-          "Нарушения ТК РФ:\n\n" + (result.violations ?? []).join("\n"),
-          { title: "Нельзя опубликовать", variant: "error" }
-        );
-      else {
-        await alertDialog("Неделя опубликована!", {
-          title: "Готово",
-          variant: "success",
-        });
+      const result = await publishWeek(activeWeek.id);
+      if (!result.ok) {
+        await alertDialog("Нарушения ТК РФ:\n\n" + (result.violations ?? []).join("\n"), { title: "Нельзя опубликовать", variant: "error" });
+      } else {
+        await alertDialog("Неделя опубликована!", { title: "Готово", variant: "success" });
         setEditMode(false);
       }
     } catch (e: any) {
-      await alertDialog(e.response?.data?.error ?? "Ошибка публикации", {
-        title: "Ошибка",
-        variant: "error",
-      });
+      await alertDialog(e.response?.data?.error ?? "Ошибка публикации", { title: "Ошибка", variant: "error" });
     } finally {
       setPublishing(false);
     }
@@ -441,7 +556,7 @@ export default function WeekDetailPage() {
 
     setReverting(true);
     try {
-      await unpublishWeek(currentWeek.id);
+      await unpublishWeek(activeWeek.id);
       await alertDialog("Неделя возвращена в черновик", { variant: "success" });
     } catch (e: any) {
       await alertDialog(e.response?.data?.error ?? "Ошибка возврата", { variant: "error" });
@@ -453,7 +568,7 @@ export default function WeekDetailPage() {
   const onDuplicate = async () => {
     setDuplicating(true);
     try {
-      const newWeek = await duplicateWeek(currentWeek.id);
+      const newWeek = await duplicateWeek(activeWeek.id);
       navigate(`/weeks/${newWeek.id}`);
     } catch (e: any) {
       await alertDialog(e.response?.data?.error ?? "Ошибка копирования", {
@@ -528,7 +643,7 @@ export default function WeekDetailPage() {
     e.preventDefault();
     setDragOverDate(null);
     if (!canEdit || !draggingShiftId) return;
-    const shift = (currentWeek.shifts ?? []).find((s) => s.id === draggingShiftId);
+    const shift = (activeWeek.shifts ?? []).find((s) => s.id === draggingShiftId);
     setDraggingShiftId(null);
     if (!shift) return;
     if (String(shift.shiftDate).slice(0, 10) === newDate) return;
@@ -628,7 +743,7 @@ export default function WeekDetailPage() {
   };
 
   const getUserInfo = (uid: string | null) => {
-    const u = users.find((x) => x.id === uid);
+    const u = activeUsers.find((x) => x.id === uid);
     return u ? { name: u.name, position: u.position } : { name: "—", position: null };
   };
   const templateById = (tid: string | null) =>
@@ -652,7 +767,7 @@ export default function WeekDetailPage() {
   const handleApproveTimeOff = async (timeOffId: string) => {
     try {
       await approveTimeOff(timeOffId);
-      if (currentWeek?.id) await fetchWeek(currentWeek.id);
+      if (activeWeek?.id) await fetchWeek(activeWeek.id);
       useNotifications.getState().refresh();
       await alertDialog("Отгул одобрен — смена снята", {
         variant: "success",
@@ -738,7 +853,7 @@ export default function WeekDetailPage() {
                 )}
               </button>
             )}
-            {currentWeek.status === "PUBLISHED" && !isLocked && (
+            {activeWeek.status === "PUBLISHED" && !isLocked && (
               <button
                 onClick={onRevertToDraft}
                 disabled={reverting}
@@ -774,16 +889,33 @@ export default function WeekDetailPage() {
                 </>
               )}
             </span>
-            {isDraft && (
-              <button
-                onClick={onPublish}
-                disabled={publishing}
-                className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium shadow-sm hover:shadow transition-all"
-              >
-                <CheckCircle2 className="w-4 h-4" />{" "}
-                {publishing ? "..." : "Опубликовать"}
-              </button>
-            )}
+            
+{isDraft && (
+  <div className="flex items-end gap-2 animate-fade-in">
+    {isGuestMode && (
+      <div className="flex flex-col items-end gap-1">
+        <span className="text-[11px] font-medium text-amber-600 flex items-center gap-1">
+          <AlertCircle className="w-3.5 h-3.5" /> Введите почту, чтобы данные не затерялись
+        </span>
+        <input
+          type="email"
+          value={guestEmail}
+          onChange={(e) => setGuestEmail(e.target.value)}
+          placeholder="your@email.ru"
+          className="!py-1.5 !px-3 !text-sm !w-48 rounded-lg border-amber-300 focus:ring-brand-500 focus:border-brand-500 bg-amber-50/50"
+        />
+      </div>
+    )}
+    <button
+      onClick={onPublish}
+      disabled={publishing}
+      className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium shadow-sm hover:shadow transition-all h-[38px] mb-[1px]"
+    >
+      <CheckCircle2 className="w-4 h-4" />{" "}
+      {publishing ? "..." : "Опубликовать"}
+    </button>
+  </div>
+)}
           </div>
         </div>
 
@@ -794,7 +926,7 @@ export default function WeekDetailPage() {
               {weekStart} — {weekEnd}
             </h1>
             <p className="text-sm text-slate-500 mt-1">
-              Неделя с {fullDate(currentWeek.weekStartDate)}
+              Неделя с {fullDate(activeWeek.weekStartDate)}
             </p>
           </div>
           <div className="flex gap-4">
@@ -820,8 +952,7 @@ export default function WeekDetailPage() {
 
         {/* Сводка */}
         <div className="mb-6">
-          <TeamSummary
-            users={summaryUsers}
+          <TeamSummary users={summaryUsers}
             areas={summaryAreas}
             positions={positionsForSummary}
             getStat={(userId) => {
@@ -948,7 +1079,7 @@ export default function WeekDetailPage() {
             const isExpanded = !editMode && expandedDate === date;
 
             const dayCost = dayShifts.reduce((acc, s) => {
-              const u = users.find((x) => x.id === s.userId);
+              const u = activeUsers.find((x) => x.id === s.userId);
               return (
                 acc +
                 calcHours(s.startTime, s.endTime) *
@@ -1428,7 +1559,7 @@ export default function WeekDetailPage() {
                       className="!text-xs !py-1.5"
                     >
                       <option value="">Не назначен</option>
-                      {users.map((u) => {
+                      {activeUsers.map((u) => {
                         const status = getUserStatus(u.id, date);
                         return (
                           <option
@@ -1517,10 +1648,10 @@ export default function WeekDetailPage() {
             </div>
             <div className="space-y-2">
               {weekTimeOffs.map((t) => {
-                const shift = currentWeek.shifts?.find(
+                const shift = activeWeek.shifts?.find(
                   (s) => s.id === t.shiftId
                 );
-                const user = users.find((u) => u.id === t.userId);
+                const user = activeUsers.find((u) => u.id === t.userId);
                 return (
                   <div
                     key={t.id}
@@ -1566,11 +1697,7 @@ export default function WeekDetailPage() {
       )}
 
       {editingShift && (
-        <ShiftEditModal
-          shift={editingShift}
-          weekId={currentWeek.id}
-          allShifts={currentWeek.shifts ?? []}
-          users={users}
+        <ShiftEditModal shift={editingShift} weekId={activeWeek.id} allShifts={activeWeek.shifts ?? []} activeUsers={activeUsers}
           templates={templates}
           vacations={vacations}
           sickLeaves={sickLeaves}
@@ -1589,7 +1716,7 @@ export default function WeekDetailPage() {
 function ShiftEditModal({
   shift,
   weekId,
-  users,
+  activeUsers,
   templates,
   vacations,
   sickLeaves,
@@ -1765,7 +1892,7 @@ function ShiftEditModal({
             </label>
             <select value={userId} onChange={(e) => setUserId(e.target.value)}>
               <option value="">Не назначен</option>
-              {users.map((u: any) => {
+              {activeUsers.map((u: any) => {
                 const status = getUserStatus(u.id, shiftDate);
                 return (
                   <option key={u.id} value={u.id}>

@@ -1,8 +1,5 @@
 import { create } from "zustand";
-import {
-  organizationApi,
-  type Organization,
-} from "../api/organization";
+import { organizationApi, type Organization,  } from "../api/organization";
 
 type State = {
   org: Organization | null;

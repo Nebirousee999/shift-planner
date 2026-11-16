@@ -1,7 +1,11 @@
+import { useAuth } from "./store/auth";
 import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { useAuth } from "./store/auth";
+import { useUsers } from "./store/users";
+import { useWeeks } from "./store/weeks";
 import { useOrganization } from "./store/organization";
+import { useShiftTemplates } from "./store/shiftTemplates";
+import { useLocations } from "./store/locations";
 
 // Основные страницы (Lazy Loading)
 const LoginPage = lazy(() => import("./pages/LoginPage"));
@@ -39,6 +43,8 @@ import OnboardingWidget from "./components/OnboardingWidget";
 import CookieBanner from "./components/CookieBanner";
 import ScrollToTop from "./components/ScrollToTop";
 import SupportWidget from "./components/SupportWidget";
+import DemoPage from "./pages/DemoPage";
+import GuestApp from "./pages/GuestApp";
 
 function ProtectedRoute({
   children,
@@ -50,8 +56,10 @@ function ProtectedRoute({
   employeeOnly?: boolean;
 }) {
   const { token, user } = useAuth();
+  const isGuest = !token; // Если нет токена — это гость
+  if (isGuest) return <>{children}</>;
   
-  if (!token) return <Navigate to="/welcome" replace />;
+  
 
   const isEmployee = user?.role === "EMPLOYEE";
   if (adminOnly && isEmployee) return <Navigate to="/my" replace />;
@@ -66,6 +74,39 @@ export default function App() {
   useEffect(() => {
     hydrate();
   }, [hydrate]);
+  // ИНИЦИАЛИЗАЦИЯ ДАННЫХ ДЛЯ ГОСТЯ
+  useEffect(() => {
+    if (!token) {
+      useAuth.setState({ user: { id: "guest", name: "Владелец", role: "OWNER", email: "guest@test.ru" } });
+      useUsers.setState({ items: [
+        { 
+          id: "u1", name: "Алексей", email: "alex@test.ru", phone: "+79990000001", role: "OWNER", 
+          position: "Бариста", hourlyRate: "300", createdAt: new Date().toISOString(), 
+          locationIds: ["loc1"], areaIds: [], paymentType: "HOURLY", employmentType: "SHTAT", 
+          color: "#3B82F6", tempPassword: null, isTempPasswordSent: false 
+        },
+        { 
+          id: "u2", name: "Мария", email: "maria@test.ru", phone: "+79990000002", role: "EMPLOYEE", 
+          position: "Кассир", hourlyRate: "250", createdAt: new Date().toISOString(), 
+          locationIds: ["loc1"], areaIds: [], paymentType: "HOURLY", employmentType: "SHTAT", 
+          color: "#10B981", tempPassword: null, isTempPasswordSent: false 
+        }
+      ] });
+      useShiftTemplates.setState({ items: [{ id: "t1", name: "Дневная", startTime: "09:00", endTime: "18:00", color: "#3B82F6" }] });
+      useOrganization.setState({ org: { id: "org1", name: "Моя компания", tariffId: "pro", positionHeaderOpacity: 70, positionRowOpacity: 20 } });
+      useLocations.setState({ items: [{ id: "loc1", name: "Основная", orgId: "org1" }], activeLocationId: "loc1" });
+      
+      // ВАЖНО: Создаем фейковую неделю, чтобы можно было в нее зайти
+      useWeeks.setState({ 
+        weeks: [{ id: "week1", weekStartDate: new Date().toISOString().slice(0, 10), status: "DRAFT", shifts: [] }], 
+        loading: false 
+      });
+    }
+  }, [token]);
+  // ─────────────────────────────────────
+
+  
+        
 
   useEffect(() => {
     if (hydrated && token) {
@@ -73,7 +114,7 @@ export default function App() {
     }
   }, [hydrated, token]);
 
-  if (!hydrated) return null;
+  if (!hydrated && token) return null;
 
   return (
     <BrowserRouter>
@@ -87,8 +128,9 @@ export default function App() {
         <Routes>
           <Route path="/login" element={token ? <Navigate to="/" replace /> : <LoginPage />} />
           <Route path="/calc" element={token ? <Navigate to="/weeks" replace /> : <CalculatorPage />} />
-          <Route path="/" element={token ? <DashboardPage /> : <LandingPage />} />
-          <Route path="/welcome" element={token ? <Navigate to="/" replace /> : <LandingPage />} />
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/info" element={<LandingPage />} />
+          <Route path="/welcome" element={token ? <Navigate to="/" replace /> : <Navigate to="/info" replace />} />
           
           <Route path="/blog" element={<BlogPage />} />
           <Route path="/blog/:slug" element={<BlogArticlePage />} />
@@ -122,6 +164,8 @@ export default function App() {
           <Route path="/history" element={<ProtectedRoute adminOnly><HistoryPage /></ProtectedRoute>} />
           <Route path="/admin-support" element={<ProtectedRoute><AdminSupportPage /></ProtectedRoute>} />
           <Route path="/admin-database" element={<ProtectedRoute><AdminDatabasePage /></ProtectedRoute>} />
+        
+        <Route path="/demo" element={<GuestApp />} />
         </Routes>
       </Suspense>
     </BrowserRouter>

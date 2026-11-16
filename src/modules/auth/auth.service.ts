@@ -279,6 +279,24 @@ export const authService = {
     return { id: result.user.id, email: result.user.email, orgId: result.org.id, role: result.user.role, firstWeekId: result.firstWeekId };
   },
 
+  async updateEmail(userId: string, newEmail: string) {
+    const existing = await db.select().from(users).where(eq(users.email, newEmail));
+    if (existing.length > 0) throw new Error("EMAIL_TAKEN");
+
+    const tempPassword = generateTempPassword();
+    const passwordHash = await bcrypt.hash(tempPassword, 10);
+
+    await db.update(users)
+      .set({ email: newEmail, passwordHash, tempPassword })
+      .where(eq(users.id, userId));
+
+    const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
+    if (user) {
+      await mailerService.sendWelcomeEmail(newEmail, user.name, tempPassword, null);
+    }
+    return { ok: true };
+  },
+
   async login(input: { email: string; password: string }) {
     const [user] = await db.select().from(users).where(eq(users.email, input.email));
     if (!user) throw new Error("INVALID_CREDENTIALS");
