@@ -106,19 +106,32 @@ export const authService = {
       await tx.insert(positionTemplates).values({ orgId: org.id, name: "Должность 1", color: "#3B82F6" });
 
       const createdEmployees = [];
+      const usedGuestEmails = new Set<string>();
       let empCount = 0;
       if (input.guestData && input.guestData.employees) {
         for (const emp of input.guestData.employees) {
           if (empCount >= 3) break;
           if (!emp.name.trim()) continue;
           empCount++;
+          // Проверяем, ввел ли владелец почту. Если да и она не занята — используем её. Иначе — генерируем заглушку.
+          let empEmail = emp.email && emp.email.trim() ? emp.email.trim().toLowerCase() : "";
+          if (empEmail) {
+            const existingEmpEmail = await tx.select().from(users).where(eq(users.email, empEmail));
+            if (existingEmpEmail.length > 0 || Array.from(usedGuestEmails).includes(empEmail)) {
+              empEmail = ""; // Почта занята или дублируется — сбрасываем
+            } else {
+              usedGuestEmails.add(empEmail);
+            }
+          }
+          const finalEmpEmail = empEmail || `temp_${Date.now()}_${Math.floor(Math.random() * 1000)}@shift-planner.ru`;
+          
           const empPass = emp.password && emp.password.length >= 6 ? emp.password : generateTempPassword();
           const empHash = await bcrypt.hash(empPass, 10);
           
           const [newEmp] = await tx.insert(users).values({
             orgId: org.id,
             name: emp.name,
-            email: `temp_${Date.now()}_${Math.floor(Math.random() * 1000)}@shift-planner.ru`,
+            email: finalEmpEmail,
             passwordHash: empHash,
             tempPassword: empPass,
             role: "EMPLOYEE",
