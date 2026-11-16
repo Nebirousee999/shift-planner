@@ -39,3 +39,6 @@ Thumbs.db
 .idea/
 
 asset/
+
+project_analysis.json
+superpatch.mjs
