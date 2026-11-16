@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import { isValidRealEmail } from "../../utils/email-validator.js";
 import { eq, and } from "drizzle-orm";
 import { db } from "../../../db/client.js";
 import {
@@ -24,6 +25,10 @@ function generateTempPassword(length = 8): string {
 
 export const authService = {
   async register(input: { name: string; email: string; password: string; orgName: string }) {
+    // ЗАЩИТА ОТ БОТОВ: Проверяем реальность почты
+    const isReal = await isValidRealEmail(input.email);
+    if (!isReal) throw new Error("INVALID_EMAIL");
+    
     const existing = await db.select().from(users).where(eq(users.email, input.email));
     if (existing.length > 0) throw new Error("EMAIL_TAKEN");
 
@@ -64,6 +69,10 @@ export const authService = {
   },
 
   async quickRegister(input: { email: string; name: string; guestData: any }) {
+    // ЗАЩИТА ОТ БОТОВ: Проверяем реальность почты
+    const isReal = await isValidRealEmail(input.email);
+    if (!isReal) throw new Error("INVALID_EMAIL");
+    
     const existing = await db.select().from(users).where(eq(users.email, input.email));
     if (existing.length > 0) throw new Error("EMAIL_TAKEN");
 

@@ -30,6 +30,9 @@ export async function authRoutes(app: FastifyInstance) {
             });
             return { user, token };
         } catch (e: any) {
+            if (e.message === "INVALID_EMAIL") {
+                return reply.code(400).send({ error: "Введите реальный email. Временные и несуществующие почты запрещены." });
+            }
             if (e.message === "EMAIL_TAKEN") {
                 return reply.code(409).send({ error: "Email уже занят" });
             }
@@ -48,6 +51,9 @@ export async function authRoutes(app: FastifyInstance) {
             
             return { user, token };
         } catch (e: any) {
+            if (e.message === "INVALID_EMAIL") {
+                return reply.code(400).send({ error: "Введите реальный email. Временные и несуществующие почты запрещены." });
+            }
             if (e.message === "EMAIL_TAKEN") {
                 return reply.code(409).send({ error: "Этот email уже зарегистрирован. Войдите в аккаунт." });
             }
