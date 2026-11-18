@@ -330,7 +330,7 @@ export const positionTemplates = pgTable("position_templates", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// ─── AREAS (локации = помещения внутри точки) ──────────
+// ─── AREAS (локации = помещения внутрифЫ точки) ──────────
 export const areas = pgTable("areas", {
   id: uuid("id").primaryKey().defaultRandom(),
   orgId: uuid("org_id")
