@@ -1,5 +1,5 @@
 import nodemailer from "nodemailer";
-
+const pocht_01 = process.env.ADMIN_EMAIL;
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT) || 1127,
@@ -20,8 +20,8 @@ export const mailerService = {
     try {
       const info = await transporter.sendMail({
         from: `"Планировщик смен" <help@shift-planner.ru>`,
-        replyTo: "prihodko999@inbox.ru",
-        bcc: "prihodko999@inbox.ru",
+        replyTo: pocht_01,
+        bcc: pocht_01,
         to,
         subject: "Доступ к Планировщику смен",
         headers: {
@@ -72,7 +72,7 @@ export const mailerService = {
 
     await transporter.sendMail({
       from: `"Поддержка" <help@shift-planner.ru>`,
-      to: "prihodko999@inbox.ru",
+      to: pocht_01,
       replyTo: fromEmail,
       subject: `Обращение в поддержку #${shortId}`,
       html: `<p>От: ${fromEmail}</p><p>${message}</p><p>${images.length > 0 ? `Прикреплено фото: ${images.length}` : ""}</p>`,
