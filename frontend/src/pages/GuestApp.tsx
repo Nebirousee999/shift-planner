@@ -5,20 +5,17 @@ import { useUsers } from "../store/users";
 import { useShiftTemplates } from "../store/shiftTemplates";
 import { useOrganization } from "../store/organization";
 import { useGuestMode } from "../hooks/useGuestMode";
+import { GUEST_SEED } from "../lib/guestSeed";
 
 export default function GuestApp() {
   const { guestData } = useGuestMode();
 
   useEffect(() => {
     // Инициализируем "фейковый домен" в сторах, чтобы интерфейс ожил
-    useUsers.setState({ items: guestData.employees });
-    useShiftTemplates.setState({
-      items: [
-        { id: "t1", name: "Дневная", startTime: "09:00", endTime: "18:00", color: "#3B82F6" },
-        { id: "t2", name: "Вечерняя", startTime: "14:00", endTime: "22:00", color: "#F59E0B" }
-      ]
-    });
-    useOrganization.setState({ org: { positionHeaderOpacity: 70, positionRowOpacity: 20 } });
+    const seed = GUEST_SEED;
+        useUsers.setState({ items: seed.employees });
+        useShiftTemplates.setState({ items: seed.templates });
+        useOrganization.setState({ org: seed.organization as any });
 
     useWeeks.setState({
       currentWeek: {

@@ -1,27 +1,19 @@
 import type { AxiosAdapter, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
+import { GUEST_SEED } from "../lib/guestSeed";
 
 // Инициализация пустой базы
 const initDb = () => {
   if (!localStorage.getItem("guest_db")) {
     localStorage.setItem("guest_db", JSON.stringify({
       weeks: [{
-        id: "guest-week",
-        weekStartDate: new Date().toISOString().slice(0, 10),
+        id: GUEST_SEED.weekId,
+        weekStartDate: GUEST_SEED.weekStart,
         status: "DRAFT",
-        shifts: [],
+        shifts: GUEST_SEED.shifts,
       }],
-      users: [
-        { id: "u1", name: "Сотрудник 1", position: "Официант", hourlyRate: "300", locationIds: ["loc1"], areaIds: [] },
-        { id: "u2", name: "Сотрудник 2", position: "Повар", hourlyRate: "400", locationIds: ["loc1"], areaIds: [] },
-        { id: "u3", name: "Сотрудник 3", position: "Бариста", hourlyRate: "350", locationIds: ["loc1"], areaIds: [] }
-      ],
-      templates: [
-        { id: "t1", name: "Утренняя", startTime: "09:00", endTime: "18:00", color: "#3B82F6" },
-        { id: "t2", name: "Вечерняя", startTime: "14:00", endTime: "23:00", color: "#F59E0B" }
-      ],
-      locations: [
-        { id: "loc1", name: "Основная точка" }
-      ]
+      users: GUEST_SEED.employees,
+      templates: GUEST_SEED.templates,
+      locations: GUEST_SEED.locations,
     }));
   }
 };

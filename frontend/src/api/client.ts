@@ -1,5 +1,6 @@
 import axios from "axios";
 import { guestAdapter } from "./guestAdapter";
+import { GUEST_SEED } from "../lib/guestSeed";
 
 const API_URL =
   import.meta.env.VITE_API_URL ?? "http://localhost:3001/api";

@@ -1,0 +1,29 @@
+# ═══════════════════════════════════════════════════════════════
+# ИСТОРИЯ ПРАВОК ПРОЕКТА (patch-history.txt)
+# ═══════════════════════════════════════════════════════════════
+#
+# Формат записи:
+#   [YYYY-MM-DD HH:MM] <краткое название патча>
+#     • файл1 — что изменилось
+#     • файл2 — что изменилось
+#     ...
+#
+# Файл ведётся автоматически скриптом superpatch.mjs.
+# Руками можно, но не обязательно.
+# ═══════════════════════════════════════════════════════════════
+
+[2026-11-18 08:03] Инициализация истории правок
+  • создан patch-history.txt
+
+[2026-11-18 08:11] v1.0.0 — Guest seed: 3 сотрудника, 2 шаблона смен, 2 локации, расписание на текущую неделю (DRAFT)
+  • frontend/src/lib/guestSeed.ts — единый источник данных для гостя
+  • frontend/src/App.tsx — импорт GUEST_SEED
+  • frontend/src/hooks/useGuestMode.ts — импорт GUEST_SEED
+  • frontend/src/hooks/useGuestMode.ts — default через seed
+  • frontend/src/hooks/useGuestMode.ts — синхронизация guest_shifts
+  • frontend/src/pages/GuestApp.tsx — импорт GUEST_SEED
+  • frontend/src/pages/GuestApp.tsx — templates/locations из seed
+  • frontend/src/api/guestAdapter.ts — импорт GUEST_SEED
+  • frontend/src/api/guestAdapter.ts — initDb через seed
+  • frontend/src/api/client.ts — импорт GUEST_SEED
+

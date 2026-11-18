@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { GUEST_SEED } from "../lib/guestSeed";
 
 export function useGuestMode() {
   const [guestData, setGuestData] = useState(() => {
@@ -7,20 +8,24 @@ export function useGuestMode() {
     if (saved) {
       try { return JSON.parse(saved); } catch (e) { /* ignore */ }
     }
-    return {
-      employees: [
-        { id: "g1", name: "Алексей", position: "Бариста", hourlyRate: "300" },
-        { id: "g2", name: "Мария", position: "Кассир", hourlyRate: "250" }
-      ],
-      shifts: [],
-      startDate: new Date().toISOString().slice(0, 10),
-    };
+    const seed = GUEST_SEED;
+        return {
+          employees: seed.employees,
+          shifts: seed.shifts,
+          startDate: seed.weekStart,
+        };
   });
 
   // Автоматически сохраняем любые изменения в localStorage
   useEffect(() => {
-    localStorage.setItem("guest_workspace", JSON.stringify(guestData));
-  }, [guestData]);
+      localStorage.setItem("guest_workspace", JSON.stringify(guestData));
+      if (guestData.shifts && guestData.shifts.length > 0) {
+        const existing = localStorage.getItem("guest_shifts");
+        if (!existing || existing === "[]") {
+          localStorage.setItem("guest_shifts", JSON.stringify(guestData.shifts));
+        }
+      }
+    }, [guestData]);
 
   const addGuestEmployee = (emp: any) => {
     setGuestData((prev) => ({ ...prev, employees: [...prev.employees, emp] }));

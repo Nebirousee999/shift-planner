@@ -45,6 +45,7 @@ import ScrollToTop from "./components/ScrollToTop";
 import SupportWidget from "./components/SupportWidget";
 import DemoPage from "./pages/DemoPage";
 import GuestApp from "./pages/GuestApp";
+import { GUEST_SEED } from "./lib/guestSeed";
 
 function ProtectedRoute({
   children,
