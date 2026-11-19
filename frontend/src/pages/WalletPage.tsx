@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { Wallet, CheckCircle2, AlertTriangle, Loader2, FlaskConical, Sparkles } from "lucide-react";
 import { useAuth } from "../store/auth";
 import { paymentsApi, type CurrentSubscription, type Payment } from "../api/payments";
+import { api } from "../api/client";
 import { trackEvent } from "../lib/metrika";
 import NavBar from "../components/NavBar";
 
@@ -47,7 +48,12 @@ export default function WalletPage() {
   const isTrialRequest = searchParams.get("trial") === "true";
   const [activatingTrial, setActivatingTrial] = useState(false);
 
-  const handleStartTrial = async () => {
+  const handleStartTrial = async (force = false) => {
+    if (isGuest && !force) {
+      setPendingAction({ type: 'trial' });
+      setShowEmailInput(true);
+      return;
+    }
     setActivatingTrial(true);
     try {
       await fetch(`${import.meta.env.VITE_API_URL ?? "http://localhost:3001/api"}/payments/start-trial`, {
@@ -62,6 +68,14 @@ export default function WalletPage() {
     }
   };
   const [testPaying, setTestPaying] = useState<"monthly" | "yearly" | null>(null);
+  const [showEmailInput, setShowEmailInput] = useState(false);
+  const [guestEmail, setGuestEmail] = useState("");
+  const [emailError, setEmailError] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{ type: 'trial' } | { type: 'pay'; tariffId: 'pro' | 'business'; overrideYearly?: boolean } | null>(null);
+  const [isGuest, setIsGuest] = useState(false);
+  useEffect(() => {
+    setIsGuest(localStorage.getItem("isGuest") === "true" && localStorage.getItem("guestEmailAttached") !== "true");
+  }, []);
   const checkoutPlan = searchParams.get("checkout") as "pro" | "business" | null;
 
   const [current, setCurrent] = useState<CurrentSubscription | null>(null);
@@ -120,7 +134,12 @@ export default function WalletPage() {
     }
   };
 
-  const handlePay = async (tariffId: "pro" | "business", overrideYearly?: boolean) => {
+  const handlePay = async (tariffId: "pro" | "business", overrideYearly?: boolean, force = false) => {
+    if (isGuest && !force) {
+      setPendingAction({ type: 'pay', tariffId, overrideYearly });
+      setShowEmailInput(true);
+      return;
+    }
     trackEvent("ym-begin-checkout", { tariff: tariffId });
     const useYearly = overrideYearly !== undefined ? overrideYearly : yearly;
     setPaying(tariffId);
@@ -146,6 +165,31 @@ export default function WalletPage() {
       </div>
     );
   }
+
+  const handleAttachEmail = async () => {
+    if (!guestEmail.includes("@")) {
+      setEmailError(true);
+      return;
+    }
+    try {
+      await api.post("/auth/update-email", { email: guestEmail });
+      localStorage.setItem("guestEmailAttached", "true");
+      setIsGuest(false);
+      setShowEmailInput(false);
+      alert("Почта привязана!");
+      if (pendingAction) {
+        if (pendingAction.type === 'trial') {
+          handleStartTrial(true);
+        } else if (pendingAction.type === 'pay') {
+          handlePay(pendingAction.tariffId, pendingAction.overrideYearly, true);
+        }
+        setPendingAction(null);
+      }
+    } catch (e: any) {
+      setEmailError(true);
+      alert(e.response?.data?.error ?? "Ошибка привязки почты");
+    }
+  };
 
   const currentTariffId = current?.tariffId ?? "free";
   const isTrial = (current as any)?.isTrial === true;
@@ -194,6 +238,27 @@ export default function WalletPage() {
               {activatingTrial ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
               {activatingTrial ? "Активация..." : "Активировать Pro"}
             </button>
+
+            {showEmailInput && pendingAction?.type === 'trial' && (
+              <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-left">
+                <p className="text-sm text-amber-900 mb-2">Введите вашу почту, чтобы сохранить данные:</p>
+                <div className="flex gap-2">
+                  <input
+                    type="email"
+                    value={guestEmail}
+                    onChange={(e) => { setGuestEmail(e.target.value); setEmailError(false); }}
+                    placeholder="your@email.ru"
+                    className={`py-1.5 px-3 text-sm w-full max-w-xs rounded-lg bg-white border ${emailError ? 'border-red-500 ring-2 ring-red-500/20' : 'border-amber-300'}`}
+                  />
+                  <button
+                    onClick={handleAttachEmail}
+                    className="px-4 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 transition-colors whitespace-nowrap"
+                  >
+                    Привязать
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -282,6 +347,27 @@ export default function WalletPage() {
               {paying === "business" && <Loader2 className="w-4 h-4 animate-spin" />}
               Продлить Business — {fmtMoney(yearly ? PRICES.business.yearly : PRICES.business.monthly)} / {yearly ? "год" : "мес"}
             </button>
+          )}
+
+          {showEmailInput && pendingAction?.type === 'pay' && (
+            <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-left">
+              <p className="text-sm text-amber-900 mb-2">Введите вашу почту, чтобы сохранить данные:</p>
+              <div className="flex gap-2">
+                <input
+                  type="email"
+                  value={guestEmail}
+                  onChange={(e) => { setGuestEmail(e.target.value); setEmailError(false); }}
+                  placeholder="your@email.ru"
+                  className={`py-1.5 px-3 text-sm w-full max-w-xs rounded-lg bg-white border ${emailError ? 'border-red-500 ring-2 ring-red-500/20' : 'border-amber-300'}`}
+                />
+                <button
+                  onClick={handleAttachEmail}
+                  className="px-4 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 transition-colors whitespace-nowrap"
+                >
+                  Привязать
+                </button>
+              </div>
+            </div>
           )}
         </div>
 
