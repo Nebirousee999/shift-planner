@@ -157,9 +157,55 @@ export default function NavBar() {
   };
 
   // ─── Сотрудник ──────────────────────────────────────
+  const guestBanner = isGuest && !emailAttached && (
+    <div className="bg-amber-50 border-b border-amber-200 w-full shadow-sm">
+      <div className="max-w-7xl mx-auto px-4 py-2 flex flex-col items-center justify-center gap-2">
+        <div className="text-amber-800 text-sm font-medium flex items-center gap-2 text-center">
+          <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
+          <span>
+            Вы зашли как гость. Чтобы не потерять данные,{" "}
+            <button onClick={() => { if (showEmailInput) setEmailError(true); else setShowEmailInput(true); }} className="underline font-bold hover:text-amber-900 transition-colors">
+              введите вашу почту
+            </button>.
+          </span>
+        </div>
+        {showEmailInput && (
+          <div className="flex items-center gap-2 animate-fade-in pb-1">
+            <input
+              type="email"
+              value={guestEmail}
+              onChange={(e) => { setGuestEmail(e.target.value); setEmailError(false); }}
+              placeholder="your@email.ru"
+              className={`py-1.5 px-3 text-sm w-64 rounded-lg bg-white border ${emailError ? 'border-red-500 ring-2 ring-red-500/20' : 'border-amber-300'}`}
+            />
+            <button
+              onClick={async () => {
+                if (!guestEmail.includes("@")) { setEmailError(true); return; }
+                try {
+                  await api.post("/auth/update-email", { email: guestEmail });
+                  localStorage.setItem("guestEmailAttached", "true");
+                  setEmailAttached(true);
+                  setShowEmailInput(false);
+                  alert("Почта привязана!");
+                } catch (e: any) {
+                  setEmailError(true);
+                  alert(e.response?.data?.error ?? "Ошибка привязки почты");
+                }
+              }}
+              className="px-4 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 transition-colors"
+            >
+              Привязать
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   if (!isAdmin) {
     return (
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30 backdrop-blur-sm bg-white/90">
+      {guestBanner}
         <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2 sm:py-3 flex items-center justify-between gap-2 sm:gap-4 flex-wrap sm:flex-nowrap">
           <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
             <button onClick={() => navigate("/")} className="flex items-center gap-2 shrink-0">
@@ -230,6 +276,7 @@ export default function NavBar() {
   // ─── Админ ──────────────────────────────────────────
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-30 backdrop-blur-sm bg-white/95">
+      {guestBanner}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
         <div className="flex items-center gap-6 min-w-0">
           <button onClick={() => navigate("/")} className="flex items-center gap-2 shrink-0">

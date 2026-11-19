@@ -1,13 +1,7 @@
 import { useAuth } from "./store/auth";
-import { lazy, Suspense, useEffect, useState } from "react";
-import { AlertCircle } from "lucide-react";
+import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { api } from "./api/client";
-import { useUsers } from "./store/users";
-import { useWeeks } from "./store/weeks";
 import { useOrganization } from "./store/organization";
-import { useShiftTemplates } from "./store/shiftTemplates";
-import { useLocations } from "./store/locations";
 
 // Основные страницы (Lazy Loading)
 const LoginPage = lazy(() => import("./pages/LoginPage"));
@@ -39,15 +33,13 @@ const LegalPage = lazy(() => import("./pages/LegalPage"));
 const PaymentSuccessPage = lazy(() => import("./pages/PaymentSuccessPage"));
 const HistoryPage = lazy(() => import("./pages/HistoryPage"));
 
-// Глобальные компоненты (оставляем синхронными, они нужны сразу)
+// Глобальные компоненты
 import DialogHost from "./components/DialogHost";
 import OnboardingWidget from "./components/OnboardingWidget";
 import CookieBanner from "./components/CookieBanner";
 import ScrollToTop from "./components/ScrollToTop";
 import SupportWidget from "./components/SupportWidget";
-import DemoPage from "./pages/DemoPage";
 import GuestApp from "./pages/GuestApp";
-import { GUEST_SEED } from "./lib/guestSeed";
 
 function ProtectedRoute({
   children,
@@ -59,10 +51,8 @@ function ProtectedRoute({
   employeeOnly?: boolean;
 }) {
   const { token, user } = useAuth();
-  const isGuest = !token; // Если нет токена — это гость
+  const isGuest = !token;
   if (isGuest) return <>{children}</>;
-  
-  
 
   const isEmployee = user?.role === "EMPLOYEE";
   if (adminOnly && isEmployee) return <Navigate to="/my" replace />;
@@ -72,43 +62,12 @@ function ProtectedRoute({
 }
 
 export default function App() {
-  const [isGuest, setIsGuest] = useState(false);
-  const [emailAttached, setEmailAttached] = useState(false);
-  const [showEmailInput, setShowEmailInput] = useState(false);
-  const [guestEmail, setGuestEmail] = useState("");
-  const [emailError, setEmailError] = useState(false);
-
-  useEffect(() => {
-    const checkStatus = () => {
-      setIsGuest(localStorage.getItem("isGuest") === "true");
-      setEmailAttached(localStorage.getItem("guestEmailAttached") === "true");
-    };
-    checkStatus();
-    window.addEventListener("guest-email-attached", checkStatus);
-    window.addEventListener("storage", checkStatus);
-    return () => {
-      window.removeEventListener("guest-email-attached", checkStatus);
-      window.removeEventListener("storage", checkStatus);
-    };
-  }, []);
-  useEffect(() => {
-    const handleShowEmail = () => {
-      if (showEmailInput) {
-        setEmailError(true);
-      } else {
-        setShowEmailInput(true);
-      }
-    };
-    window.addEventListener("show-guest-email", handleShowEmail);
-    return () => window.removeEventListener("show-guest-email", handleShowEmail);
-  }, [showEmailInput]);
-
   const { hydrate, token, hydrated } = useAuth();
 
   useEffect(() => {
     hydrate();
   }, [hydrate]);
-  // ИНИЦИАЛИЗАЦИЯ ГОСТЯ (Реальный вызов БД)
+
   useEffect(() => {
     const initGuest = async () => {
       const lsToken = localStorage.getItem("token");
@@ -132,10 +91,6 @@ export default function App() {
     };
     initGuest();
   }, [token]);
-  // ─────────────────────────────────────
-
-  
-        
 
   useEffect(() => {
     if (hydrated && token) {
@@ -147,50 +102,6 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      {isGuest && !emailAttached && (
-        <div className="fixed top-16 left-0 right-0 z-40 w-full bg-amber-50 border-b border-amber-200 shadow-sm">
-          <div className="max-w-7xl mx-auto px-4 py-2 flex flex-col items-center justify-center gap-2">
-            <div className="text-amber-800 text-sm font-medium flex items-center gap-2 text-center">
-              <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
-              <span>
-                Вы зашли как гость. Чтобы не потерять данные,{" "}
-                <button onClick={() => { if (showEmailInput) setEmailError(true); else setShowEmailInput(true); }} className="underline font-bold hover:text-amber-900 transition-colors">
-                  введите вашу почту
-                </button>.
-              </span>
-            </div>
-            {showEmailInput && (
-              <div className="flex items-center gap-2 animate-fade-in pb-1">
-                <input
-                  type="email"
-                  value={guestEmail}
-                  onChange={(e) => { setGuestEmail(e.target.value); setEmailError(false); }}
-                  placeholder="your@email.ru"
-                  className={`py-1.5 px-3 text-sm w-64 rounded-lg bg-white border ${emailError ? 'border-red-500 ring-2 ring-red-500/20' : 'border-amber-300'}`}
-                />
-                <button
-                  onClick={async () => {
-                    if (!guestEmail.includes("@")) { setEmailError(true); return; }
-                    try {
-                      await api.post("/auth/update-email", { email: guestEmail });
-                      localStorage.setItem("guestEmailAttached", "true");
-                      setEmailAttached(true);
-                      setShowEmailInput(false);
-                      alert("Почта привязана!");
-                    } catch (e: any) {
-                      setEmailError(true);
-                      alert(e.response?.data?.error ?? "Ошибка привязки почты");
-                    }
-                  }}
-                  className="px-4 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 transition-colors"
-                >
-                  Привязать
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
       <ScrollToTop />
       <DialogHost />
       <OnboardingWidget />
