@@ -91,6 +91,18 @@ export async function authRoutes(app: FastifyInstance) {
       }
     });
 
+    app.post("/reset-password", async (req, reply) => {
+      try {
+        const { email } = req.body as { email?: string };
+        if (!email) return reply.code(400).send({ error: "Email обязателен" });
+        const result = await authService.resetPassword(email);
+        return { ok: true, mailSent: result?.mailSent ?? false };
+      } catch (e: any) {
+        app.log.error(e);
+        return reply.code(500).send({ error: "Ошибка восстановления пароля" });
+      }
+    });
+
     app.post("/login", async (req, reply) => {
         const parsed = loginSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -105,7 +117,8 @@ export async function authRoutes(app: FastifyInstance) {
                 role: user.role,
             });
             return { user, token };
-        } catch {
+        } catch (e) {
+            app.log.error("❌ /login: реальная ошибка (не пароль):", e);
             return reply.code(401).send({ error: "Неверный email или пароль" });
         }
     });

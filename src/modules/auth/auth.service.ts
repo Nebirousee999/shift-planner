@@ -387,7 +387,37 @@ export const authService = {
     return { user: result.user, token: null };
   },
 
+  async resetPassword(email: string) {
+    email = email.trim().toLowerCase();
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    // Не раскрываем существование аккаунта — отвечаем одинаково
+    if (!user) return { ok: true };
+
+    const tempPassword = generateTempPassword();
+    const passwordHash = await bcrypt.hash(tempPassword, 10);
+
+    await db.update(users)
+      .set({ passwordHash, tempPassword })
+      .where(eq(users.id, user.id));
+
+    // САМОПРОВЕРКА: перечитываем пользователя и сверяем пароль с базой
+    const [check] = await db.select().from(users).where(eq(users.id, user.id));
+    const verified = await bcrypt.compare(tempPassword, check.passwordHash);
+    console.log("📧 reset-password: пароль:", tempPassword, "| в базе всё совпадает:", verified);
+
+    let mailSent = false;
+    try {
+      await mailerService.sendWelcomeEmail(email, user.name, tempPassword, null);
+      mailSent = true;
+    } catch (e) {
+      console.error("❌ Ошибка отправки письма (reset-password):", e?.message ?? e);
+      console.error("Полная ошибка:", e);
+    }
+    return { ok: true, mailSent };
+  },
+
   async updateEmail(userId: string, newEmail: string) {
+    newEmail = newEmail.trim().toLowerCase();
     const existing = await db.select().from(users).where(eq(users.email, newEmail));
     if (existing.length > 0) throw new Error("EMAIL_TAKEN");
 
@@ -406,6 +436,8 @@ export const authService = {
   },
 
   async login(input: { email: string; password: string }) {
+    input.email = input.email.trim().toLowerCase();
+    input.password = input.password.trim();
     const [user] = await db.select().from(users).where(eq(users.email, input.email));
     if (!user) throw new Error("INVALID_CREDENTIALS");
     const ok = await bcrypt.compare(input.password, user.passwordHash);

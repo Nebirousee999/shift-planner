@@ -1,117 +1,128 @@
-// superpatch.mjs
+// superpatch.mjs — диагностика login: где именно ломается вход
 import fs from "node:fs";
 import path from "node:path";
 
 const ROOT = process.cwd();
 let changed = 0;
 
-function patch(file, replacers) {
+function readFile(file) {
   const p = path.join(ROOT, file);
-  if (!fs.existsSync(p)) {
-    console.warn(`⚠️ Файл не найден: ${file}`);
-    return;
-  }
+  if (!fs.existsSync(p)) { console.warn(`⚠️ Не найден: ${file}`); return null; }
   let src = fs.readFileSync(p, "utf-8");
   const crlf = src.includes("\r\n");
   if (crlf) src = src.replace(/\r\n/g, "\n");
-  const orig = src;
+  return { src, crlf, p, orig: src };
+}
 
-  for (const [find, replace, label] of replacers) {
-    if (src.includes(find)) {
-      src = src.replace(find, replace);
-      console.log(`✅ ${file}: ${label}`);
-      changed++;
-    } else {
-      console.warn(`⚠️ ${file}: не найден фрагмент для "${label}"`);
+function save(f) {
+  if (f.src !== f.orig) {
+    fs.writeFileSync(f.p, f.crlf ? f.src.replace(/\n/g, "\r\n") : f.src, "utf-8");
+    console.log(`💾 Сохранено: ${f.p}`);
+  }
+}
+
+// 1. auth.service.ts: login с логами и нормализацией
+const svc = readFile("src/modules/auth/auth.service.ts");
+if (svc) {
+  const oldLogin = `  async login(input: { email: string; password: string }) {
+    const [user] = await db.select().from(users).where(eq(users.email, input.email));
+    if (!user) throw new Error("INVALID_CREDENTIALS");
+    const ok = await bcrypt.compare(input.password, user.passwordHash);
+    if (!ok) throw new Error("INVALID_CREDENTIALS");
+    return { id: user.id, email: user.email, orgId: user.orgId, role: user.role };
+  },`;
+  const newLogin = `  async login(input: { email: string; password: string }) {
+    input.email = input.email.trim().toLowerCase();
+    input.password = input.password.trim();
+    console.log("🔑 login: email =", JSON.stringify(input.email), "| длина пароля =", input.password.length);
+    const all = await db.select().from(users).where(eq(users.email, input.email));
+    console.log("🔑 login: найдено пользователей с этой почтой:", all.length);
+    const [user] = all;
+    if (!user) {
+      console.log("🔑 login: пользователь НЕ найден → 401");
+      throw new Error("INVALID_CREDENTIALS");
     }
+    console.log("🔑 login: пользователь найден, id =", user.id, "| хэш в базе:", user.passwordHash ? user.passwordHash.slice(0, 7) + "…" : "NULL!");
+    const ok = await bcrypt.compare(input.password, user.passwordHash);
+    console.log("🔑 login: bcrypt.compare =", ok);
+    if (!ok) throw new Error("INVALID_CREDENTIALS");
+    return { id: user.id, email: user.email, orgId: user.orgId, role: user.role };
+  },`;
+
+  if (svc.src.includes("bcrypt.compare =")) {
+    console.log("ℹ️ auth.service.ts: диагностика login уже есть");
+  } else if (svc.src.includes(oldLogin)) {
+    svc.src = svc.src.replace(oldLogin, newLogin);
+    console.log("✅ auth.service.ts: login с нормализацией и диагностикой");
+    changed++;
+  } else {
+    console.warn("⚠️ auth.service.ts: блок login не найден в ожидаемом виде");
   }
 
-  if (src !== orig) {
-    fs.writeFileSync(p, crlf ? src.replace(/\n/g, "\r\n") : src, "utf-8");
+  // 2. resetPassword: самопроверка — совпадает ли записанный хэш с высланным паролем
+  const oldUpdate = `    await db.update(users)
+      .set({ passwordHash, tempPassword })
+      .where(eq(users.id, user.id));
+
+    let mailSent = false;`;
+  const newUpdate = `    await db.update(users)
+      .set({ passwordHash, tempPassword })
+      .where(eq(users.id, user.id));
+
+    // САМОПРОВЕРКА: перечитываем пользователя и сверяем пароль с базой
+    const [check] = await db.select().from(users).where(eq(users.id, user.id));
+    const verified = await bcrypt.compare(tempPassword, check.passwordHash);
+    console.log("📧 reset-password: пароль:", tempPassword, "| в базе всё совпадает:", verified);
+
+    let mailSent = false;`;
+  if (svc.src.includes("САМОПРОВЕРКА")) {
+    console.log("ℹ️ auth.service.ts: самопроверка reset уже есть");
+  } else if (svc.src.includes(oldUpdate)) {
+    svc.src = svc.src.replace(oldUpdate, newUpdate);
+    console.log("✅ auth.service.ts: добавлена самопроверка в resetPassword");
+    changed++;
+  } else {
+    console.warn("⚠️ auth.service.ts: блок обновления в resetPassword не найден");
   }
+  save(svc);
 }
 
-// ────────────────────────────────────────────────
-// WalletPage.tsx: вставка JSX-блоков для гостя
-// ────────────────────────────────────────────────
-patch("frontend/src/pages/WalletPage.tsx", [
-  // 1. Блок email для триала (после кнопки "Активировать Pro")
-  [
-    `      {activatingTrial ? "Активация..." : "Активировать Pro"}
-            </button>
-          </div>
-        )}`,
-    `      {activatingTrial ? "Активация..." : "Активировать Pro"}
-            </button>
-
-            {showEmailInput && pendingAction?.type === 'trial' && (
-              <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-left">
-                <p className="text-sm text-amber-900 mb-2">Введите вашу почту, чтобы сохранить данные:</p>
-                <div className="flex gap-2">
-                  <input
-                    type="email"
-                    value={guestEmail}
-                    onChange={(e) => { setGuestEmail(e.target.value); setEmailError(false); }}
-                    placeholder="your@email.ru"
-                    className={\`py-1.5 px-3 text-sm w-full max-w-xs rounded-lg bg-white border \${emailError ? 'border-red-500 ring-2 ring-red-500/20' : 'border-amber-300'}\`}
-                  />
-                  <button
-                    onClick={handleAttachEmail}
-                    className="px-4 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 transition-colors whitespace-nowrap"
-                  >
-                    Привязать
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}`,
-    "добавлен блок email для триала"
-  ],
-
-  // 2. Блок email для оплаты (после блока с кнопками тарифов)
-  [
-    `      Продлить Business — {fmtMoney(yearly ? PRICES.business.yearly : PRICES.business.monthly)} / {yearly ? "год" : "мес"}
-            </button>
-          )}
-        </div>
-
-        {/* 🧪 Тестовая оплата (только для админа) */}`,
-    `      Продлить Business — {fmtMoney(yearly ? PRICES.business.yearly : PRICES.business.monthly)} / {yearly ? "год" : "мес"}
-            </button>
-          )}
-
-          {showEmailInput && pendingAction?.type === 'pay' && (
-            <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-left">
-              <p className="text-sm text-amber-900 mb-2">Введите вашу почту, чтобы сохранить данные:</p>
-              <div className="flex gap-2">
-                <input
-                  type="email"
-                  value={guestEmail}
-                  onChange={(e) => { setGuestEmail(e.target.value); setEmailError(false); }}
-                  placeholder="your@email.ru"
-                  className={\`py-1.5 px-3 text-sm w-full max-w-xs rounded-lg bg-white border \${emailError ? 'border-red-500 ring-2 ring-red-500/20' : 'border-amber-300'}\`}
-                />
-                <button
-                  onClick={handleAttachEmail}
-                  className="px-4 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 transition-colors whitespace-nowrap"
-                >
-                  Привязать
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* 🧪 Тестовая оплата (только для админа) */}`,
-    "добавлен блок email для оплаты"
-  ],
-]);
-
-// ────────────────────────────────────────────────
-// Итог
-// ────────────────────────────────────────────────
-console.log(`\n${changed > 0 ? "✅" : "⚠️"} Готово. Изменено фрагментов: ${changed}`);
-if (changed === 0) {
-  console.log("Возможно, файлы уже пропатчены или структура изменилась.");
+// 3. auth.routes.ts: /login перестаёт глотать реальные ошибки
+const rt = readFile("src/modules/auth/auth.routes.ts");
+if (rt) {
+  const oldCatch = `        } catch {
+            return reply.code(401).send({ error: "Неверный email или пароль" });
+        }`;
+  const newCatch = `        } catch (e) {
+            app.log.error("❌ /login: реальная ошибка (не пароль):", e);
+            return reply.code(401).send({ error: "Неверный email или пароль" });
+        }`;
+  if (rt.src.includes("/login: реальная ошибка")) {
+    console.log("ℹ️ auth.routes.ts: лог ошибки уже есть");
+  } else if (rt.src.includes(oldCatch)) {
+    rt.src = rt.src.replace(oldCatch, newCatch);
+    console.log("✅ auth.routes.ts: /login теперь показывает настоящую ошибку");
+    changed++;
+  } else {
+    console.warn("⚠️ auth.routes.ts: catch в /login не найден");
+  }
+  save(rt);
 }
+
+// 4. WalletPage.tsx: handleLogin шлёт чистые значения
+const wp = readFile("frontend/src/pages/WalletPage.tsx");
+if (wp) {
+  if (wp.src.includes('password: loginPassword.trim()')) {
+    console.log("ℹ️ WalletPage.tsx: handleLogin уже нормализован");
+  } else {
+    const before = wp.src;
+    wp.src = wp.src.split('api.post("/auth/login", { email: guestEmail, password: loginPassword })').join(
+      'api.post("/auth/login", { email: guestEmail.trim().toLowerCase(), password: loginPassword.trim() })'
+    );
+    if (wp.src !== before) { console.log("✅ WalletPage.tsx: handleLogin нормализован"); changed++; }
+    else console.warn('⚠️ WalletPage.tsx: вызов api.post("/auth/login") не найден');
+  }
+  save(wp);
+}
+
+console.log(`\n${changed > 0 ? "✅" : "ℹ️"} Готово. Изменено фрагментов: ${changed}`);

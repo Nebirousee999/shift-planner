@@ -52,6 +52,10 @@ export default function WalletPage() {
     if (isGuest && !force) {
       setPendingAction({ type: 'trial' });
       setShowEmailInput(true);
+      setEmailMode("input");
+      setLoginPassword("");
+      setLoginError(false);
+      setSentNote(false);
       return;
     }
     setActivatingTrial(true);
@@ -73,6 +77,11 @@ export default function WalletPage() {
   const [emailError, setEmailError] = useState(false);
   const [pendingAction, setPendingAction] = useState<{ type: 'trial' } | { type: 'pay'; tariffId: 'pro' | 'business'; overrideYearly?: boolean } | null>(null);
   const [isGuest, setIsGuest] = useState(false);
+  const [emailMode, setEmailMode] = useState<"input" | "taken" | "login">("input");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState(false);
+  const [sentNote, setSentNote] = useState(false);
+  const [resetting, setResetting] = useState(false);
   useEffect(() => {
     setIsGuest(localStorage.getItem("isGuest") === "true" && localStorage.getItem("guestEmailAttached") !== "true");
   }, []);
@@ -138,6 +147,10 @@ export default function WalletPage() {
     if (isGuest && !force) {
       setPendingAction({ type: 'pay', tariffId, overrideYearly });
       setShowEmailInput(true);
+      setEmailMode("input");
+      setLoginPassword("");
+      setLoginError(false);
+      setSentNote(false);
       return;
     }
     trackEvent("ym-begin-checkout", { tariff: tariffId });
@@ -172,11 +185,24 @@ export default function WalletPage() {
       return;
     }
     try {
-      await api.post("/auth/update-email", { email: guestEmail });
+      const res: any = await api.post("/auth/update-email", { email: guestEmail });
+      const body = res?.data ?? res;
+      const status = res?.status ?? res?.response?.status;
+      // GUARD-RESP: клиент может не бросать ошибку на 4xx — проверяем ответ явно
+      if (body?.error) {
+        if (status === 409 || String(body.error).includes("занят")) {
+          setEmailError(false);
+          setEmailMode("taken");
+        } else {
+          setEmailError(true);
+          alert(body.error);
+        }
+        return;
+      }
       localStorage.setItem("guestEmailAttached", "true");
       setIsGuest(false);
       setShowEmailInput(false);
-      alert("Почта привязана!");
+      setEmailMode("input");
       if (pendingAction) {
         if (pendingAction.type === 'trial') {
           handleStartTrial(true);
@@ -186,10 +212,144 @@ export default function WalletPage() {
         setPendingAction(null);
       }
     } catch (e: any) {
+      const err = e.response?.data?.error ?? e.response?.data?.message ?? e.message ?? "";
+      if (e.response?.status === 409 || String(err).includes("занят")) {
+        setEmailError(false);
+        setEmailMode("taken");
+        return;
+      }
       setEmailError(true);
-      alert(e.response?.data?.error ?? "Ошибка привязки почты");
+      alert(err || "Ошибка привязки почты");
     }
   };
+
+  const handleLogin = async () => {
+    try {
+      const res: any = await api.post("/auth/login", { email: guestEmail.trim().toLowerCase(), password: loginPassword.trim() });
+      const data = res?.data ?? res;
+      const tk = data?.token ?? data?.accessToken;
+      // GUARD-TOKEN: флаги меняем только если вход реально удался
+      if (!tk || data?.error) {
+        setLoginError(true);
+        return;
+      }
+      localStorage.setItem("guestEmailAttached", "true");
+      localStorage.setItem("isGuest", "false");
+      localStorage.setItem("token", tk);
+      if (pendingAction?.type === "trial") {
+        await fetch(`${import.meta.env.VITE_API_URL ?? "http://localhost:3001/api"}/payments/start-trial`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${tk}` },
+        });
+        setPendingAction(null);
+        window.location.reload();
+        return;
+      }
+      if (pendingAction?.type === "pay") {
+        try { sessionStorage.setItem("pendingCheckout", JSON.stringify({ yearly: !!pendingAction.overrideYearly })); } catch {}
+        setPendingAction(null);
+        window.location.href = `/wallet?checkout=${pendingAction.tariffId}`;
+        return;
+      }
+      window.location.reload();
+    } catch (e: any) {
+      const err = e.response?.data?.error ?? e.response?.data?.message ?? "";
+      if (e.response?.status === 401 || String(err).includes("Неверный")) {
+        setLoginError(true);
+      } else {
+        alert(err || "Ошибка входа");
+      }
+    }
+  };
+
+  const handleResetPassword = async () => {
+    console.log("📧 handleResetPassword: клик получен, отправляю запрос на", guestEmail);
+    setResetting(true);
+    try {
+      const base = import.meta.env.VITE_API_URL ?? "http://localhost:3001/api";
+      const res = await fetch(`${base}/auth/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: guestEmail.trim().toLowerCase() }),
+      });
+      const data = await res.json().catch(() => null);
+      console.log("📧 handleResetPassword: ответ сервера:", res.status, data);
+      if (data?.mailSent === false) {
+        alert("Не удалось отправить письмо — смотрите консоль бэкенда.");
+        return;
+      }
+      setSentNote(true);
+      setLoginPassword("");
+      setLoginError(false);
+    } catch (e: any) {
+      console.error("❌ handleResetPassword:", e);
+      alert("Ошибка отправки пароля: " + (e?.message ?? e));
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  const guestEmailPanel = (
+    <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-left">
+      {emailMode === "taken" && (
+        <p className="text-sm text-amber-900 mb-2">
+          Эта почта уже зарегистрирована. Введите другую почту ниже — или, если это ваша почта,{" "}
+          <button type="button" onClick={() => { setEmailMode("login"); setLoginPassword(""); setLoginError(false); }} className="underline font-semibold hover:no-underline">
+            введите пароль
+          </button>{" "}
+          и войдите в свой профиль.
+        </p>
+      )}
+      {emailMode === "login" && (
+        <div className="mb-3">
+          {sentNote && (
+            <p className="text-sm text-emerald-700 mb-2">Пароль выслан на почту — проверьте входящие и введите его ниже.</p>
+          )}
+          {loginError && (
+            <p className="text-sm text-rose-600 mb-2">
+              Пароль введен неверно.{" "}
+              <button type="button" onClick={handleResetPassword} disabled={resetting} className="underline font-semibold hover:no-underline">
+                {resetting ? "Отправляем..." : "Восстановить пароль"}
+              </button>
+            </p>
+          )}
+          <div className="flex gap-2">
+            <input
+              type="password"
+              value={loginPassword}
+              onChange={(e) => { setLoginPassword(e.target.value); setLoginError(false); }}
+              placeholder="Пароль"
+              className={`py-1.5 px-3 text-sm w-full max-w-xs rounded-lg bg-white border ${loginError ? "border-red-500 ring-2 ring-red-500/20" : "border-amber-300"}`}
+            />
+            <button
+              onClick={handleLogin}
+              className="px-4 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 transition-colors whitespace-nowrap"
+            >
+              Войти
+            </button>
+          </div>
+        </div>
+      )}
+      <p className="text-sm text-amber-900 mb-2">
+        {emailMode === "input" ? "Введите вашу почту, чтобы сохранить данные:" : "Или укажите другую почту:"}
+      </p>
+      <div className="flex gap-2">
+        <input
+          type="email"
+          value={guestEmail}
+          onChange={(e) => { setGuestEmail(e.target.value); setEmailError(false); }}
+          placeholder="your@email.ru"
+          className={`py-1.5 px-3 text-sm w-full max-w-xs rounded-lg bg-white border ${emailError ? "border-red-500 ring-2 ring-red-500/20" : "border-amber-300"}`}
+        />
+        <button
+          onClick={handleAttachEmail}
+          className="px-4 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 transition-colors whitespace-nowrap"
+        >
+          Привязать
+        </button>
+      </div>
+    </div>
+  );
 
   const currentTariffId = current?.tariffId ?? "free";
   const isTrial = (current as any)?.isTrial === true;
@@ -231,7 +391,7 @@ export default function WalletPage() {
               Вам доступны все функции: до 20 сотрудников, уведомления в MAX, аналитика и документы.
             </p>
             <button
-              onClick={handleStartTrial}
+              onClick={() => handleStartTrial()}
               disabled={activatingTrial}
               className="inline-flex items-center gap-2 bg-amber-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-amber-700 shadow-md transition-all disabled:opacity-50"
             >
@@ -239,26 +399,7 @@ export default function WalletPage() {
               {activatingTrial ? "Активация..." : "Активировать Pro"}
             </button>
 
-            {showEmailInput && pendingAction?.type === 'trial' && (
-              <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-left">
-                <p className="text-sm text-amber-900 mb-2">Введите вашу почту, чтобы сохранить данные:</p>
-                <div className="flex gap-2">
-                  <input
-                    type="email"
-                    value={guestEmail}
-                    onChange={(e) => { setGuestEmail(e.target.value); setEmailError(false); }}
-                    placeholder="your@email.ru"
-                    className={`py-1.5 px-3 text-sm w-full max-w-xs rounded-lg bg-white border ${emailError ? 'border-red-500 ring-2 ring-red-500/20' : 'border-amber-300'}`}
-                  />
-                  <button
-                    onClick={handleAttachEmail}
-                    className="px-4 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 transition-colors whitespace-nowrap"
-                  >
-                    Привязать
-                  </button>
-                </div>
-              </div>
-            )}
+            {showEmailInput && pendingAction?.type === 'trial' && (guestEmailPanel)}
           </div>
         )}
 
@@ -349,26 +490,7 @@ export default function WalletPage() {
             </button>
           )}
 
-          {showEmailInput && pendingAction?.type === 'pay' && (
-            <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-left">
-              <p className="text-sm text-amber-900 mb-2">Введите вашу почту, чтобы сохранить данные:</p>
-              <div className="flex gap-2">
-                <input
-                  type="email"
-                  value={guestEmail}
-                  onChange={(e) => { setGuestEmail(e.target.value); setEmailError(false); }}
-                  placeholder="your@email.ru"
-                  className={`py-1.5 px-3 text-sm w-full max-w-xs rounded-lg bg-white border ${emailError ? 'border-red-500 ring-2 ring-red-500/20' : 'border-amber-300'}`}
-                />
-                <button
-                  onClick={handleAttachEmail}
-                  className="px-4 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 transition-colors whitespace-nowrap"
-                >
-                  Привязать
-                </button>
-              </div>
-            </div>
-          )}
+          {showEmailInput && pendingAction?.type === 'pay' && (guestEmailPanel)}
         </div>
 
         {/* 🧪 Тестовая оплата (только для админа) */}
