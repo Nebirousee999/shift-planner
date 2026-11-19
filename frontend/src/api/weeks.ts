@@ -51,10 +51,11 @@ export const weeksApi = {
     const { data } = await api.get<ScheduleWeek[]>("/schedule-weeks", {
       params: locationId ? { locationId } : {},
     });
-    return data;
+    return data.map((w: any) => ({ ...w, weekStartDate: w.weekStartDate || new Date().toISOString().slice(0, 10) }));
   },
   get: async (id: string): Promise<ScheduleWeek> => {
     const { data } = await api.get<ScheduleWeek>(`/schedule-weeks/${id}`);
+    if (data) data.weekStartDate = data.weekStartDate || new Date().toISOString().slice(0, 10);
     return data;
   },
   create: async (input: { weekStartDate: string; locationId: string }): Promise<ScheduleWeek> => {

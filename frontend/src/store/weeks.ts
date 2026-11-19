@@ -28,7 +28,7 @@ export const useWeeks = create<State>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const weeks = await weeksApi.list(locationId);
-      set({ weeks, loading: false });
+      set({ weeks: Array.isArray(weeks) ? weeks : [], loading: false });
     } catch (e: any) {
       set({ error: e.response?.data?.error ?? "Ошибка загрузки", loading: false });
     }

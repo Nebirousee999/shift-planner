@@ -1,5 +1,4 @@
 import axios from "axios";
-import { guestAdapter } from "./guestAdapter";
 import { GUEST_SEED } from "../lib/guestSeed";
 
 const API_URL =
@@ -10,15 +9,13 @@ export const api = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
-  if (localStorage.getItem("guest_mode") === "true") {
-    api.defaults.adapter = guestAdapter;
-  }
+  
   
 
 // ─── Request interceptor: подставляем JWT ─────────────
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
-  if (token) {
+  if (token && token !== "undefined" && token !== "null") {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
@@ -28,7 +25,10 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    if (error.response?.status === 401 && localStorage.getItem("isGuest") === "true") {
+      localStorage.setItem("token", "guest-mock");
+      localStorage.setItem("user", JSON.stringify({ id: "guest", name: "Гость", role: "OWNER", orgId: "guest-org" }));
+    } else if (error.response?.status === 401) {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
       // Жесткий редирект убран, чтобы не выкидывать с лендинга на логин
@@ -43,19 +43,33 @@ api.interceptors.response.use(
 // ГОСТЕВОЙ ПЕРЕХВАТЧИК API (100% без ошибок 401)
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
-  if (!token) {
+  const isInvalidToken = !token || token === "undefined" || token === "null" || token === "guest-mock";
+  if (isInvalidToken) {
     const url = config.url || "";
+    // Не подменяем адаптер для создания гостевой сессии — запрос должен уйти на реальный сервер
+    if (url.includes("/auth/guest-seed") && token !== "guest-mock") {
+      return config;
+    }
     const method = config.method?.toUpperCase();
-    let mockData = {};
+    let mockData: any = null;
 
     if (url.includes("/dashboard")) {
-      mockData = { todayShifts: [], weekShifts: [], weekHours: 0, weekCost: 0, monthShifts: 0, monthCost: 0, employeesWorking: 0, swaps: 0, requests: 0 };
-    } else if (url.includes("/schedule-weeks")) {
-      mockData = [{ id: "week1", weekStartDate: new Date().toISOString().slice(0,10), status: "DRAFT", shifts: [] }];
+      mockData = {
+        currentWeek: { id: "week1", orgId: "org1", locationId: "loc1", weekStartDate: new Date().toISOString().slice(0,10), status: "DRAFT", publishedAt: null, createdAt: new Date().toISOString(), shifts: [] },
+        weekTimeEntries: [],
+        users: [{ id: "u1", name: "Алексей", position: "Бариста", hourlyRate: "300", color: "#3B82F6", locationIds: ["loc1"], areaIds: [] }]
+      };
+    } else if (url.includes("/schedule-weeks") && method === "GET") {
+      const parts = url.split("/");
+      if (parts.length > 2 && parts[parts.length - 1] !== "schedule-weeks") {
+        mockData = { id: parts[parts.length - 1], orgId: "org1", locationId: "loc1", weekStartDate: new Date().toISOString().slice(0,10), status: "DRAFT", publishedAt: null, createdAt: new Date().toISOString(), shifts: [] };
+      } else {
+        mockData = [{ id: "week1", orgId: "org1", locationId: "loc1", weekStartDate: new Date().toISOString().slice(0,10), status: "DRAFT", publishedAt: null, createdAt: new Date().toISOString(), shifts: [] }];
+      }
     } else if (url.includes("/shift-templates")) {
-      mockData = [{ id: "t1", name: "Дневная", startTime: "09:00", endTime: "18:00", color: "#3B82F6" }];
+      mockData = [{ id: "t1", orgId: "org1", name: "Дневная", startTime: "09:00", endTime: "18:00", color: "#3B82F6" }];
     } else if (url.includes("/locations")) {
-      mockData = [{ id: "loc1", name: "Основная", orgId: "org1" }];
+      mockData = [{ id: "loc1", orgId: "org1", name: "Основная", address: null, city: null, phone: null, isArchived: false, createdAt: new Date().toISOString() }];
     } else // Если это POST (создание сотрудника)
       if (url.includes("/users") && method === "POST") {
         const body = typeof config.data === 'string' ? JSON.parse(config.data) : (config.data || {});
@@ -93,8 +107,12 @@ api.interceptors.request.use((config) => {
       mockData = { id: "guest", name: "Владелец", role: "OWNER", email: "guest@test.ru", orgId: "org1" };
     } else if (url.includes("/count")) {
       mockData = { count: 0 };
-    } else if (method === "GET") {
-      mockData = []; // Для всех списков
+    } else if (method === "GET" && mockData === null) {
+      mockData = []; // Только если ещё ничего не задано
+    }
+
+    if (mockData === null) {
+      mockData = method === "GET" ? [] : {};
     }
 
     // Подменяем адаптер Axios (запрос в сеть не уходит)

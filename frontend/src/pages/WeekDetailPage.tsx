@@ -1,10 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
-  ChevronLeft, Copy, CheckCircle2, Plus, X, Trash2, Clock, CalendarDays,
-  AlertCircle, Pencil, Check, ClipboardPaste, CopyPlus, GripVertical,
-  Maximize2, Minimize2, Bell, Wallet, CalendarX2, Stethoscope, Info, Undo2,
-} from "lucide-react";
+  ChevronLeft, Copy, CheckCircle2, Plus, X, Trash2, Clock, CalendarDays, AlertCircle, Pencil, Check, ClipboardPaste, CopyPlus, GripVertical, Maximize2, Minimize2, Bell, Wallet, CalendarX2, Stethoscope, Info, Undo2, Loader2 } from "lucide-react";
 import { useWeeks } from "../store/weeks";
 import { useShiftTemplates } from "../store/shiftTemplates";
 import { useUsers } from "../store/users";
@@ -18,6 +15,7 @@ import { useOrganization } from "../store/organization";
 import { useTimeOff } from "../store/timeOff";
 import { vacationsApi } from "../api/vacations";
 import { shiftsApi, type ScheduledShift } from "../api/weeks";
+import { api } from "../api/client";
 import { shiftChangeRequestsApi, type ShiftChangeRequest,  } from "../api/shiftChangeRequests";
 import { alertDialog, confirmDialog } from "../store/dialogs";
 import NavBar from "../components/NavBar";
@@ -42,22 +40,24 @@ const calcHours = (start: string, end: string) => {
 const formatMoney = (n: number) =>
   new Intl.NumberFormat("ru-RU").format(n) + " ₽";
 
+if (typeof window !== "undefined") {
+  const navEntries = performance.getEntriesByType("navigation");
+  if (navEntries.length > 0 && navEntries[0].type === "reload") {
+    localStorage.removeItem("guest_shifts");
+  }
+}
+
 export default function WeekDetailPage() {
     
   // Мок-данные для отображения интерфейса в гостевом режиме
-  const mockWeek = {
-    id: "guest-week",
-    weekStartDate: new Date().toISOString().slice(0, 10),
-    status: "DRAFT",
-    shifts: [],
-  };
-  const mockUsers = [{ id: "g1", name: "Сотрудник 1", position: "Должность", hourlyRate: "300", areaIds: [] }];
-  
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   // ─── ТЕНЕВОЙ РЕЖИМ (Гость без токена) ───
-  const isGuestMode = !localStorage.getItem("token");
+  const isGuestMode = localStorage.getItem("isGuest") === "true";
+  const [guestDeletedShifts, setGuestDeletedShifts] = useState<string[]>([]);
   const [guestEmail, setGuestEmail] = useState("");
+  const [showGuestEmailInput, setShowGuestEmailInput] = useState(false);
+  const [emailError, setEmailError] = useState(false);
   // ────────────────────────────────────────
   
   
@@ -136,8 +136,12 @@ export default function WeekDetailPage() {
 
   
   useEffect(() => {
-    if (isGuestMode) return; // БЛОКИРОВКА API ДЛЯ ГОСТЯ
-  
+    if (isGuestMode && localStorage.getItem("guestEmailAttached") !== "true") {
+      localStorage.removeItem("guest_shifts");
+    }
+  }, []);
+
+  useEffect(() => {
     if (id) fetchWeek(id);
     fetchTemplates();
     fetchUsers();
@@ -211,8 +215,8 @@ export default function WeekDetailPage() {
   const [guestShifts, setGuestShifts] = useState<any[]>(() => {
     return JSON.parse(localStorage.getItem("guest_shifts") || "[]");
   });
-  const activeWeek = isGuestMode ? { id: "week1", weekStartDate: new Date().toISOString().slice(0, 10), status: "DRAFT", shifts: guestShifts } : currentWeek;
-  const activeUsers = isGuestMode ? [{ id: "u1", name: "Алексей", position: "Бариста", hourlyRate: "300", color: "#3B82F6", locationIds: [], areaIds: [] }] : users;
+  const activeWeek = currentWeek;
+  const activeUsers = users;
 
   if (loading && !activeWeek)
     return (
@@ -227,8 +231,14 @@ export default function WeekDetailPage() {
     return (
       <div className="min-h-screen bg-slate-50">
         <NavBar />
-        <main className="max-w-7xl mx-auto px-4 py-8">
-          <p className="text-red-500 text-sm">{error ?? "Ошибка"} </p>
+        <main className="max-w-7xl mx-auto px-4 py-8 text-center">
+          <p className="text-red-500 text-sm mb-4">{error ?? "Неделя не найдена или произошла ошибка"} </p>
+          <button
+            onClick={() => navigate("/weeks")}
+            className="bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-700 transition-colors"
+          >
+            Вернуться к неделям
+          </button>
         </main>
       </div>
     );
@@ -239,6 +249,7 @@ export default function WeekDetailPage() {
   const dates = weekDates(activeWeek.weekStartDate);
   const weekStart = shortDate(dates[0]);
   const weekEnd = shortDate(dates[6]);
+  const allShifts = isGuestMode ? [...(activeWeek.shifts ?? []).filter(s => !guestDeletedShifts.includes(s.id)), ...guestShifts] : (activeWeek.shifts ?? []);
   const shiftsByDate: Record<string, typeof activeWeek.shifts> = {};
 
   const pendingIncomingByShift = new Map<string, ShiftChangeRequest>();
@@ -258,7 +269,7 @@ export default function WeekDetailPage() {
   }
 
   for (const d of dates) shiftsByDate[d] = [];
-  for (const s of activeWeek.shifts ?? []) {
+  for (const s of allShifts) {
     const d = String(s.shiftDate).slice(0, 10);
     if (shiftsByDate[d]) shiftsByDate[d].push(s);
   }
@@ -287,7 +298,7 @@ export default function WeekDetailPage() {
   }
 
   const userStats = summaryUsers.map((u) => {
-    const uShiftsWeek = activeWeek.shifts?.filter((s) => s.userId === u.id) || [];
+    const uShiftsWeek = allShifts.filter((s) => s.userId === u.id) || [];
     const weekHours = uShiftsWeek.reduce(
       (acc, s) => acc + calcHours(s.startTime, s.endTime),
       0
@@ -308,7 +319,7 @@ export default function WeekDetailPage() {
   });
 
   const weeklyCost = userStats.reduce((acc, u) => acc + u.weekCost, 0);
-  const totalWeekShifts = activeWeek.shifts?.length ?? 0;
+  const totalWeekShifts = allShifts.length;
 
   // ═════════════════════════════════════════════════════════
   // Действия со сменами
@@ -345,33 +356,13 @@ export default function WeekDetailPage() {
       return;
     }
   
-    if (isGuestMode) {
-      const shifts = JSON.parse(localStorage.getItem("guest_shifts") || "[]");
-      shifts.push({
-        id: Math.random().toString(),
-        shiftDate: date,
-        startTime: snapshot ? snapshot.startTime : form.startTime,
-        endTime: snapshot ? snapshot.endTime : form.endTime,
-        userId: snapshot ? snapshot.userId : form.userId,
-        templateId: snapshot ? snapshot.templateId : form.templateId,
-      });
-      localStorage.setItem("guest_shifts", JSON.stringify(shifts));
-      window.location.reload(); // Перезагружаем, чтобы смена отрисовалась
-      return;
-    }
   
     
     
     // Ограничение для теневых аккаунтов
     
     // Ограничение для теневых аккаунтов (20 смен)
-    if (activeWeek.shifts.length >= 20 && !guestEmail) {
-      await alertDialog("Вы достигли лимита в 20 смен в демо-режиме.\n\nВведите почту вверху страницы, чтобы сохранить данные и снять ограничение.", {
-        title: "Демо-режим",
-        variant: "error",
-      });
-      return;
-    }
+    
     const startTime = snapshot ? snapshot.startTime : form.startTime;
     const endTime = snapshot ? snapshot.endTime : form.endTime;
     const userId = snapshot ? snapshot.userId : form.userId;
@@ -481,6 +472,12 @@ export default function WeekDetailPage() {
       variant: "danger",
     });
     if (!ok) return;
+    if (isGuestMode) {
+      setGuestDeletedShifts([...guestDeletedShifts, shiftId]);
+      setGuestShifts(guestShifts.filter(s => s.id !== shiftId));
+      if (editingShift?.id === shiftId) setEditingShift(null);
+      return;
+    }
     try {
       await removeShift(shiftId);
       if (editingShift?.id === shiftId) setEditingShift(null);
@@ -495,35 +492,21 @@ export default function WeekDetailPage() {
   const onPublish = async () => {
     // ГОСТЬ: ПУБЛИКАЦИЯ
     if (isGuestMode) {
-      if (!guestEmail || !guestEmail.includes("@")) {
-        await alertDialog("Введите почту вверху страницы, чтобы сохранить ваш график.", { title: "Нужен Email", variant: "error" });
+      if (localStorage.getItem("guestEmailAttached") === "true") {
+        // Почта уже привязана (пользователь обновлен в БД через update-email).
+        // Просто очищаем гостевой режим и переходим в полноценный ЛК.
+        localStorage.removeItem("isGuest");
+        localStorage.removeItem("guest_shifts");
+        localStorage.removeItem("guestEmailAttached");
+        window.location.href = "/";
         return;
       }
-      setPublishing(true);
-      try {
-        const shifts = JSON.parse(localStorage.getItem("guest_shifts") || "[]");
-        const res = await fetch("http://localhost:3001/api/auth/quick-register", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: guestEmail,
-            name: "Владелец",
-            guestData: { employees: [], shifts: shifts, startDate: new Date().toISOString().slice(0, 10) }
-          }),
-        });
-        if (!res.ok) throw new Error("Ошибка сервера");
-        const data = await res.json();
-        
-        localStorage.removeItem("guest_shifts");
-        localStorage.setItem("token", data.token);
-        
-        if ((window as any).ym) (window as any).ym(114078577, 'reachGoal', 'calc_register_success');
-        
-        window.location.href = "/dashboard"; // Перекидываем в полноценный кабинет
-      } catch (e: any) {
-        await alertDialog(e.message || "Ошибка", { title: "Ошибка", variant: "error" });
-      } finally {
-        setPublishing(false);
+
+      if (localStorage.getItem("guestEmailAttached") !== "true") {
+        setShowGuestEmailInput(true);
+        setEmailError(true);
+        await alertDialog("Введите почту вверху страницы, чтобы сохранить ваш график.", { title: "Нужен Email", variant: "error" });
+        return;
       }
       return;
     }
@@ -643,10 +626,16 @@ export default function WeekDetailPage() {
     e.preventDefault();
     setDragOverDate(null);
     if (!canEdit || !draggingShiftId) return;
-    const shift = (activeWeek.shifts ?? []).find((s) => s.id === draggingShiftId);
+    const shift = allShifts.find((s) => s.id === draggingShiftId);
     setDraggingShiftId(null);
     if (!shift) return;
     if (String(shift.shiftDate).slice(0, 10) === newDate) return;
+
+    if (isGuestMode) {
+      setGuestDeletedShifts([...guestDeletedShifts, shift.id]);
+      setGuestShifts([...guestShifts, { ...shift, id: Math.random().toString(), shiftDate: newDate }]);
+      return;
+    }
 
     try {
       const result = await updateShift(shift.id, { shiftDate: newDate });
@@ -793,6 +782,18 @@ export default function WeekDetailPage() {
     }
   };
 
+  const handleUpdateShift = async (id: string, patch: any) => {
+    if (isGuestMode) {
+      const shift = allShifts.find(s => s.id === id);
+      if (shift) {
+        setGuestDeletedShifts([...guestDeletedShifts, id]);
+        setGuestShifts([...guestShifts, { ...shift, ...patch, id: Math.random().toString() }]);
+      }
+      return { kind: "applied", shift: patch };
+    }
+    return await updateShift(id, patch);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50">
       <NavBar />
@@ -826,97 +827,81 @@ export default function WeekDetailPage() {
             <ChevronLeft className="w-4 h-4" /> К списку недель
           </button>
           <div className="flex items-center gap-2 flex-wrap">
-            {!isLocked && (
-              <button
-                onClick={() => {
-                  setEditMode((v) => !v);
-                  if (editMode) {
-                    setShowAddFor(null);
-                    setClipboardDay([]);
-                    setClipboardShift(null);
-                  }
-                }}
-                className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium transition-all ${
-                  editMode
-                    ? "bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
-                    : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                {editMode ? (
-                  <>
-                    <Check className="w-4 h-4" /> Готово
-                  </>
-                ) : (
-                  <>
-                    <Pencil className="w-4 h-4" /> Редактировать
-                  </>
-                )}
-              </button>
-            )}
-            {activeWeek.status === "PUBLISHED" && !isLocked && (
-              <button
-                onClick={onRevertToDraft}
-                disabled={reverting}
-                className="inline-flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-700 px-3.5 py-2 rounded-xl hover:bg-amber-100 disabled:opacity-50 text-sm font-medium transition-all"
-                title="Вернуть в черновик для редактирования без согласования"
-              >
-                <Undo2 className="w-4 h-4" /> {reverting ? "..." : "В черновик"}
-              </button>
-            )}
+        {isGuestMode && localStorage.getItem("guestEmailAttached") !== "true" && showGuestEmailInput && (
+          <div className={`flex items-center gap-2 bg-amber-50 border ${emailError ? 'border-red-500 ring-2 ring-red-500/20' : 'border-amber-200'} rounded-xl px-3 py-2 transition-all animate-fade-in mr-2`}>
+            <input
+              type="email"
+              value={guestEmail}
+              onChange={(e) => { setGuestEmail(e.target.value); setEmailError(false); }}
+              placeholder="your@email.ru"
+              className="!py-1.5 !px-3 !text-sm !w-48 rounded-lg bg-white border-amber-300 focus:ring-brand-500 focus:border-brand-500"
+            />
             <button
-              onClick={onDuplicate}
-              disabled={duplicating}
-              className="inline-flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-3.5 py-2 rounded-xl hover:bg-slate-50 disabled:opacity-50 text-sm font-medium transition-all"
+              onClick={async () => {
+                if (!guestEmail.includes("@")) { setEmailError(true); return; }
+                try {
+                  await api.post("/auth/update-email", { email: guestEmail });
+                  localStorage.setItem("guestEmailAttached", "true");
+                  setShowGuestEmailInput(false);
+                  window.dispatchEvent(new Event("guest-email-attached"));
+                  await alertDialog("Почта привязана! Пароль отправлен на вашу почту.", { title: "Успех", variant: "success" });
+                } catch (e: any) {
+                  setEmailError(true);
+                  await alertDialog(e.response?.data?.error ?? "Ошибка привязки почты", { title: "Ошибка", variant: "error" });
+                }
+              }}
+              className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 transition-colors whitespace-nowrap"
             >
-              <Copy className="w-4 h-4" /> {duplicating ? "..." : "Скопировать"}
+              Привязать
             </button>
-            <span
-              className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full font-medium ${
-                isDraft
-                  ? "bg-slate-100 text-slate-700 ring-1 ring-slate-200"
-                  : isLocked
-                  ? "bg-red-50 text-red-700 ring-1 ring-red-200"
-                  : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
-              }`}
-            >
-              {isDraft ? (
-                <>Черновик</>
-              ) : isLocked ? (
-                <>Заблокирован</>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Опубликован
-                </>
-              )}
-            </span>
-            
-{isDraft && (
-  <div className="flex items-end gap-2 animate-fade-in">
-    {isGuestMode && (
-      <div className="flex flex-col items-end gap-1">
-        <span className="text-[11px] font-medium text-amber-600 flex items-center gap-1">
-          <AlertCircle className="w-3.5 h-3.5" /> Введите почту, чтобы данные не затерялись
-        </span>
-        <input
-          type="email"
-          value={guestEmail}
-          onChange={(e) => setGuestEmail(e.target.value)}
-          placeholder="your@email.ru"
-          className="!py-1.5 !px-3 !text-sm !w-48 rounded-lg border-amber-300 focus:ring-brand-500 focus:border-brand-500 bg-amber-50/50"
-        />
-      </div>
-    )}
-    <button
-      onClick={onPublish}
-      disabled={publishing}
-      className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium shadow-sm hover:shadow transition-all h-[38px] mb-[1px]"
-    >
-      <CheckCircle2 className="w-4 h-4" />{" "}
-      {publishing ? "..." : "Опубликовать"}
-    </button>
-  </div>
-)}
           </div>
+        )}
+        {!isLocked && (
+          <button
+            onClick={async () => {
+              if (editMode) {
+                if (isGuestMode && localStorage.getItem("guestEmailAttached") !== "true") {
+                  if (showGuestEmailInput) {
+                    setEmailError(true);
+                  } else {
+                    setShowGuestEmailInput(true);
+                  }
+                  return;
+                }
+                setEditMode(false);
+                setShowAddFor(null);
+                setClipboardDay([]);
+                setClipboardShift(null);
+              } else {
+                setEditMode(true);
+              }
+            }}
+            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium transition-all ${
+              editMode ? "bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm" : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            {editMode ? (<><Check className="w-4 h-4" /> Готово</>) : (<><Pencil className="w-4 h-4" /> Редактировать</>)}
+          </button>
+        )}
+
+        {isDraft && (
+          <>
+            <button
+              onClick={onPublish}
+              disabled={editMode}
+              className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium transition-all ${
+                editMode
+                  ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                  : "bg-brand-600 text-white hover:bg-brand-700 shadow-sm"
+              }`}
+              title={editMode ? "Нельзя опубликовать во время редактирования" : "Опубликовать неделю"}
+            >
+              {publishing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+              {publishing ? "..." : "Опубликовать"}
+            </button>
+          </>
+        )}
+      </div>
         </div>
 
         {/* Заголовок недели */}
@@ -1703,7 +1688,7 @@ export default function WeekDetailPage() {
           sickLeaves={sickLeaves}
           onClose={() => setEditingShift(null)}
           onSaved={() => setEditingShift(null)}
-          onUpdate={updateShift}
+          onUpdate={handleUpdateShift}
           onDelete={onRemoveShift}
           onRequestCreated={refreshShiftRequests}
         />
@@ -1758,6 +1743,10 @@ function ShiftEditModal({
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (localStorage.getItem("isGuest") === "true") {
+      alertDialog("В гостевом режиме нельзя редактировать смены.", { variant: "error" });
+      return;
+    }
     const timeCheck = validateShiftTimes(startTime, endTime);
     if (!timeCheck.ok)
       return alertDialog(timeCheck.message ?? "Неверное время", {

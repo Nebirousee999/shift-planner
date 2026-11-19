@@ -42,7 +42,10 @@ export const useAuth = create<AuthState>((set) => ({
     const token = localStorage.getItem("token");
     // Фейковый пользователь для гостя
     const guestUser = { id: "guest", name: "Гость", role: "OWNER", orgId: "guest-org" };
-    if (!token) return { token: null, user: guestUser, hydrated: true };
+    if (!token) {
+      set({ token: null, user: guestUser, hydrated: true });
+      return;
+    }
     const userJson = localStorage.getItem("user");
     if (token && userJson) {
       try {

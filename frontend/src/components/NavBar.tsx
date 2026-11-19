@@ -10,6 +10,7 @@ import { useAuth } from "../store/auth";
 import { useNotifications } from "../store/notifications";
 import { useOrganization } from "../store/organization";
 import { supportApi } from "../api/support";
+import { api } from "../api/client";
 import { useState } from "react";
 import LocationSwitcher from "./LocationSwitcher";
 import NotificationBell from "./NotificationBell";
@@ -75,6 +76,27 @@ function Badge({ value }: { value: number }) {
 }
 
 export default function NavBar() {
+
+  const [isGuest, setIsGuest] = useState(false);
+  const [emailAttached, setEmailAttached] = useState(false);
+  const [showEmailInput, setShowEmailInput] = useState(false);
+  const [guestEmail, setGuestEmail] = useState("");
+  const [emailError, setEmailError] = useState(false);
+
+  useEffect(() => {
+    const checkGuestStatus = () => {
+      setIsGuest(localStorage.getItem("isGuest") === "true");
+      setEmailAttached(localStorage.getItem("guestEmailAttached") === "true");
+    };
+    checkGuestStatus();
+    window.addEventListener("storage", checkGuestStatus);
+    window.addEventListener("guest-email-attached", checkGuestStatus);
+    return () => {
+      window.removeEventListener("storage", checkGuestStatus);
+      window.removeEventListener("guest-email-attached", checkGuestStatus);
+    };
+  }, []);
+
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { user, logout } = useAuth();

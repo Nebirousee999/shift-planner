@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import {
   Clock, CalendarDays, ChevronRight, ChevronLeft, AlertCircle,
   Timer, ArrowRightLeft, UserCircle, CalendarX2, Activity, Wallet, Banknote,
@@ -106,7 +106,10 @@ export default function DashboardPage() {
   }, [fetchLocations, fetchTemplates]);
 
   const loadAllData = () => {
-             if (!activeLocationId) return;
+             if (!activeLocationId) {
+               setLoading(false);
+               return;
+             }
              Promise.all([
                dashboardApi.summary(activeLocationId, selectedDate),
                meApi.profile().catch(() => null),
@@ -378,6 +381,17 @@ export default function DashboardPage() {
       <NavBar />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 flex flex-col gap-6">
+        {data?.currentWeek && data.currentWeek.status !== "PUBLISHED" && (
+          <div className="bg-red-50 border border-red-200 text-red-600 p-4 rounded-xl text-sm font-medium flex items-center gap-2 shadow-sm animate-fade-in">
+            <AlertCircle className="w-5 h-5 shrink-0" />
+            <span>
+              Чтобы появились данные, необходимо{" "}
+              <Link to={`/weeks/${data.currentWeek.id}`} className="underline font-bold hover:text-red-800 transition-colors">
+                опубликовать неделю
+              </Link>.
+            </span>
+          </div>
+        )}
         {data?.currentWeek ? (
           <button
             onClick={() => navigate("/weeks")}

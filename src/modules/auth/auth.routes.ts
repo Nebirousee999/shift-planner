@@ -41,7 +41,19 @@ export async function authRoutes(app: FastifyInstance) {
         }
     });
 
-    app.post("/quick-register", async (req, reply) => {
+  
+  app.post("/guest-seed", async (req, reply) => {
+    try {
+      const { user } = await authService.guestSeed();
+      const token = app.jwt.sign({ sub: user.id, orgId: user.orgId, role: user.role });
+      return { user, token };
+    } catch (e) {
+      app.log.error(e);
+      return reply.code(500).send({ error: 'Ошибка создания гостевой сессии' });
+    }
+  });
+
+  app.post("/quick-register", async (req, reply) => {
         try {
             const { email, name, guestData } = req.body;
             if (!email) return reply.code(400).send({ error: "Email обязателен" });

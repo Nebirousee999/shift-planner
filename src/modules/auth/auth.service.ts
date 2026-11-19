@@ -279,6 +279,114 @@ export const authService = {
     return { id: result.user.id, email: result.user.email, orgId: result.org.id, role: result.user.role, firstWeekId: result.firstWeekId };
   },
 
+
+  async guestSeed() {
+    const { randomUUID } = await import('crypto');
+    const tempPassword = generateTempPassword();
+    const passwordHash = await bcrypt.hash(tempPassword, 10);
+    const tempEmail = `guest_${randomUUID().slice(0, 8)}@shift-planner.ru`;
+
+    const result = await db.transaction(async (tx) => {
+      const [org] = await tx.insert(organizations).values({
+        name: 'Гостевая организация',
+        tariffId: 'free',
+        maxLocations: 5,
+        trialEndsAt: null,
+      }).returning();
+
+      const [user] = await tx.insert(users).values({
+        orgId: org.id,
+        name: 'Владелец',
+        email: tempEmail,
+        passwordHash,
+        tempPassword,
+        role: 'OWNER',
+      }).returning();
+
+      const [loc] = await tx.insert(locations).values({
+        orgId: org.id,
+        name: 'Основная точка',
+      }).returning();
+
+      await tx.insert(userLocations).values({ userId: user.id, locationId: loc.id });
+
+      const areaNames = ['Кухня', 'Столовая'];
+      const areasCreated = [];
+      for (const name of areaNames) {
+        const [area] = await tx.insert(areas).values({ orgId: org.id, locationId: loc.id, name }).returning();
+        areasCreated.push(area);
+      }
+
+      const positionNames = ['Повар', 'Кассир', 'Официант'];
+      const positionsCreated = [];
+      for (const name of positionNames) {
+        const [pos] = await tx.insert(positionTemplates).values({ orgId: org.id, name, color: '#3B82F6' }).returning();
+        positionsCreated.push(pos);
+      }
+
+      const employeeSpecs = [
+        { name: 'Анна Смирнова', position: 'Повар', rate: '400', areaId: areasCreated[0].id, color: '#F59E0B' },
+        { name: 'Дмитрий Козлов', position: 'Кассир', rate: '350', areaId: areasCreated[1].id, color: '#3B82F6' },
+        { name: 'Елена Волкова', position: 'Официант', rate: '300', areaId: areasCreated[0].id, color: '#8B5CF6' },
+      ];
+
+      const createdEmployees = [];
+      for (const spec of employeeSpecs) {
+        const empTempPassword = generateTempPassword();
+        const empHash = await bcrypt.hash(empTempPassword, 10);
+        const empEmail = `guest_emp_${randomUUID().slice(0, 8)}@shift-planner.ru`;
+        const [emp] = await tx.insert(users).values({
+          orgId: org.id, name: spec.name, email: empEmail, passwordHash: empHash, tempPassword: empTempPassword,
+          role: 'EMPLOYEE', position: spec.position, hourlyRate: spec.rate, color: spec.color,
+        }).returning();
+        await tx.insert(userLocations).values({ userId: emp.id, locationId: loc.id });
+        await tx.insert(userAreas).values({ userId: emp.id, areaId: spec.areaId });
+        createdEmployees.push(emp);
+      }
+
+      const templates = [
+        { name: 'Утренняя', startTime: '08:00', endTime: '16:00', color: '#F59E0B' },
+        { name: 'Вечерняя', startTime: '16:00', endTime: '22:00', color: '#8B5CF6' },
+      ];
+      const createdTemplates = [];
+      for (const t of templates) {
+        const [tpl] = await tx.insert(shiftTemplates).values({ orgId: org.id, name: t.name, startTime: t.startTime, endTime: t.endTime, color: t.color }).returning();
+        createdTemplates.push(tpl);
+      }
+
+      const { getMonday } = await import('../../lib/time.js');
+      const mondayRaw = getMonday(new Date().toISOString().slice(0, 10));
+      const monday = typeof mondayRaw === "string" ? mondayRaw : mondayRaw.toISOString().slice(0, 10);
+
+      const [week] = await tx.insert(scheduleWeeks).values({
+        orgId: org.id, locationId: loc.id, weekStartDate: monday, status: 'DRAFT',
+      }).returning();
+
+      const addDays = (dateStr, n) => {
+        const d = new Date(dateStr + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10);
+      };
+
+      const shiftPlan = [
+        { day: 0, emp: 0, tpl: 0 }, { day: 0, emp: 1, tpl: 0 }, { day: 0, emp: 2, tpl: 1 },
+        { day: 1, emp: 0, tpl: 0 }, { day: 1, emp: 1, tpl: 1 }, { day: 1, emp: 2, tpl: 1 },
+        { day: 2, emp: 1, tpl: 0 }, { day: 2, emp: 2, tpl: 0 }, { day: 2, emp: 0, tpl: 1 },
+        { day: 3, emp: 2, tpl: 0 }, { day: 3, emp: 0, tpl: 1 }, { day: 3, emp: 1, tpl: 1 },
+        { day: 4, emp: 0, tpl: 0 }, { day: 4, emp: 1, tpl: 0 }, { day: 4, emp: 2, tpl: 1 },
+        { day: 5, emp: 1, tpl: 0 }, { day: 5, emp: 2, tpl: 1 }, { day: 5, emp: 0, tpl: 1 },
+        { day: 6, emp: 0, tpl: 0 }, { day: 6, emp: 1, tpl: 0 }, { day: 6, emp: 2, tpl: 1 },
+      ];
+
+      await tx.insert(scheduledShifts).values(shiftPlan.map((p) => ({
+        weekId: week.id, templateId: createdTemplates[p.tpl].id, userId: createdEmployees[p.emp].id,
+        shiftDate: addDays(monday, p.day), startTime: createdTemplates[p.tpl].startTime, endTime: createdTemplates[p.tpl].endTime, status: 'SCHEDULED',
+      })));
+
+      return { org, user, week };
+    });
+
+    return { user: result.user, token: null };
+  },
+
   async updateEmail(userId: string, newEmail: string) {
     const existing = await db.select().from(users).where(eq(users.email, newEmail));
     if (existing.length > 0) throw new Error("EMAIL_TAKEN");

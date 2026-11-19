@@ -1,6 +1,8 @@
 import { useAuth } from "./store/auth";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { AlertCircle } from "lucide-react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { api } from "./api/client";
 import { useUsers } from "./store/users";
 import { useWeeks } from "./store/weeks";
 import { useOrganization } from "./store/organization";
@@ -70,39 +72,65 @@ function ProtectedRoute({
 }
 
 export default function App() {
+  const [isGuest, setIsGuest] = useState(false);
+  const [emailAttached, setEmailAttached] = useState(false);
+  const [showEmailInput, setShowEmailInput] = useState(false);
+  const [guestEmail, setGuestEmail] = useState("");
+  const [emailError, setEmailError] = useState(false);
+
+  useEffect(() => {
+    const checkStatus = () => {
+      setIsGuest(localStorage.getItem("isGuest") === "true");
+      setEmailAttached(localStorage.getItem("guestEmailAttached") === "true");
+    };
+    checkStatus();
+    window.addEventListener("guest-email-attached", checkStatus);
+    window.addEventListener("storage", checkStatus);
+    return () => {
+      window.removeEventListener("guest-email-attached", checkStatus);
+      window.removeEventListener("storage", checkStatus);
+    };
+  }, []);
+  useEffect(() => {
+    const handleShowEmail = () => {
+      if (showEmailInput) {
+        setEmailError(true);
+      } else {
+        setShowEmailInput(true);
+      }
+    };
+    window.addEventListener("show-guest-email", handleShowEmail);
+    return () => window.removeEventListener("show-guest-email", handleShowEmail);
+  }, [showEmailInput]);
+
   const { hydrate, token, hydrated } = useAuth();
 
   useEffect(() => {
     hydrate();
   }, [hydrate]);
-  // ИНИЦИАЛИЗАЦИЯ ДАННЫХ ДЛЯ ГОСТЯ
+  // ИНИЦИАЛИЗАЦИЯ ГОСТЯ (Реальный вызов БД)
   useEffect(() => {
-    if (!token) {
-      useAuth.setState({ user: { id: "guest", name: "Владелец", role: "OWNER", email: "guest@test.ru" } });
-      useUsers.setState({ items: [
-        { 
-          id: "u1", name: "Алексей", email: "alex@test.ru", phone: "+79990000001", role: "OWNER", 
-          position: "Бариста", hourlyRate: "300", createdAt: new Date().toISOString(), 
-          locationIds: ["loc1"], areaIds: [], paymentType: "HOURLY", employmentType: "SHTAT", 
-          color: "#3B82F6", tempPassword: null, isTempPasswordSent: false 
-        },
-        { 
-          id: "u2", name: "Мария", email: "maria@test.ru", phone: "+79990000002", role: "EMPLOYEE", 
-          position: "Кассир", hourlyRate: "250", createdAt: new Date().toISOString(), 
-          locationIds: ["loc1"], areaIds: [], paymentType: "HOURLY", employmentType: "SHTAT", 
-          color: "#10B981", tempPassword: null, isTempPasswordSent: false 
+    const initGuest = async () => {
+      const lsToken = localStorage.getItem("token");
+      const isInvalidToken = !lsToken || lsToken === "undefined" || lsToken === "null";
+      if (!token && isInvalidToken) {
+        try {
+          const { api } = await import("./api/client");
+          const { data } = await api.post("/auth/guest-seed");
+          localStorage.setItem("token", data.token);
+          localStorage.setItem("user", JSON.stringify(data.user));
+          localStorage.setItem("isGuest", "true");
+          window.location.reload();
+        } catch (e) {
+          console.error("Ошибка создания гостевой сессии:", e);
+          localStorage.setItem("token", "guest-mock");
+          localStorage.setItem("user", JSON.stringify({ id: "guest", name: "Гость", role: "OWNER", orgId: "guest-org" }));
+          localStorage.setItem("isGuest", "true");
+          window.location.reload();
         }
-      ] });
-      useShiftTemplates.setState({ items: [{ id: "t1", name: "Дневная", startTime: "09:00", endTime: "18:00", color: "#3B82F6" }] });
-      useOrganization.setState({ org: { id: "org1", name: "Моя компания", tariffId: "pro", positionHeaderOpacity: 70, positionRowOpacity: 20 } });
-      useLocations.setState({ items: [{ id: "loc1", name: "Основная", orgId: "org1" }], activeLocationId: "loc1" });
-      
-      // ВАЖНО: Создаем фейковую неделю, чтобы можно было в нее зайти
-      useWeeks.setState({ 
-        weeks: [{ id: "week1", weekStartDate: new Date().toISOString().slice(0, 10), status: "DRAFT", shifts: [] }], 
-        loading: false 
-      });
-    }
+      }
+    };
+    initGuest();
   }, [token]);
   // ─────────────────────────────────────
 
@@ -119,6 +147,50 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      {isGuest && !emailAttached && (
+        <div className="fixed top-16 left-0 right-0 z-40 w-full bg-amber-50 border-b border-amber-200 shadow-sm">
+          <div className="max-w-7xl mx-auto px-4 py-2 flex flex-col items-center justify-center gap-2">
+            <div className="text-amber-800 text-sm font-medium flex items-center gap-2 text-center">
+              <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
+              <span>
+                Вы зашли как гость. Чтобы не потерять данные,{" "}
+                <button onClick={() => { if (showEmailInput) setEmailError(true); else setShowEmailInput(true); }} className="underline font-bold hover:text-amber-900 transition-colors">
+                  введите вашу почту
+                </button>.
+              </span>
+            </div>
+            {showEmailInput && (
+              <div className="flex items-center gap-2 animate-fade-in pb-1">
+                <input
+                  type="email"
+                  value={guestEmail}
+                  onChange={(e) => { setGuestEmail(e.target.value); setEmailError(false); }}
+                  placeholder="your@email.ru"
+                  className={`py-1.5 px-3 text-sm w-64 rounded-lg bg-white border ${emailError ? 'border-red-500 ring-2 ring-red-500/20' : 'border-amber-300'}`}
+                />
+                <button
+                  onClick={async () => {
+                    if (!guestEmail.includes("@")) { setEmailError(true); return; }
+                    try {
+                      await api.post("/auth/update-email", { email: guestEmail });
+                      localStorage.setItem("guestEmailAttached", "true");
+                      setEmailAttached(true);
+                      setShowEmailInput(false);
+                      alert("Почта привязана!");
+                    } catch (e: any) {
+                      setEmailError(true);
+                      alert(e.response?.data?.error ?? "Ошибка привязки почты");
+                    }
+                  }}
+                  className="px-4 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 transition-colors"
+                >
+                  Привязать
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       <ScrollToTop />
       <DialogHost />
       <OnboardingWidget />

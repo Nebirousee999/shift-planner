@@ -375,7 +375,7 @@ export default function WeeksPage() {
     let monthShiftsCount = 0;
 
     for (const w of weeks) {
-      if (!w.weekStartDate.startsWith(currentMonthStr)) continue;
+      if (!w.weekStartDate?.startsWith(currentMonthStr)) continue;
       const shifts = w.shifts?.filter((s: any) => s.userId === u.id) || [];
       monthHours += shifts.reduce(
         (acc: number, s: any) => acc + calcHours(s.startTime, s.endTime),
