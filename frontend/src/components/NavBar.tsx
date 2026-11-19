@@ -11,7 +11,7 @@ import { useNotifications } from "../store/notifications";
 import { useOrganization } from "../store/organization";
 import { supportApi } from "../api/support";
 import { api } from "../api/client";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import LocationSwitcher from "./LocationSwitcher";
 import NotificationBell from "./NotificationBell";
 
@@ -82,6 +82,7 @@ export default function NavBar() {
   const [showEmailInput, setShowEmailInput] = useState(false);
   const [guestEmail, setGuestEmail] = useState("");
   const [emailError, setEmailError] = useState(false);
+  const emailInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const checkGuestStatus = () => {
@@ -156,6 +157,13 @@ export default function NavBar() {
     navigate("/login");
   };
 
+  const focusEmailInput = () => {
+    setShowEmailInput(true);
+    setTimeout(() => {
+      emailInputRef.current?.focus();
+    }, 100);
+  };
+
   // ─── Сотрудник ──────────────────────────────────────
   const guestBanner = isGuest && !emailAttached && (
     <div className="bg-amber-50 border-b border-amber-200 w-full shadow-sm">
@@ -172,6 +180,7 @@ export default function NavBar() {
         {showEmailInput && (
           <div className="flex items-center gap-2 animate-fade-in pb-1">
             <input
+              ref={emailInputRef}
               type="email"
               value={guestEmail}
               onChange={(e) => { setGuestEmail(e.target.value); setEmailError(false); }}
@@ -248,24 +257,36 @@ export default function NavBar() {
             >
               <HelpCircle className="w-4 h-4" />
             </button>
-            <button
-              onClick={() => navigate("/profile")}
-              className={`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors ${
-                isActive(pathname, "/profile")
-                  ? "bg-brand-50 text-brand-700"
-                  : "text-slate-600 hover:bg-slate-100"
-              }`}
-              title="Профиль"
-            >
-              <UserCircle className="w-4 h-4" />
-            </button>
-            <button
-              onClick={handleLogout}
-              className="flex items-center justify-center p-2 rounded-lg text-sm text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors"
-              title="Выйти"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
+
+            {(!isGuest || emailAttached) ? (
+              <>
+                <button
+                  onClick={() => navigate("/profile")}
+                  className={`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors ${
+                    isActive(pathname, "/profile")
+                      ? "bg-brand-50 text-brand-700"
+                      : "text-slate-600 hover:bg-slate-100"
+                  }`}
+                  title="Профиль"
+                >
+                  <UserCircle className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center justify-center p-2 rounded-lg text-sm text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors"
+                  title="Выйти"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={focusEmailInput}
+                className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 transition-colors"
+              >
+                Залогиниться
+              </button>
+            )}
           </div>
 
         </div>
@@ -331,12 +352,24 @@ export default function NavBar() {
               <Wallet className="w-4 h-4" />
             </button>
           )}
-          <button onClick={() => navigate("/profile")} className={`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors ${isActive(pathname, "/profile") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`} title="Профиль">
-            <UserCircle className="w-4 h-4" />
-          </button>
-          <button onClick={handleLogout} className="flex items-center justify-center p-2 rounded-lg text-sm text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors" title="Выйти">
-            <LogOut className="w-4 h-4" />
-          </button>
+
+          {(!isGuest || emailAttached) ? (
+            <>
+              <button onClick={() => navigate("/profile")} className={`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors ${isActive(pathname, "/profile") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`} title="Профиль">
+                <UserCircle className="w-4 h-4" />
+              </button>
+              <button onClick={handleLogout} className="flex items-center justify-center p-2 rounded-lg text-sm text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors" title="Выйти">
+                <LogOut className="w-4 h-4" />
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={focusEmailInput}
+              className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 transition-colors"
+            >
+              Залогиниться
+            </button>
+          )}
         </div>
       </div>
 
