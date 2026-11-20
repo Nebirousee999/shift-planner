@@ -1,3 +1,4 @@
+import { startGuestNavigate } from "../../lib/guestCta";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, Check } from "lucide-react";
 
@@ -81,14 +82,14 @@ export default function FeatureSection({
         {/* CTA */}
         <div className="mt-8 flex justify-center">
           <button
-            onClick={() => navigate("/login?mode=register")}
+            onClick={() => startGuestNavigate("feature", "/", () => navigate("/login?mode=register"))}
             className={`inline-flex items-center gap-2 px-5 py-2.5 border font-semibold rounded-xl transition-colors shadow-sm ${
               isTinted
                 ? "bg-white border-slate-200 text-brand-600 hover:border-brand-300 hover:bg-brand-50"
                 : "bg-white border-slate-200 text-brand-600 hover:border-brand-300 hover:bg-brand-50"
             }`}
           >
-            Попробовать в своём аккаунте
+            Начать бесплатно
             <ArrowRight className="w-4 h-4" />
           </button>
         </div>

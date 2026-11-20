@@ -54,7 +54,7 @@ const unhighlightTarget = () => {
 
 export default function OnboardingWidget() {
   const { user } = useAuth();
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(false);
   const [isDismissed, setIsDismissed] = useState(() => localStorage.getItem("onboarding_dismissed") === "true");
 
   const { items: users, fetch: fetchUsers } = useUsers();
@@ -86,7 +86,7 @@ export default function OnboardingWidget() {
     }
   }, [user, isDismissed, areas.length, templates.length, weeks.length, fetchUsers, fetchAreas, fetchTemplates, fetchWeeks]);
 
-  if (!user || user.role === "EMPLOYEE" || isDismissed) return null;
+  if (!user || user.role === "EMPLOYEE" || isDismissed || !localStorage.getItem("token") || localStorage.getItem("isGuest") === "true") return null;
 
   const otherUsers = users.filter((u) => u.id !== user.id);
   const hasUsers = otherUsers.length > 0;

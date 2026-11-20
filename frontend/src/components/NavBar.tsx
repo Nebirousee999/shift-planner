@@ -63,6 +63,8 @@ const CATEGORIES: TabCategory[] = [
   },
 ];
 
+const ADMIN_EMAIL = const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL ?? "prihodko999@inbox.ru"; ?? "prihodko999@inbox.ru";
+
 function isActive(pathname: string, path: string): boolean {
   return pathname === path || pathname.startsWith(path + "/");
 }
@@ -114,7 +116,7 @@ export default function NavBar() {
   const [supportUnread, setSupportUnread] = useState(0);
 
   useEffect(() => {
-    if (user?.email !== import.meta.env.VITE_ADMIN_EMAIL) return;
+    if (user?.email !== ADMIN_EMAIL) return;
     
     const updateCount = () => {
       supportApi.adminGetUnreadCount().then(setSupportUnread).catch(() => {});
@@ -133,6 +135,8 @@ export default function NavBar() {
   }, [user?.email]);
 
   const isAdmin = user?.role === "OWNER" || user?.role === "MANAGER";
+  // ADMIN_DEBUG — временный лог, удалить после диагностики
+  console.log("[ADMIN_DEBUG] user.email:", JSON.stringify(user?.email), "| ADMIN_EMAIL:", JSON.stringify(ADMIN_EMAIL), "| match:", user?.email === ADMIN_EMAIL);
   const timeTrackingOn = org?.timeTrackingEnabled === true;
 
   const visibleCategories = CATEGORIES.map((cat) => ({
@@ -364,7 +368,7 @@ export default function NavBar() {
           
           <div className="flex items-center gap-2 shrink-0">
             <NotificationBell />
-            {user?.email === import.meta.env.VITE_ADMIN_EMAIL && (
+            {user?.email === ADMIN_EMAIL && (
               <button onClick={() => navigate("/admin-support")} className="relative flex items-center justify-center p-2 rounded-lg text-sm text-brand-600 bg-brand-50 hover:bg-brand-100 transition-colors" title="Панель поддержки">
                 <MessageSquare className="w-4 h-4" />
                 <Badge value={supportUnread} />
@@ -408,7 +412,7 @@ export default function NavBar() {
                 onClick={focusEmailInput}
                 className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 transition-colors"
               >
-                Залогиниться
+                Войти
               </button>
             )}
           </div>
@@ -461,7 +465,7 @@ export default function NavBar() {
             <ListChecks className="w-4 h-4" />
           </button>
           
-          {user?.email === "prihodko999@inbox.ru" && (
+          {user?.email === ADMIN_EMAIL && (
             <button onClick={() => navigate("/admin-support")} className="relative flex items-center justify-center p-2 rounded-lg text-sm text-brand-600 bg-brand-50 hover:bg-brand-100 transition-colors" title="Панель поддержки">
               <MessageSquare className="w-4 h-4" />
               <Badge value={supportUnread} />
@@ -491,7 +495,7 @@ export default function NavBar() {
               onClick={focusEmailInput}
               className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 transition-colors"
             >
-              Залогиниться
+              Войти
             </button>
           )}
         </div>
