@@ -51,14 +51,44 @@ function ProtectedRoute({
   employeeOnly?: boolean;
 }) {
   const { token, user } = useAuth();
-  const isGuest = !token;
-  if (isGuest) return <>{children}</>;
+  if (!token) return <Navigate to="/" replace />;
 
   const isEmployee = user?.role === "EMPLOYEE";
   if (adminOnly && isEmployee) return <Navigate to="/my" replace />;
   if (employeeOnly && !isEmployee) return <Navigate to="/" replace />;
   
   return <>{children}</>;
+}
+
+function HomeRoute() {
+  const { token, hydrated } = useAuth();
+  if (!hydrated) return null;
+  if (!token) return <LandingPage />;
+  return <DashboardPage />;
+}
+
+function InfoRoute() {
+  const { token, hydrated } = useAuth();
+  if (!hydrated) return null;
+  const isGuest = localStorage.getItem("isGuest") === "true";
+  if (token && isGuest) return <LandingPage />;
+  return <Navigate to="/" replace />;
+}
+
+function CalcRoute() {
+  const { token, hydrated } = useAuth();
+  if (!hydrated) return null;
+  const isGuest = localStorage.getItem("isGuest") === "true";
+  if (token && !isGuest) return <Navigate to="/" replace />;
+  return <CalculatorPage />;
+}
+
+function LoginRoute() {
+  const { token, hydrated } = useAuth();
+  if (!hydrated) return null;
+  const isGuest = localStorage.getItem("isGuest") === "true";
+  if (token && !isGuest) return <Navigate to="/" replace />;
+  return <LoginPage />;
 }
 
 export default function App() {
@@ -69,48 +99,12 @@ export default function App() {
   }, [hydrate]);
 
   useEffect(() => {
-    const initGuest = async () => {
-      const lsToken = localStorage.getItem("token");
-      const isInvalidToken = !lsToken || lsToken === "undefined" || lsToken === "null";
-      if (!token && isInvalidToken) {
-        try {
-          const { api } = await import("./api/client");
-          const { data } = await api.post("/auth/guest-seed");
-          localStorage.setItem("token", data.token);
-          localStorage.setItem("user", JSON.stringify(data.user));
-          localStorage.setItem("isGuest", "true");
-          localStorage.removeItem("activeLocationId");
-          localStorage.removeItem("guest_workspace");
-          localStorage.removeItem("guest_db");
-          localStorage.removeItem("guest_db_version");
-          localStorage.removeItem("guest_shifts");
-          localStorage.removeItem("guestEmailAttached");
-          window.location.reload();
-        } catch (e) {
-          console.error("Ошибка создания гостевой сессии:", e);
-          localStorage.setItem("token", "guest-mock");
-          localStorage.setItem("user", JSON.stringify({ id: "guest", name: "Гость", role: "OWNER", orgId: "guest-org" }));
-          localStorage.setItem("isGuest", "true");
-          localStorage.removeItem("activeLocationId");
-          localStorage.removeItem("guest_workspace");
-          localStorage.removeItem("guest_db");
-          localStorage.removeItem("guest_db_version");
-          localStorage.removeItem("guest_shifts");
-          localStorage.removeItem("guestEmailAttached");
-          window.location.reload();
-        }
-      }
-    };
-    initGuest();
-  }, [token]);
-
-  useEffect(() => {
     if (hydrated && token) {
       useOrganization.getState().fetch();
     }
   }, [hydrated, token]);
 
-  if (!hydrated && token) return null;
+  if (!hydrated) return null;
 
   return (
     <BrowserRouter>
@@ -122,11 +116,11 @@ export default function App() {
       
       <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-slate-500">Загрузка...</div>}>
         <Routes>
-          <Route path="/login" element={token ? <Navigate to="/" replace /> : <LoginPage />} />
-          <Route path="/calc" element={token ? <Navigate to="/weeks" replace /> : <CalculatorPage />} />
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/info" element={<LandingPage />} />
-          <Route path="/welcome" element={token ? <Navigate to="/" replace /> : <Navigate to="/info" replace />} />
+          <Route path="/login" element={<LoginRoute />} />
+          <Route path="/calc" element={<CalcRoute />} />
+          <Route path="/" element={<HomeRoute />} />
+          <Route path="/info" element={<InfoRoute />} />
+          <Route path="/welcome" element={<Navigate to="/" replace />} />
           
           <Route path="/blog" element={<BlogPage />} />
           <Route path="/blog/:slug" element={<BlogArticlePage />} />

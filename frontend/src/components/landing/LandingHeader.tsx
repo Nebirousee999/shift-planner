@@ -9,7 +9,7 @@ const NAV_LINKS = [
   { href: "#faq", label: "Вопросы" },
 ];
 
-export default function LandingHeader() {
+export default function LandingHeader({ onStartGuest }: { onStartGuest?: (source: string) => void }) {
   const navigate = useNavigate();
   const { pathname } = useLocation(); // <-- Добавили
   const [scrolled, setScrolled] = useState(false);
@@ -24,12 +24,13 @@ export default function LandingHeader() {
 
   const goRegister = () => {
     setMobileOpen(false);
-    navigate("/login?mode=register");
+    if (onStartGuest) {
+      onStartGuest("header");
+    } else {
+      navigate("/login?mode=register");
+    }
   };
-  const goLogin = () => {
-    setMobileOpen(false);
-    navigate("/login");
-  };
+  
 
   // Обновленная функция скролла
   const scrollTo = (href: string) => {
@@ -86,17 +87,12 @@ export default function LandingHeader() {
 
         {/* Десктоп-кнопки */}
         <div className="hidden md:flex items-center gap-2">
-          <button
-            onClick={goLogin}
-            className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-xl transition-colors"
-          >
-            Войти
-          </button>
+          
           <button
             onClick={goRegister}
             className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-xl hover:bg-brand-700 transition-colors shadow-sm hover:shadow"
           >
-            Попробовать бесплатно
+            Попробовать бесплатно и без регистрации
             <ArrowRight className="w-4 h-4" />
           </button>
         </div>
@@ -125,17 +121,12 @@ export default function LandingHeader() {
               </button>
             ))}
             <div className="pt-3 border-t border-slate-100 space-y-2">
-              <button
-                onClick={goLogin}
-                className="w-full px-3 py-2.5 text-sm font-medium text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-50"
-              >
-                Войти
-              </button>
+              
               <button
                 onClick={goRegister}
                 className="w-full px-3 py-2.5 text-sm font-medium bg-brand-600 text-white rounded-xl hover:bg-brand-700"
               >
-                Попробовать бесплатно
+                Попробовать бесплатно и без регистрации
               </button>
             </div>
           </div>

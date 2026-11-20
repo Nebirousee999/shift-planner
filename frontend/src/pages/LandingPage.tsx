@@ -84,15 +84,35 @@ export default function LandingPage() {
     setInteractions((n) => n + 1);
   };
 
-  const handleRegisterClick = (source: string) => {
+  const handleRegisterClick = async (source: string, target: string = "/") => {
     trackEvent("CTA_click", { source });
-    navigate("/login?mode=register");
+    if (localStorage.getItem("isGuest") === "true" && localStorage.getItem("token")) {
+      window.location.href = target;
+      return;
+    }
+    try {
+      const { api } = await import("../api/client");
+      const { data } = await api.post("/auth/guest-seed");
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+      localStorage.setItem("isGuest", "true");
+      localStorage.removeItem("activeLocationId");
+      localStorage.removeItem("guest_workspace");
+      localStorage.removeItem("guest_db");
+      localStorage.removeItem("guest_db_version");
+      localStorage.removeItem("guest_shifts");
+      localStorage.removeItem("guestEmailAttached");
+      window.location.href = target;
+    } catch (e) {
+      console.error("Ошибка создания гостевой сессии:", e);
+      navigate("/login?mode=register");
+    }
   };
 
   return (
     <div className="min-h-screen bg-white">
       <TopBar />
-      <LandingHeader />
+      <LandingHeader onStartGuest={handleRegisterClick} />
 
       <main>
         {/* 1. Hero (Мгновенная загрузка) */}
@@ -258,7 +278,7 @@ export default function LandingPage() {
         <Reveal><ForWhom /></Reveal>
         <Reveal><ProblemSolution /></Reveal>
         <Reveal><HowItWorks /></Reveal>
-        <Reveal><PricingSection /></Reveal>
+        <Reveal><PricingSection onStartGuest={handleRegisterClick} /></Reveal>
         <Reveal><FAQSection /></Reveal>
         
         {/* 5. Финальный CTA */}
@@ -277,7 +297,7 @@ export default function LandingPage() {
             className="inline-flex items-center gap-2 px-5 py-3 bg-brand-600 text-white rounded-full shadow-xl shadow-brand-500/30 hover:bg-brand-700 text-sm font-semibold transition-all"
           >
             <Sparkles className="w-4 h-4" />
-            Попробовать бесплатно
+            Начать бесплатно
           </button>
         </div>
       )}

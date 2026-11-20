@@ -78,7 +78,7 @@ const PLANS: Plan[] = [
 
 const formatPrice = (n: number) => new Intl.NumberFormat("ru-RU").format(n);
 
-export default function PricingSection() {
+export default function PricingSection({ onStartGuest }: { onStartGuest?: (source: string, target?: string) => void }) {
   const navigate = useNavigate();
   const [yearly, setYearly] = useState(false);
   const [contactOpen, setContactOpen] = useState(false);
@@ -90,15 +90,24 @@ export default function PricingSection() {
       return;
     }
     if (plan.id === "free") {
-      navigate("/login?mode=register");
+      if (onStartGuest) {
+        onStartGuest("pricing_free", "/"); // Ведём на главную
+      } else {
+        navigate("/login?mode=register");
+      }
       return;
     }
 
     const token = localStorage.getItem("token");
     if (!token) {
-      // 💾 Сохраняем намерение купить — после регистрации проведём к оплате
-      sessionStorage.setItem("pendingCheckout", JSON.stringify({ plan: plan.id, yearly }));
-      navigate("/login?mode=register");
+      if (onStartGuest) {
+        // 💾 Создаём гостя и ведём прямо в кошелёк
+        sessionStorage.setItem("pendingCheckout", JSON.stringify({ plan: plan.id, yearly }));
+        onStartGuest("pricing_pro", "/wallet"); 
+      } else {
+        sessionStorage.setItem("pendingCheckout", JSON.stringify({ plan: plan.id, yearly }));
+        navigate("/login?mode=register");
+      }
       return;
     }
 

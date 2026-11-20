@@ -27,7 +27,7 @@ export default function FinalCTA({ onCtaClick }: Props) {
               onClick={onCtaClick}
               className="inline-flex items-center gap-2 px-8 py-4 bg-white text-brand-700 rounded-xl hover:bg-slate-100 text-base font-semibold shadow-lg transition-all"
             >
-              Создать аккаунт
+              Начать бесплатно
               <ArrowRight className="w-4 h-4" />
             </button>
 
