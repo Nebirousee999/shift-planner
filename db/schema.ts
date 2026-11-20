@@ -72,7 +72,7 @@ export const employmentTypeEnum = pgEnum("employment_type", ["GPH", "SHTAT"]);
 
 // ─── USERS ─────────────────────────────────────────────
 export const users = pgTable("users", {
-  color: text("color").default("#3B82F6"),
+  //color: text("color").default("#3B82F6"),
   id: uuid("id").primaryKey().defaultRandom(),
   orgId: uuid("org_id")
     .references(() => organizations.id, { onDelete: "cascade" })

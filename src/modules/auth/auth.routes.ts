@@ -117,8 +117,20 @@ export async function authRoutes(app: FastifyInstance) {
                 role: user.role,
             });
             return { user, token };
-        } catch (e) {
-            app.log.error("❌ /login: реальная ошибка (не пароль):", e);
+        } catch (e: any) {
+            if (e?.message === "INVALID_CREDENTIALS") {
+                app.log.warn({ email: parsed.data.email }, "login: INVALID_CREDENTIALS");
+                return reply.code(401).send({ error: "Неверный email или пароль" });
+            }
+            app.log.error({
+                err: {
+                    name: e?.name,
+                    message: e?.message,
+                    stack: e?.stack,
+                    code: e?.code,
+                    detail: e?.detail,
+                },
+            }, "login: unexpected error");
             return reply.code(401).send({ error: "Неверный email или пароль" });
         }
     });

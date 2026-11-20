@@ -25,10 +25,12 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401 && localStorage.getItem("isGuest") === "true") {
+    const url = (error.config?.url || "");
+    const isAuthRequest = url.includes("/auth/");
+    if (error.response?.status === 401 && localStorage.getItem("isGuest") === "true" && !isAuthRequest) {
       localStorage.setItem("token", "guest-mock");
       localStorage.setItem("user", JSON.stringify({ id: "guest", name: "Гость", role: "OWNER", orgId: "guest-org" }));
-    } else if (error.response?.status === 401) {
+    } else if (error.response?.status === 401 && !isAuthRequest) {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
       // Жесткий редирект убран, чтобы не выкидывать с лендинга на логин
@@ -46,8 +48,9 @@ api.interceptors.request.use((config) => {
   const isInvalidToken = !token || token === "undefined" || token === "null" || token === "guest-mock";
   if (isInvalidToken) {
     const url = config.url || "";
-    // Не подменяем адаптер для создания гостевой сессии — запрос должен уйти на реальный сервер
-    if (url.includes("/auth/guest-seed") && token !== "guest-mock") {
+    // Auth-запросы (логин, регистрация, сброс пароля, привязка email) ВСЕГДА идут в реальную сеть.
+    // Иначе из гостевого режима невозможно выйти и войти в реальный аккаунт.
+    if (url.includes("/auth/")) {
       return config;
     }
     const method = config.method?.toUpperCase();

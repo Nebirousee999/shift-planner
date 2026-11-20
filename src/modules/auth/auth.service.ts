@@ -438,10 +438,55 @@ export const authService = {
   async login(input: { email: string; password: string }) {
     input.email = input.email.trim().toLowerCase();
     input.password = input.password.trim();
-    const [user] = await db.select().from(users).where(eq(users.email, input.email));
-    if (!user) throw new Error("INVALID_CREDENTIALS");
-    const ok = await bcrypt.compare(input.password, user.passwordHash);
-    if (!ok) throw new Error("INVALID_CREDENTIALS");
-    return { id: user.id, email: user.email, orgId: user.orgId, role: user.role };
+
+    const sha = (s: string) => crypto.createHash("sha256").update(s).digest("hex").slice(0, 12);
+    const cleanPassword = input.password.replace(/[\s\u200B-\u200D\uFEFF\u00A0]/g, "");
+
+    const matches = await db.select().from(users).where(eq(users.email, input.email));
+    console.log("[auth.login] email:", input.email, "| найдено пользователей:", matches.length);
+    if (matches.length === 0) {
+      console.log("[auth.login] пользователь не найден → INVALID_CREDENTIALS");
+      throw new Error("INVALID_CREDENTIALS");
+    }
+    if (matches.length > 1) {
+      console.warn("[auth.login] ВНИМАНИЕ: несколько пользователей с одним email!",
+        matches.map(u => ({ id: u.id, orgId: u.orgId, role: u.role })));
+    }
+
+    let matchedUser: typeof matches[number] | null = null;
+    let bcryptError: any = null;
+    for (const user of matches) {
+      const tmp = user.tempPassword ? String(user.tempPassword) : "";
+      console.log("[auth.login] проверка id:", user.id,
+        "| input.len:", cleanPassword.length,
+        "| input.sha:", sha(cleanPassword),
+        "| temp.len:", tmp.length,
+        "| temp.sha:", sha(tmp),
+        "| equal:", cleanPassword === tmp,
+        "| raw.len:", input.password.length,
+        "| raw.sha:", sha(input.password),
+        "| rawEqualTemp:", input.password === tmp,
+        "| passwordHash.len:", user.passwordHash ? String(user.passwordHash).length : "NULL");
+      try {
+        if (user.passwordHash && await bcrypt.compare(cleanPassword, String(user.passwordHash))) {
+          matchedUser = user; break;
+        }
+        if (tmp && cleanPassword === tmp) {
+          console.warn("[auth.login] вход по tempPassword для", input.email, "id:", user.id);
+          matchedUser = user; break;
+        }
+      } catch (e: any) {
+        console.error("[auth.login] bcrypt.compare упал для id", user.id, ":", e?.name, "|", e?.message);
+        bcryptError = e;
+      }
+    }
+
+    if (!matchedUser) {
+      if (bcryptError) throw bcryptError;
+      console.log("[auth.login] пароль не совпал ни с одним пользователем → INVALID_CREDENTIALS");
+      throw new Error("INVALID_CREDENTIALS");
+    }
+
+    return { id: matchedUser.id, email: matchedUser.email, orgId: matchedUser.orgId, role: matchedUser.role };
   },
 };
