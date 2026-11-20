@@ -154,7 +154,10 @@ export default function NavBar() {
 
   const handleLogout = () => {
     logout();
-    navigate("/login");
+    // Не уводим на /login: после выхода пользователь попадает в гостевой режим.
+    // App.initGuest (эффект на token) создаст гостевую сессию и перезагрузит страницу;
+    // а мы заранее уходим с приватной страницы, чтобы не рендерить её с user=null.
+    navigate("/");
   };
 
   const focusEmailInput = () => {

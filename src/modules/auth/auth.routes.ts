@@ -131,7 +131,7 @@ export async function authRoutes(app: FastifyInstance) {
                     detail: e?.detail,
                 },
             }, "login: unexpected error");
-            return reply.code(401).send({ error: "Неверный email или пароль" });
+            return reply.code(500).send({ error: "Ошибка входа. Попробуйте позже." });
         }
     });
 }

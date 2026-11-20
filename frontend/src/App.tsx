@@ -79,12 +79,14 @@ export default function App() {
           localStorage.setItem("token", data.token);
           localStorage.setItem("user", JSON.stringify(data.user));
           localStorage.setItem("isGuest", "true");
+          localStorage.removeItem("guestEmailAttached");
           window.location.reload();
         } catch (e) {
           console.error("Ошибка создания гостевой сессии:", e);
           localStorage.setItem("token", "guest-mock");
           localStorage.setItem("user", JSON.stringify({ id: "guest", name: "Гость", role: "OWNER", orgId: "guest-org" }));
           localStorage.setItem("isGuest", "true");
+          localStorage.removeItem("guestEmailAttached");
           window.location.reload();
         }
       }

@@ -1,88 +1,166 @@
 // superpatch.mjs
-import fs from 'fs';
-import path from 'path';
-import crypto from 'crypto';
+// Задача: после "Выйти" пользователь должен попасть СРАЗУ в гостевой режим:
+//   - без перехода на /login
+//   - с видимым жёлтым баннером (guestEmailAttached должен быть сброшен)
+//   - без кнопок "Профиль"/"Выйти" (isGuest="true", emailAttached="false")
+//
+// Правки:
+//  1) store/auth.ts :: logout()   — очищает guestEmailAttached и ставит isGuest="true"
+//  2) store/auth.ts :: login()    — реальный вход снимает isGuest/guestEmailAttached
+//  3) store/auth.ts :: register() — то же для регистрации
+//  4) components/NavBar.tsx       — handleLogout навигейтит на "/" вместо "/login"
+//  5) App.tsx :: initGuest        — дополнительно чистит guestEmailAttached (страховка)
+//
+// Скрипт идемпотентен: повторный запуск ничего не сломает.
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const servicePath = path.join(process.cwd(), 'src/modules/auth/auth.service.ts');
-let content = fs.readFileSync(servicePath, 'utf8');
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const oldLogin = `  async login(input: { email: string; password: string }) {
-    input.email = input.email.trim().toLowerCase();
-    input.password = input.password.trim();
+const patches = [
+  {
+    file: "frontend/src/store/auth.ts",
+    description: "logout→guest: сброс guestEmailAttached + isGuest=true; login/register→real: снять флаги",
+    replacements: [
+      {
+        // 1) logout(): после очистки token/user добавить очистку guest-флагов
+        from: `  logout: () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    localStorage.removeItem("support_session_token"); // Очищаем сессию чата`,
+        to: `  logout: () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    localStorage.removeItem("support_session_token"); // Очищаем сессию чата
 
-    const matches = await db.select().from(users).where(eq(users.email, input.email));`;
+    // После выхода пользователь попадает в гостевой режим:
+    //  - снимаем guestEmailAttached, чтобы снова показать жёлтый баннер привязки почты
+    //  - ставим isGuest=true, чтобы NavBar сразу скрыл "Профиль"/"Выйти"
+    //    (guest-seed в App.tsx подтвердит и перезагрузит страницу)
+    localStorage.removeItem("guestEmailAttached");
+    localStorage.setItem("isGuest", "true");`,
+      },
+      {
+        // 2) login(): после успешного входа снять guest-флаги
+        from: `      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+      // Сбрасываем старую организацию (если пользователь до этого был другой)
+      resetOrganizationStore();
+      set({ user: data.user, token: data.token, loading: false });
+      return true;`,
+        to: `      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+      // Вошли как реальный пользователь — больше не гость
+      localStorage.removeItem("isGuest");
+      localStorage.removeItem("guestEmailAttached");
+      // Сбрасываем старую организацию (если пользователь до этого был другой)
+      resetOrganizationStore();
+      set({ user: data.user, token: data.token, loading: false });
+      return true;`,
+      },
+      {
+        // 3) register(): то же
+        from: `      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+      resetOrganizationStore();
+      set({ user: data.user, token: data.token, loading: false });
+      return true;`,
+        to: `      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+      // Регистрация — это реальный пользователь, не гость
+      localStorage.removeItem("isGuest");
+      localStorage.removeItem("guestEmailAttached");
+      resetOrganizationStore();
+      set({ user: data.user, token: data.token, loading: false });
+      return true;`,
+      },
+    ],
+  },
+  {
+    file: "frontend/src/components/NavBar.tsx",
+    description: "logout не уводит на /login, а сразу ведёт в гостевую зону",
+    replacements: [
+      {
+        from: `  const handleLogout = () => {
+    logout();
+    navigate("/login");
+  };`,
+        to: `  const handleLogout = () => {
+    logout();
+    // Не уводим на /login: после выхода пользователь попадает в гостевой режим.
+    // App.initGuest (эффект на token) создаст гостевую сессию и перезагрузит страницу;
+    // а мы заранее уходим с приватной страницы, чтобы не рендерить её с user=null.
+    navigate("/");
+  };`,
+      },
+    ],
+  },
+  {
+    file: "frontend/src/App.tsx",
+    description: "initGuest: страховочно сбрасывать guestEmailAttached (чтобы баннер снова показывался)",
+    replacements: [
+      {
+        // try-ветка
+        from: `          const { data } = await api.post("/auth/guest-seed");
+          localStorage.setItem("token", data.token);
+          localStorage.setItem("user", JSON.stringify(data.user));
+          localStorage.setItem("isGuest", "true");
+          window.location.reload();`,
+        to: `          const { data } = await api.post("/auth/guest-seed");
+          localStorage.setItem("token", data.token);
+          localStorage.setItem("user", JSON.stringify(data.user));
+          localStorage.setItem("isGuest", "true");
+          localStorage.removeItem("guestEmailAttached");
+          window.location.reload();`,
+      },
+      {
+        // catch-ветка
+        from: `          localStorage.setItem("token", "guest-mock");
+          localStorage.setItem("user", JSON.stringify({ id: "guest", name: "Гость", role: "OWNER", orgId: "guest-org" }));
+          localStorage.setItem("isGuest", "true");
+          window.location.reload();`,
+        to: `          localStorage.setItem("token", "guest-mock");
+          localStorage.setItem("user", JSON.stringify({ id: "guest", name: "Гость", role: "OWNER", orgId: "guest-org" }));
+          localStorage.setItem("isGuest", "true");
+          localStorage.removeItem("guestEmailAttached");
+          window.location.reload();`,
+      },
+    ],
+  },
+];
 
-const newLogin = `  async login(input: { email: string; password: string }) {
-    input.email = input.email.trim().toLowerCase();
-    input.password = input.password.trim();
+let total = 0;
+let applied = 0;
 
-    const sha = (s: string) => crypto.createHash("sha256").update(s).digest("hex").slice(0, 12);
-    const cleanPassword = input.password.replace(/[\\s\\u200B-\\u200D\\uFEFF\\u00A0]/g, "");
+for (const p of patches) {
+  const fullPath = path.join(__dirname, p.file);
+  if (!fs.existsSync(fullPath)) {
+    console.error(`[SKIP] файл не найден: ${p.file}`);
+    continue;
+  }
+  console.log(`\n── ${p.file} — ${p.description}`);
 
-    const matches = await db.select().from(users).where(eq(users.email, input.email));`;
+  let content = fs.readFileSync(fullPath, "utf8");
+  const original = content;
 
-if (!content.includes(oldLogin)) {
-  console.error('❌ auth.service.ts: не найден блок login (проверьте, что предыдущие патчи применены).');
-  process.exit(1);
+  for (const r of p.replacements) {
+    total++;
+    if (content.includes(r.from)) {
+      content = content.split(r.from).join(r.to);
+      applied++;
+      console.log(`  [OK]   ${r.from.slice(0, 70).replace(/\n/g, "\\n")}...`);
+    } else {
+      console.warn(`  [WARN] не найдено: ${r.from.slice(0, 70).replace(/\n/g, "\\n")}...`);
+    }
+  }
+
+  if (content !== original) {
+    fs.writeFileSync(fullPath, content, "utf8");
+    console.log(`  [SAVE] записано`);
+  } else {
+    console.log(`  [NOOP] без изменений`);
+  }
 }
-content = content.replace(oldLogin, newLogin);
 
-// Меняем логику проверки: чистим от невидимых символов, логируем sha
-const oldCheck = `    let matchedUser: typeof matches[number] | null = null;
-    let bcryptError: any = null;
-    for (const user of matches) {
-      console.log("[auth.login] проверка id:", user.id,
-        "| passwordHash тип:", typeof user.passwordHash,
-        "| passwordHash длина:", user.passwordHash ? String(user.passwordHash).length : "NULL",
-        "| tempPassword длина:", user.tempPassword ? String(user.tempPassword).length : "NULL",
-        "| orgId:", user.orgId);
-      try {
-        if (user.passwordHash && await bcrypt.compare(input.password, String(user.passwordHash))) {
-          matchedUser = user; break;
-        }
-        if (user.tempPassword && input.password === user.tempPassword) {
-          console.warn("[auth.login] вход по tempPassword для", input.email, "id:", user.id);
-          matchedUser = user; break;
-        }
-      } catch (e: any) {
-        console.error("[auth.login] bcrypt.compare упал для id", user.id, ":", e?.name, "|", e?.message);
-        bcryptError = e;
-      }
-    }`;
-
-const newCheck = `    let matchedUser: typeof matches[number] | null = null;
-    let bcryptError: any = null;
-    for (const user of matches) {
-      const tmp = user.tempPassword ? String(user.tempPassword) : "";
-      console.log("[auth.login] проверка id:", user.id,
-        "| input.len:", cleanPassword.length,
-        "| input.sha:", sha(cleanPassword),
-        "| temp.len:", tmp.length,
-        "| temp.sha:", sha(tmp),
-        "| equal:", cleanPassword === tmp,
-        "| raw.len:", input.password.length,
-        "| raw.sha:", sha(input.password),
-        "| rawEqualTemp:", input.password === tmp,
-        "| passwordHash.len:", user.passwordHash ? String(user.passwordHash).length : "NULL");
-      try {
-        if (user.passwordHash && await bcrypt.compare(cleanPassword, String(user.passwordHash))) {
-          matchedUser = user; break;
-        }
-        if (tmp && cleanPassword === tmp) {
-          console.warn("[auth.login] вход по tempPassword для", input.email, "id:", user.id);
-          matchedUser = user; break;
-        }
-      } catch (e: any) {
-        console.error("[auth.login] bcrypt.compare упал для id", user.id, ":", e?.name, "|", e?.message);
-        bcryptError = e;
-      }
-    }`;
-
-if (!content.includes(oldCheck)) {
-  console.error('❌ auth.service.ts: не найден блок проверки в login.');
-  process.exit(1);
-}
-content = content.replace(oldCheck, newCheck);
-
-fs.writeFileSync(servicePath, content, 'utf8');
-console.log('✅ auth.service.ts: login теперь чистит невидимые символы и логирует sha введённого/сохранённого пароля.');
+console.log(`\nИтого: применено ${applied} из ${total} фрагментов.`);

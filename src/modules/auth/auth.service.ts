@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { createHash } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { isValidRealEmail } from "../../utils/email-validator.js";
 import { eq, and } from "drizzle-orm";
@@ -439,7 +441,7 @@ export const authService = {
     input.email = input.email.trim().toLowerCase();
     input.password = input.password.trim();
 
-    const sha = (s: string) => crypto.createHash("sha256").update(s).digest("hex").slice(0, 12);
+    const sha = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 12);
     const cleanPassword = input.password.replace(/[\s\u200B-\u200D\uFEFF\u00A0]/g, "");
 
     const matches = await db.select().from(users).where(eq(users.email, input.email));
