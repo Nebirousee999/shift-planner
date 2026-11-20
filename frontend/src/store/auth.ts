@@ -69,6 +69,9 @@ export const useAuth = create<AuthState>((set) => ({
       });
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
+      // Реальный вход — снимаем гостевые флаги
+      localStorage.removeItem("isGuest");
+      localStorage.removeItem("guestEmailAttached");
       // Сбрасываем старую организацию (если пользователь до этого был другой)
       resetOrganizationStore();
       set({ user: data.user, token: data.token, loading: false });
@@ -86,6 +89,9 @@ export const useAuth = create<AuthState>((set) => ({
       const { data } = await api.post<AuthResponse>("/auth/register", payload);
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
+      // Реальный вход — снимаем гостевые флаги
+      localStorage.removeItem("isGuest");
+      localStorage.removeItem("guestEmailAttached");
       resetOrganizationStore();
       set({ user: data.user, token: data.token, loading: false });
       return true;
@@ -100,6 +106,8 @@ export const useAuth = create<AuthState>((set) => ({
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     localStorage.removeItem("support_session_token"); // Очищаем сессию чата
+    localStorage.removeItem("guestEmailAttached");
+    localStorage.setItem("isGuest", "true");
     
     // Сбрасываем кэш организации и пользователей, чтобы при следующем входе
     // виджеты и таблицы не показывали данные предыдущего аккаунта

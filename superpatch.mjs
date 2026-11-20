@@ -1,166 +1,128 @@
 // superpatch.mjs
-// Задача: после "Выйти" пользователь должен попасть СРАЗУ в гостевой режим:
-//   - без перехода на /login
-//   - с видимым жёлтым баннером (guestEmailAttached должен быть сброшен)
-//   - без кнопок "Профиль"/"Выйти" (isGuest="true", emailAttached="false")
+// Задача: после "Выйти" пользователь попадает в гостевой режим
+//   - с видимым жёлтым баннером (guestEmailAttached удалён)
+//   - без кнопок "Профиль"/"Выйти" (isGuest = "true")
+//   - при реальном login/register гостевые флаги снимаются
 //
-// Правки:
-//  1) store/auth.ts :: logout()   — очищает guestEmailAttached и ставит isGuest="true"
-//  2) store/auth.ts :: login()    — реальный вход снимает isGuest/guestEmailAttached
-//  3) store/auth.ts :: register() — то же для регистрации
-//  4) components/NavBar.tsx       — handleLogout навигейтит на "/" вместо "/login"
-//  5) App.tsx :: initGuest        — дополнительно чистит guestEmailAttached (страховка)
+// Что делает скрипт:
+//   - Патчит ТОЛЬКО auth.ts, только login() и register().
+//   - logout() не трогает (там уже стоят сброс guestEmailAttached и isGuest="true").
+//   - Находит присвоение localStorage.setItem("user", JSON.stringify(data.user));
+//     и вставляет ПОСЛЕ него снятие guest-флагов.
+//   - Устойчив к CRLF/LF (Windows/Unix), к отступам и комментариям.
+//   - Идемпотентен: повторный запуск ничего не сломает.
 //
-// Скрипт идемпотентен: повторный запуск ничего не сломает.
+// Запуск:  node superpatch.mjs
+
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const file = "frontend/src/store/auth.ts";
+const fullPath = path.join(__dirname, file);
 
-const patches = [
+if (!fs.existsSync(fullPath)) {
+  console.error(`[FATAL] файл не найден: ${file}`);
+  console.error(`        ожидался путь: ${fullPath}`);
+  process.exit(1);
+}
+
+let content = fs.readFileSync(fullPath, "utf8");
+const original = content;
+
+// Определяем стиль переносов строк в файле
+const eol = content.includes("\r\n") ? "\r\n" : "\n";
+console.log(
+  `[INFO] line ending в файле: ${eol === "\r\n" ? "CRLF" : "LF"}`,
+);
+
+// ─────────────────────────────────────────────────────────────
+// Патчим login() и register().
+// Единственный надёжный маркер — однострочное присвоение user.
+// ─────────────────────────────────────────────────────────────
+const userSetRe =
+  /(localStorage\.setItem\("user", JSON\.stringify\(data\.user\)\);)/g;
+
+let applied = 0;
+
+content = content.replace(userSetRe, (match, _p1, offset, full) => {
+  // Смотрим 200 символов вперёд: если там уже есть removeItem("isGuest") —
+  // значит этот блок уже пропатчен, пропускаем (идемпотентность).
+  const after = full.slice(offset + match.length, offset + match.length + 200);
+  if (after.includes('localStorage.removeItem("isGuest")')) {
+    return match;
+  }
+
+  applied++;
+  return (
+    match +
+    eol +
+    '      // Реальный вход — снимаем гостевые флаги' +
+    eol +
+    '      localStorage.removeItem("isGuest");' +
+    eol +
+    '      localStorage.removeItem("guestEmailAttached");'
+  );
+});
+
+if (content !== original) {
+  fs.writeFileSync(fullPath, content, "utf8");
+  console.log(`[SAVE] ${file} — вставлено блоков: ${applied}`);
+} else {
+  console.log(`[NOOP] изменений нет (всё уже пропатчено или маркер не найден)`);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Проверка результата
+// ─────────────────────────────────────────────────────────────
+console.log("\n── Проверка auth.ts ──");
+
+const checks = [
   {
-    file: "frontend/src/store/auth.ts",
-    description: "logout→guest: сброс guestEmailAttached + isGuest=true; login/register→real: снять флаги",
-    replacements: [
-      {
-        // 1) logout(): после очистки token/user добавить очистку guest-флагов
-        from: `  logout: () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    localStorage.removeItem("support_session_token"); // Очищаем сессию чата`,
-        to: `  logout: () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    localStorage.removeItem("support_session_token"); // Очищаем сессию чата
-
-    // После выхода пользователь попадает в гостевой режим:
-    //  - снимаем guestEmailAttached, чтобы снова показать жёлтый баннер привязки почты
-    //  - ставим isGuest=true, чтобы NavBar сразу скрыл "Профиль"/"Выйти"
-    //    (guest-seed в App.tsx подтвердит и перезагрузит страницу)
-    localStorage.removeItem("guestEmailAttached");
-    localStorage.setItem("isGuest", "true");`,
-      },
-      {
-        // 2) login(): после успешного входа снять guest-флаги
-        from: `      localStorage.setItem("token", data.token);
-      localStorage.setItem("user", JSON.stringify(data.user));
-      // Сбрасываем старую организацию (если пользователь до этого был другой)
-      resetOrganizationStore();
-      set({ user: data.user, token: data.token, loading: false });
-      return true;`,
-        to: `      localStorage.setItem("token", data.token);
-      localStorage.setItem("user", JSON.stringify(data.user));
-      // Вошли как реальный пользователь — больше не гость
-      localStorage.removeItem("isGuest");
-      localStorage.removeItem("guestEmailAttached");
-      // Сбрасываем старую организацию (если пользователь до этого был другой)
-      resetOrganizationStore();
-      set({ user: data.user, token: data.token, loading: false });
-      return true;`,
-      },
-      {
-        // 3) register(): то же
-        from: `      localStorage.setItem("token", data.token);
-      localStorage.setItem("user", JSON.stringify(data.user));
-      resetOrganizationStore();
-      set({ user: data.user, token: data.token, loading: false });
-      return true;`,
-        to: `      localStorage.setItem("token", data.token);
-      localStorage.setItem("user", JSON.stringify(data.user));
-      // Регистрация — это реальный пользователь, не гость
-      localStorage.removeItem("isGuest");
-      localStorage.removeItem("guestEmailAttached");
-      resetOrganizationStore();
-      set({ user: data.user, token: data.token, loading: false });
-      return true;`,
-      },
-    ],
+    label: "logout(): isGuest = 'true'",
+    re: /localStorage\.setItem\("isGuest",\s*"true"\)/g,
+    expectMin: 1,
   },
   {
-    file: "frontend/src/components/NavBar.tsx",
-    description: "logout не уводит на /login, а сразу ведёт в гостевую зону",
-    replacements: [
-      {
-        from: `  const handleLogout = () => {
-    logout();
-    navigate("/login");
-  };`,
-        to: `  const handleLogout = () => {
-    logout();
-    // Не уводим на /login: после выхода пользователь попадает в гостевой режим.
-    // App.initGuest (эффект на token) создаст гостевую сессию и перезагрузит страницу;
-    // а мы заранее уходим с приватной страницы, чтобы не рендерить её с user=null.
-    navigate("/");
-  };`,
-      },
-    ],
+    label: "guestEmailAttached удаляется (logout + login/register)",
+    re: /localStorage\.removeItem\("guestEmailAttached"\)/g,
+    expectMin: 2,
   },
   {
-    file: "frontend/src/App.tsx",
-    description: "initGuest: страховочно сбрасывать guestEmailAttached (чтобы баннер снова показывался)",
-    replacements: [
-      {
-        // try-ветка
-        from: `          const { data } = await api.post("/auth/guest-seed");
-          localStorage.setItem("token", data.token);
-          localStorage.setItem("user", JSON.stringify(data.user));
-          localStorage.setItem("isGuest", "true");
-          window.location.reload();`,
-        to: `          const { data } = await api.post("/auth/guest-seed");
-          localStorage.setItem("token", data.token);
-          localStorage.setItem("user", JSON.stringify(data.user));
-          localStorage.setItem("isGuest", "true");
-          localStorage.removeItem("guestEmailAttached");
-          window.location.reload();`,
-      },
-      {
-        // catch-ветка
-        from: `          localStorage.setItem("token", "guest-mock");
-          localStorage.setItem("user", JSON.stringify({ id: "guest", name: "Гость", role: "OWNER", orgId: "guest-org" }));
-          localStorage.setItem("isGuest", "true");
-          window.location.reload();`,
-        to: `          localStorage.setItem("token", "guest-mock");
-          localStorage.setItem("user", JSON.stringify({ id: "guest", name: "Гость", role: "OWNER", orgId: "guest-org" }));
-          localStorage.setItem("isGuest", "true");
-          localStorage.removeItem("guestEmailAttached");
-          window.location.reload();`,
-      },
-    ],
+    label: "isGuest удаляется (login + register)",
+    re: /localStorage\.removeItem\("isGuest"\)/g,
+    expectMin: 2,
   },
 ];
 
-let total = 0;
-let applied = 0;
-
-for (const p of patches) {
-  const fullPath = path.join(__dirname, p.file);
-  if (!fs.existsSync(fullPath)) {
-    console.error(`[SKIP] файл не найден: ${p.file}`);
-    continue;
-  }
-  console.log(`\n── ${p.file} — ${p.description}`);
-
-  let content = fs.readFileSync(fullPath, "utf8");
-  const original = content;
-
-  for (const r of p.replacements) {
-    total++;
-    if (content.includes(r.from)) {
-      content = content.split(r.from).join(r.to);
-      applied++;
-      console.log(`  [OK]   ${r.from.slice(0, 70).replace(/\n/g, "\\n")}...`);
-    } else {
-      console.warn(`  [WARN] не найдено: ${r.from.slice(0, 70).replace(/\n/g, "\\n")}...`);
-    }
-  }
-
-  if (content !== original) {
-    fs.writeFileSync(fullPath, content, "utf8");
-    console.log(`  [SAVE] записано`);
-  } else {
-    console.log(`  [NOOP] без изменений`);
-  }
+let allOk = true;
+for (const c of checks) {
+  const n = (content.match(c.re) || []).length;
+  const ok = n >= c.expectMin;
+  if (!ok) allOk = false;
+  console.log(`  ${ok ? "✓" : "✗"} ${c.label}  (встреч: ${n}, нужно ≥${c.expectMin})`);
 }
 
-console.log(`\nИтого: применено ${applied} из ${total} фрагментов.`);
+// Дополнительно: показать фрагменты login()/register(), чтобы визуально убедиться
+console.log("\n── Фрагменты вокруг setItem(\"user\") ──");
+const showRe =
+  /localStorage\.setItem\("user", JSON\.stringify\(data\.user\)\);[\s\S]{0,260}?resetOrganizationStore\(\);/g;
+const fragments = content.match(showRe) || [];
+if (fragments.length === 0) {
+  console.log("  (не найдено ни одного блока login/register)");
+} else {
+  fragments.forEach((frag, i) => {
+    console.log(`  --- блок #${i + 1} ---`);
+    console.log(
+      frag
+        .split("\n")
+        .map((l) => "    " + l)
+        .join("\n"),
+    );
+  });
+}
+
+console.log(
+  "\n" + (allOk ? "ВСЁ ОК — можно проверять в браузере" : "ЕСТЬ ПРОБЛЕМЫ — см. ✗ выше"),
+);
