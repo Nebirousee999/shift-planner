@@ -58,21 +58,23 @@ api.interceptors.request.use((config) => {
 
     if (url.includes("/dashboard")) {
       mockData = {
-        currentWeek: { id: "week1", orgId: "org1", locationId: "loc1", weekStartDate: new Date().toISOString().slice(0,10), status: "DRAFT", publishedAt: null, createdAt: new Date().toISOString(), shifts: [] },
+        currentWeek: { id: GUEST_SEED.weekId, orgId: GUEST_SEED.organization.id, locationId: GUEST_SEED.locations[0].id, weekStartDate: GUEST_SEED.weekStart, status: "PUBLISHED", publishedAt: new Date().toISOString(), createdAt: new Date().toISOString(), shifts: GUEST_SEED.shifts },
         weekTimeEntries: [],
-        users: [{ id: "u1", name: "Алексей", position: "Бариста", hourlyRate: "300", color: "#3B82F6", locationIds: ["loc1"], areaIds: [] }]
+        users: GUEST_SEED.employees
       };
     } else if (url.includes("/schedule-weeks") && method === "GET") {
       const parts = url.split("/");
-      if (parts.length > 2 && parts[parts.length - 1] !== "schedule-weeks") {
-        mockData = { id: parts[parts.length - 1], orgId: "org1", locationId: "loc1", weekStartDate: new Date().toISOString().slice(0,10), status: "DRAFT", publishedAt: null, createdAt: new Date().toISOString(), shifts: [] };
+      const isDetail = parts.length > 2 && parts[parts.length - 1] !== "schedule-weeks";
+      const weekData = { id: GUEST_SEED.weekId, orgId: GUEST_SEED.organization.id, locationId: GUEST_SEED.locations[0].id, weekStartDate: GUEST_SEED.weekStart, status: "PUBLISHED", publishedAt: new Date().toISOString(), createdAt: new Date().toISOString(), shifts: GUEST_SEED.shifts };
+      if (isDetail) {
+        mockData = { ...weekData, id: parts[parts.length - 1] };
       } else {
-        mockData = [{ id: "week1", orgId: "org1", locationId: "loc1", weekStartDate: new Date().toISOString().slice(0,10), status: "DRAFT", publishedAt: null, createdAt: new Date().toISOString(), shifts: [] }];
+        mockData = [weekData];
       }
     } else if (url.includes("/shift-templates")) {
-      mockData = [{ id: "t1", orgId: "org1", name: "Дневная", startTime: "09:00", endTime: "18:00", color: "#3B82F6" }];
+      mockData = GUEST_SEED.templates;
     } else if (url.includes("/locations")) {
-      mockData = [{ id: "loc1", orgId: "org1", name: "Основная", address: null, city: null, phone: null, isArchived: false, createdAt: new Date().toISOString() }];
+      mockData = GUEST_SEED.locations;
     } else // Если это POST (создание сотрудника)
       if (url.includes("/users") && method === "POST") {
         const body = typeof config.data === 'string' ? JSON.parse(config.data) : (config.data || {});
@@ -102,12 +104,12 @@ api.interceptors.request.use((config) => {
 
       // Если это GET (список сотрудников)
       if (url.includes("/users") && method === "GET") {
-      mockData = [{ id: "u1", name: "Алексей", position: "Бариста", hourlyRate: "300", color: "#3B82F6", locationIds: ["loc1"], areaIds: [] }];
+      mockData = GUEST_SEED.employees;
     } else if (url.includes("/organization")) {
-        return Promise.resolve({ data: { id: "org1", name: "Моя компания", tariffId: "pro", positionHeaderOpacity: 70, positionRowOpacity: 20 } });
+        return Promise.resolve({ data: GUEST_SEED.organization });
       }
       if (url.includes("/me")) {
-      mockData = { id: "guest", name: "Владелец", role: "OWNER", email: "guest@test.ru", orgId: "org1" };
+      mockData = GUEST_SEED.me;
     } else if (url.includes("/count")) {
       mockData = { count: 0 };
     } else if (method === "GET" && mockData === null) {

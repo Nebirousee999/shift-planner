@@ -119,13 +119,19 @@ export const scheduleWeeksService = {
       byUser.get(s.userId)!.push(s);
     }
 
+    const userRecords = await db
+      .select({ id: users.id, name: users.name })
+      .from(users)
+      .where(eq(users.orgId, orgId));
+    const userNameMap = new Map(userRecords.map((u) => [u.id, u.name]));
+
     for (const [userId, userShifts] of byUser) {
       const totalHours = userShifts.reduce(
         (sum, s) => sum + hoursBetween(s.startTime, s.endTime),
         0
       );
       if (totalHours > 40) {
-        violations.push(`Сотрудник ${userId}: ${totalHours.toFixed(1)} ч/нед (макс. 40 ч)`);
+        violations.push(`Сотрудник ${userNameMap.get(userId) || "Неизвестный"}: ${totalHours.toFixed(1)} ч/нед (макс. 40 ч)`);
       }
       for (let i = 0; i < userShifts.length; i++) {
         for (let j = i + 1; j < userShifts.length; j++) {
@@ -141,7 +147,7 @@ export const scheduleWeeksService = {
           };
           if (shiftsOverlap(a, b)) {
             violations.push(
-              `Сотрудник ${userId}: пересекающиеся смены ${a.date} ${a.start}-${a.end} и ${b.start}-${b.end}`
+              `Сотрудник ${userNameMap.get(userId) || "Неизвестный"}: пересекающиеся смены ${a.date} ${a.start}-${a.end} и ${b.start}-${b.end}`
             );
           }
         }

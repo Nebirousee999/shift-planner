@@ -42,9 +42,9 @@ const WEEK_START = getMonday();
 const WEEK_ID = "guest-week-1";
 
 const EMPLOYEES: GuestEmployee[] = [
-  { id: "gu1", name: "Алексей Смирнов", email: "alexey@guest.ru", phone: "+7 999 100-00-01", role: "OWNER", position: "Бариста", hourlyRate: "400", createdAt: new Date().toISOString(), locationIds: ["gloc1"], areaIds: [], paymentType: "HOURLY", employmentType: "SHTAT", color: "#3B82F6", tempPassword: null, isTempPasswordSent: false },
-  { id: "gu2", name: "Мария Петрова", email: "maria@guest.ru", phone: "+7 999 100-00-02", role: "EMPLOYEE", position: "Повар", hourlyRate: "450", createdAt: new Date().toISOString(), locationIds: ["gloc1"], areaIds: [], paymentType: "HOURLY", employmentType: "SHTAT", color: "#10B981", tempPassword: null, isTempPasswordSent: false },
-  { id: "gu3", name: "Иван Кузнецов", email: "ivan@guest.ru", phone: "+7 999 100-00-03", role: "EMPLOYEE", position: "Официант", hourlyRate: "350", createdAt: new Date().toISOString(), locationIds: ["gloc2"], areaIds: [], paymentType: "HOURLY", employmentType: "SHTAT", color: "#F59E0B", tempPassword: null, isTempPasswordSent: false },
+  { id: "gu1", name: "Анна Смирнова", email: "anna@guest.ru", phone: null, role: "OWNER", position: "Повар", hourlyRate: "450", createdAt: new Date().toISOString(), locationIds: ["gloc1"], areaIds: [], paymentType: "HOURLY", employmentType: "SHTAT", color: "#F59E0B", tempPassword: null, isTempPasswordSent: false },
+  { id: "gu2", name: "Дмитрий Козлов", email: "dmitry@guest.ru", phone: null, role: "EMPLOYEE", position: "Кассир", hourlyRate: "400", createdAt: new Date().toISOString(), locationIds: ["gloc1"], areaIds: [], paymentType: "HOURLY", employmentType: "SHTAT", color: "#F59E0B", tempPassword: null, isTempPasswordSent: false },
+  { id: "gu3", name: "Елена Волкова", email: "elena@guest.ru", phone: null, role: "EMPLOYEE", position: "Официант", hourlyRate: "350", createdAt: new Date().toISOString(), locationIds: ["gloc1"], areaIds: [], paymentType: "HOURLY", employmentType: "SHTAT", color: "#8B5CF6", tempPassword: null, isTempPasswordSent: false },
 ];
 
 const LOCATIONS: GuestLocation[] = [
@@ -53,42 +53,47 @@ const LOCATIONS: GuestLocation[] = [
 ];
 
 const TEMPLATES: GuestTemplate[] = [
-  { id: "gt1", name: "Утренняя", startTime: "08:00", endTime: "16:00", color: "#F59E0B" },
-  { id: "gt2", name: "Вечерняя", startTime: "16:00", endTime: "23:00", color: "#8B5CF6" },
+  { id: "gt1", name: "Дневная", startTime: "08:00", endTime: "16:00", color: "#F59E0B" },
+  { id: "gt2", name: "Вечерняя", startTime: "16:00", endTime: "22:00", color: "#8B5CF6" },
 ];
 
 const SHIFTS: GuestShift[] = [];
 function pushShift(dayOffset: number, userId: string, templateId: string) {
-  const tpl = TEMPLATES.find((t) => t.id === templateId)!;
-  SHIFTS.push({
-    id: `gshift-${SHIFTS.length + 1}`,
-    weekId: WEEK_ID,
-    templateId,
-    userId,
-    shiftDate: addDays(WEEK_START, dayOffset),
-    startTime: tpl.startTime,
-    endTime: tpl.endTime,
-    status: "SCHEDULED",
-  });
+  const tpl = TEMPLATES.find((t) => t.id === templateId)!;
+  SHIFTS.push({
+    id: `gshift-${SHIFTS.length + 1}`,
+    weekId: WEEK_ID,
+    templateId,
+    userId,
+    shiftDate: addDays(WEEK_START, dayOffset),
+    startTime: tpl.startTime,
+    endTime: tpl.endTime,
+    status: "SCHEDULED",
+  });
 }
-// Пн
-pushShift(0, "gu1", "gt1");
-pushShift(0, "gu2", "gt2");
-// Вт
-pushShift(1, "gu2", "gt1");
-pushShift(1, "gu3", "gt2");
-// Ср
-pushShift(2, "gu1", "gt1");
-pushShift(2, "gu3", "gt2");
-// Чт
-pushShift(3, "gu1", "gt1");
-pushShift(3, "gu2", "gt2");
-// Пт
-pushShift(4, "gu2", "gt1");
-pushShift(4, "gu3", "gt2");
-// Сб
-pushShift(5, "gu1", "gt2");
-pushShift(5, "gu3", "gt1");
+// Пн (16)
+pushShift(0, "gu1", "gt1"); // Анна 08-16
+pushShift(0, "gu3", "gt2"); // Елена 16-22
+// Вт (17)
+pushShift(1, "gu1", "gt1"); // Анна 08-16
+pushShift(1, "gu2", "gt2"); // Дмитрий 16-22
+// Ср (18)
+pushShift(2, "gu2", "gt1"); // Дмитрий 08-16
+pushShift(2, "gu3", "gt1"); // Елена 08-16
+pushShift(2, "gu1", "gt2"); // Анна 16-22
+// Чт (19)
+pushShift(3, "gu3", "gt1"); // Елена 08-16
+// Пт (20)
+pushShift(4, "gu1", "gt1"); // Анна 08-16
+pushShift(4, "gu2", "gt1"); // Дмитрий 08-16
+pushShift(4, "gu3", "gt2"); // Елена 16-22
+// Сб (21)
+pushShift(5, "gu2", "gt1"); // Дмитрий 08-16
+pushShift(5, "gu3", "gt2"); // Елена 16-22
+// Вс (22)
+pushShift(6, "gu1", "gt1"); // Анна 08-16
+pushShift(6, "gu2", "gt1"); // Дмитрий 08-16
+pushShift(6, "gu3", "gt2"); // Елена 16-22
 
 export const GUEST_SEED = {
   weekId: WEEK_ID,
@@ -104,7 +109,7 @@ export const GUEST_SEED = {
     trialEndsAt: null, tariffExpiresAt: null, requireShiftApproval: true, disciplineEditWindowDays: 3,
   },
   me: {
-    id: "gu1", name: "Алексей Смирнов", role: "OWNER", email: "alexey@guest.ru", orgId: "gorg",
-    position: "Бариста", hourlyRate: "400", phone: "+7 999 100-00-01", createdAt: new Date().toISOString(),
-  },
+    id: "gu1", name: "Анна Смирнова", role: "OWNER", email: "anna@guest.ru", orgId: "gorg",
+    position: "Повар", hourlyRate: "450", phone: null, createdAt: new Date().toISOString(),
+  },
 };

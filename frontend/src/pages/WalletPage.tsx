@@ -192,7 +192,7 @@ export default function WalletPage() {
       if (body?.error) {
         if (status === 409 || String(body.error).includes("занят")) {
           setEmailError(false);
-          setEmailMode("taken");
+          setEmailMode("login");
         } else {
           setEmailError(true);
           alert(body.error);
@@ -215,7 +215,7 @@ export default function WalletPage() {
       const err = e.response?.data?.error ?? e.response?.data?.message ?? e.message ?? "";
       if (e.response?.status === 409 || String(err).includes("занят")) {
         setEmailError(false);
-        setEmailMode("taken");
+        setEmailMode("login");
         return;
       }
       setEmailError(true);
@@ -236,6 +236,7 @@ export default function WalletPage() {
       localStorage.setItem("guestEmailAttached", "true");
       localStorage.setItem("isGuest", "false");
       localStorage.setItem("token", tk);
+      localStorage.removeItem("activeLocationId");
       if (pendingAction?.type === "trial") {
         await fetch(`${import.meta.env.VITE_API_URL ?? "http://localhost:3001/api"}/payments/start-trial`, {
           method: "POST",
@@ -291,17 +292,11 @@ export default function WalletPage() {
 
   const guestEmailPanel = (
     <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-left">
-      {emailMode === "taken" && (
-        <p className="text-sm text-amber-900 mb-2">
-          Эта почта уже зарегистрирована. Введите другую почту ниже — или, если это ваша почта,{" "}
-          <button type="button" onClick={() => { setEmailMode("login"); setLoginPassword(""); setLoginError(false); }} className="underline font-semibold hover:no-underline">
-            введите пароль
-          </button>{" "}
-          и войдите в свой профиль.
-        </p>
-      )}
       {emailMode === "login" && (
         <div className="mb-3">
+          <p className="text-sm text-amber-900 mb-2">
+            Эта почта уже зарегистрирована. Введите другую почту ниже — или, если это ваша почта, введите пароль и войдите в свой профиль.
+          </p>
           {sentNote && (
             <p className="text-sm text-emerald-700 mb-2">Пароль выслан на почту — проверьте входящие и введите его ниже.</p>
           )}

@@ -1441,6 +1441,7 @@ function EditUserModal({
 }) {
   const [name, setName] = useState(user.name);
   const [email, setEmail] = useState(user.email);
+  const isTempEmail = user.email?.includes("@shift-planner.ru");
   const [role, setRole] = useState<"OWNER" | "MANAGER" | "EMPLOYEE">(user.role);
   const [position, setPosition] = useState(user.position ?? "");
   const [hourlyRate, setHourlyRate] = useState(user.hourlyRate ?? "");
@@ -1544,7 +1545,9 @@ function EditUserModal({
             </div>
             <div>
               <h3 className="font-semibold text-slate-900">Редактировать сотрудника</h3>
-              <p className="text-xs text-slate-500 mt-0.5">{user.email}</p>
+              <p className={`text-xs mt-0.5 ${isTempEmail ? "text-red-500 font-medium" : "text-slate-500"}`}>
+        {isTempEmail ? "Введите реальную почту для доступа" : user.email}
+      </p>
             </div>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100">
@@ -1567,7 +1570,14 @@ function EditUserModal({
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">Email (для доступа к сайту)</label>
-                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                <input
+                  type="email"
+                  value={email === user.email && isTempEmail ? "" : email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder={isTempEmail ? "Введите реальную почту для доступа..." : ""}
+                  className={isTempEmail && email === user.email ? "placeholder:text-red-500 placeholder:font-medium !border-red-300" : ""}
+                  required
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">

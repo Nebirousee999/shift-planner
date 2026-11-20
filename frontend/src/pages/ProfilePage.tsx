@@ -109,7 +109,7 @@ export default function ProfilePage() {
     taxRate: "13",
     positionHeaderOpacity: 70,
     positionRowOpacity: 20,
-    requireShiftApproval: true,
+    requireShiftApproval: false, // PATCHED: requireShiftApproval default false
     disciplineEditWindowDays: 3,
   });
   const [orgEditing, setOrgEditing] = useState(false);
@@ -165,7 +165,7 @@ export default function ProfilePage() {
             taxRate: (o as any).taxRate ?? "13",
             positionHeaderOpacity: (o as any).positionHeaderOpacity ?? 70,
             positionRowOpacity: (o as any).positionRowOpacity ?? 20,
-            requireShiftApproval: (o as any).requireShiftApproval ?? true,
+            requireShiftApproval: (o as any).requireShiftApproval ?? false,
             disciplineEditWindowDays: (o as any).disciplineEditWindowDays ?? 3,
           });
           useOrganization.getState().set(o);
@@ -1483,7 +1483,8 @@ function PasswordsSection() {
                         <input
                           value={editEmail}
                           onChange={(e) => setEditEmail(e.target.value)}
-                          className="!py-1 !px-2 !text-xs !w-48"
+                          placeholder={u.email?.includes("@shift-planner.ru") ? "Введите реальную почту..." : ""}
+                          className={`!py-1 !px-2 !text-xs !w-48 ${!editEmail && u.email?.includes("@shift-planner.ru") ? "placeholder:text-red-500 placeholder:font-medium !border-red-300" : ""}`}
                           autoFocus
                           onKeyDown={(e) => {
                             if (e.key === "Enter") handleSaveEmail(u.id);
@@ -1499,11 +1500,17 @@ function PasswordsSection() {
                       </div>
                     ) : (
                       <div className="flex items-center gap-2 group">
-                        <span className="select-all">{u.email}</span>
+                        {u.email && u.email.includes("@shift-planner.ru") ? (
+                          <span className="text-red-500 font-medium text-[13px] leading-tight block max-w-[220px]">
+                            Введите реальную почту для доступа сотрудника в профиль
+                          </span>
+                        ) : (
+                          <span className="select-all">{u.email}</span>
+                        )}
                         <button
                           onClick={() => {
                             setEditingId(u.id);
-                            setEditEmail(u.email);
+                            setEditEmail(u.email?.includes("@shift-planner.ru") ? "" : u.email);
                           }}
                           className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded transition-all"
                           title="Редактировать email"

@@ -361,7 +361,7 @@ export const authService = {
       const monday = typeof mondayRaw === "string" ? mondayRaw : mondayRaw.toISOString().slice(0, 10);
 
       const [week] = await tx.insert(scheduleWeeks).values({
-        orgId: org.id, locationId: loc.id, weekStartDate: monday, status: 'DRAFT',
+        orgId: org.id, locationId: loc.id, weekStartDate: monday, status: 'PUBLISHED', publishedAt: new Date(),
       }).returning();
 
       const addDays = (dateStr, n) => {
@@ -369,13 +369,20 @@ export const authService = {
       };
 
       const shiftPlan = [
-        { day: 0, emp: 0, tpl: 0 }, { day: 0, emp: 1, tpl: 0 }, { day: 0, emp: 2, tpl: 1 },
-        { day: 1, emp: 0, tpl: 0 }, { day: 1, emp: 1, tpl: 1 }, { day: 1, emp: 2, tpl: 1 },
+        // Пн
+        { day: 0, emp: 0, tpl: 0 }, { day: 0, emp: 2, tpl: 1 },
+        // Вт
+        { day: 1, emp: 0, tpl: 0 }, { day: 1, emp: 1, tpl: 1 },
+        // Ср
         { day: 2, emp: 1, tpl: 0 }, { day: 2, emp: 2, tpl: 0 }, { day: 2, emp: 0, tpl: 1 },
-        { day: 3, emp: 2, tpl: 0 }, { day: 3, emp: 0, tpl: 1 }, { day: 3, emp: 1, tpl: 1 },
+        // Чт
+        { day: 3, emp: 2, tpl: 0 },
+        // Пт
         { day: 4, emp: 0, tpl: 0 }, { day: 4, emp: 1, tpl: 0 }, { day: 4, emp: 2, tpl: 1 },
-        { day: 5, emp: 1, tpl: 0 }, { day: 5, emp: 2, tpl: 1 }, { day: 5, emp: 0, tpl: 1 },
-        { day: 6, emp: 0, tpl: 0 }, { day: 6, emp: 1, tpl: 0 }, { day: 6, emp: 2, tpl: 1 },
+        // Сб
+        { day: 5, emp: 1, tpl: 0 }, { day: 5, emp: 2, tpl: 1 },
+        // Вс
+        { day: 6, emp: 0, tpl: 0 }, { day: 6, emp: 1, tpl: 0 }, { day: 6, emp: 2, tpl: 1 }
       ];
 
       await tx.insert(scheduledShifts).values(shiftPlan.map((p) => ({

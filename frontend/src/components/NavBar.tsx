@@ -11,6 +11,7 @@ import { useNotifications } from "../store/notifications";
 import { useOrganization } from "../store/organization";
 import { supportApi } from "../api/support";
 import { api } from "../api/client";
+import { confirmDialog } from "../store/dialogs";
 import { useState, useRef } from "react";
 import LocationSwitcher from "./LocationSwitcher";
 import NotificationBell from "./NotificationBell";
@@ -82,6 +83,11 @@ export default function NavBar() {
   const [showEmailInput, setShowEmailInput] = useState(false);
   const [guestEmail, setGuestEmail] = useState("");
   const [emailError, setEmailError] = useState(false);
+  const [emailMode, setEmailMode] = useState<"input" | "taken" | "login">("input");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState(false);
+  const [sentNote, setSentNote] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const emailInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -154,6 +160,7 @@ export default function NavBar() {
 
   const handleLogout = () => {
     logout();
+    localStorage.removeItem("activeLocationId");
     // Не уводим на /login: после выхода пользователь попадает в гостевой режим.
     // App.initGuest (эффект на token) создаст гостевую сессию и перезагрузит страницу;
     // а мы заранее уходим с приватной страницы, чтобы не рендерить её с user=null.
@@ -162,12 +169,155 @@ export default function NavBar() {
 
   const focusEmailInput = () => {
     setShowEmailInput(true);
+    setEmailMode("input");
+    setLoginPassword("");
+    setLoginError(false);
+    setSentNote(false);
     setTimeout(() => {
       emailInputRef.current?.focus();
     }, 100);
   };
 
   // ─── Сотрудник ──────────────────────────────────────
+  // ─── Логика "занятого" email (как в WalletPage) ────────
+  const handleAttachEmail = async () => {
+    if (!guestEmail.includes("@")) {
+      setEmailError(true);
+      return;
+    }
+    try {
+      const res: any = await api.post("/auth/update-email", { email: guestEmail });
+      const body = res?.data ?? res;
+      const status = res?.status ?? res?.response?.status;
+      if (body?.error) {
+        if (status === 409 || String(body.error).includes("занят")) {
+          setEmailError(false);
+          setEmailMode("login");
+        } else {
+          setEmailError(true);
+          alert(body.error);
+        }
+        return;
+      }
+      localStorage.setItem("guestEmailAttached", "true");
+      setEmailAttached(true);
+      setShowEmailInput(false);
+      setEmailMode("input");
+    } catch (e: any) {
+      const err = e.response?.data?.error ?? e.response?.data?.message ?? "";
+      if (e.response?.status === 409 || String(err).includes("занят")) {
+        setEmailError(false);
+        setEmailMode("login");
+        return;
+      }
+      setEmailError(true);
+      alert(err || "Ошибка привязки почты");
+    }
+  };
+
+  const handleLogin = async () => {
+    try {
+      const res: any = await api.post("/auth/login", {
+        email: guestEmail.trim().toLowerCase(),
+        password: loginPassword.trim(),
+      });
+      const data = res?.data ?? res;
+      const tk = data?.token ?? data?.accessToken;
+      if (!tk || data?.error) {
+        setLoginError(true);
+        return;
+      }
+      localStorage.setItem("guestEmailAttached", "true");
+      localStorage.setItem("isGuest", "false");
+      localStorage.setItem("token", tk);
+      localStorage.removeItem("activeLocationId");
+      window.location.reload();
+    } catch (e: any) {
+      const err = e.response?.data?.error ?? e.response?.data?.message ?? "";
+      if (e.response?.status === 401 || String(err).includes("Неверный")) {
+        setLoginError(true);
+      } else {
+        alert(err || "Ошибка входа");
+      }
+    }
+  };
+
+  const handleResetPassword = async () => {
+    setResetting(true);
+    try {
+      const base = import.meta.env.VITE_API_URL ?? "http://localhost:3001/api";
+      const res = await fetch(`${base}/auth/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: guestEmail.trim().toLowerCase() }),
+      });
+      const data = await res.json().catch(() => null);
+      if (data?.mailSent === false) {
+        alert("Не удалось отправить письмо — смотрите консоль бэкенда.");
+        return;
+      }
+      setSentNote(true);
+      setLoginPassword("");
+      setLoginError(false);
+    } catch (e: any) {
+      console.error("❌ handleResetPassword:", e);
+      alert("Ошибка отправки пароля: " + (e?.message ?? e));
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  const guestEmailPanel = (
+    <div className="mt-2 p-3 bg-white border border-amber-200 rounded-xl text-left w-full">
+      {emailMode === "login" && (
+        <div className="mb-3">
+          <p className="text-sm text-amber-900 mb-2">
+            Эта почта уже зарегистрирована. Введите другую почту ниже — или, если это ваша почта, введите пароль и войдите в свой профиль.
+          </p>
+          {sentNote && (
+            <p className="text-sm text-emerald-700 mb-2">Пароль выслан на почту — проверьте входящие и введите его ниже.</p>
+          )}
+          {loginError && (
+            <p className="text-sm text-rose-600 mb-2">
+              Пароль введен неверно.{" "}
+              <button type="button" onClick={handleResetPassword} disabled={resetting} className="underline font-semibold hover:no-underline">
+                {resetting ? "Отправляем..." : "Восстановить пароль"}
+              </button>
+            </p>
+          )}
+          <div className="flex gap-2">
+            <input
+              type="password"
+              value={loginPassword}
+              onChange={(e) => { setLoginPassword(e.target.value); setLoginError(false); }}
+              placeholder="Пароль"
+              className={`py-1.5 px-3 text-sm w-full max-w-xs rounded-lg bg-white border ${loginError ? "border-red-500 ring-2 ring-red-500/20" : "border-amber-300"}`}
+            />
+            <button onClick={handleLogin} className="px-4 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 transition-colors whitespace-nowrap">
+              Войти
+            </button>
+          </div>
+        </div>
+      )}
+      <p className="text-sm text-amber-900 mb-2">
+        {emailMode === "input" ? "Введите вашу почту, чтобы сохранить данные:" : "Или укажите другую почту:"}
+      </p>
+      <div className="flex gap-2">
+        <input
+          ref={emailInputRef}
+          type="email"
+          value={guestEmail}
+          onChange={(e) => { setGuestEmail(e.target.value); setEmailError(false); }}
+          placeholder="your@email.ru"
+          className={`py-1.5 px-3 text-sm w-full max-w-xs rounded-lg bg-white border ${emailError ? "border-red-500 ring-2 ring-red-500/20" : "border-amber-300"}`}
+        />
+        <button onClick={handleAttachEmail} className="px-4 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 transition-colors whitespace-nowrap">
+          Привязать
+        </button>
+      </div>
+    </div>
+  );
+
   const guestBanner = isGuest && !emailAttached && (
     <div className="bg-amber-50 border-b border-amber-200 w-full shadow-sm">
       <div className="max-w-7xl mx-auto px-4 py-2 flex flex-col items-center justify-center gap-2">
@@ -180,36 +330,7 @@ export default function NavBar() {
             </button>.
           </span>
         </div>
-        {showEmailInput && (
-          <div className="flex items-center gap-2 animate-fade-in pb-1">
-            <input
-              ref={emailInputRef}
-              type="email"
-              value={guestEmail}
-              onChange={(e) => { setGuestEmail(e.target.value); setEmailError(false); }}
-              placeholder="your@email.ru"
-              className={`py-1.5 px-3 text-sm w-64 rounded-lg bg-white border ${emailError ? 'border-red-500 ring-2 ring-red-500/20' : 'border-amber-300'}`}
-            />
-            <button
-              onClick={async () => {
-                if (!guestEmail.includes("@")) { setEmailError(true); return; }
-                try {
-                  await api.post("/auth/update-email", { email: guestEmail });
-                  localStorage.setItem("guestEmailAttached", "true");
-                  setEmailAttached(true);
-                  setShowEmailInput(false);
-                  alert("Почта привязана!");
-                } catch (e: any) {
-                  setEmailError(true);
-                  alert(e.response?.data?.error ?? "Ошибка привязки почты");
-                }
-              }}
-              className="px-4 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 transition-colors"
-            >
-              Привязать
-            </button>
-          </div>
-        )}
+        {showEmailInput && guestEmailPanel}
       </div>
     </div>
   );

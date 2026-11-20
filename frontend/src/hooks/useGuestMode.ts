@@ -6,7 +6,13 @@ export function useGuestMode() {
     // Пытаемся загрузить сохраненный "фейковый домен" из памяти браузера
     const saved = localStorage.getItem("guest_workspace");
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { /* ignore */ }
+      try {
+        const parsed = JSON.parse(saved);
+        // Проверяем, что это новые данные (Анна Смирнова)
+        if (parsed && parsed.employees && parsed.employees[0]?.name === "Анна Смирнова") {
+          return parsed;
+        }
+      } catch (e) { /* ignore */ }
     }
     const seed = GUEST_SEED;
         return {

@@ -3,12 +3,13 @@ import { GUEST_SEED } from "../lib/guestSeed";
 
 // Инициализация пустой базы
 const initDb = () => {
-  if (!localStorage.getItem("guest_db")) {
+  if (!localStorage.getItem("guest_db") || localStorage.getItem("guest_db_version") !== "2") {
+    localStorage.setItem("guest_db_version", "2");
     localStorage.setItem("guest_db", JSON.stringify({
       weeks: [{
         id: GUEST_SEED.weekId,
         weekStartDate: GUEST_SEED.weekStart,
-        status: "DRAFT",
+        status: "PUBLISHED",
         shifts: GUEST_SEED.shifts,
       }],
       users: GUEST_SEED.employees,
@@ -31,9 +32,13 @@ export const guestAdapter: AxiosAdapter = async (config: InternalAxiosRequestCon
   let status = 200;
 
   // 1. Получение недели (GET /weeks/:id)
-  if (url.includes("/weeks/") && method === "get") {
-    data = db.weeks[0];
-  }
+  if (url.includes("/weeks") && method === "get") {
+      if (url.endsWith("/weeks")) {
+        data = [db.weeks[0]];
+      } else {
+        data = db.weeks[0];
+      }
+    }
   // 2. Публикация недели (POST /weeks/:id/publish)
   else if (url.includes("/publish") && method === "post") {
     db.weeks[0].status = "PUBLISHED";

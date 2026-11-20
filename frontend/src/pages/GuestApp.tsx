@@ -14,6 +14,10 @@ export default function GuestApp() {
           localStorage.setItem("token", data.token);
           localStorage.setItem("user", JSON.stringify(data.user));
           localStorage.setItem("isGuest", "true");
+          localStorage.removeItem("guest_workspace");
+          localStorage.removeItem("guest_db");
+          localStorage.removeItem("guest_db_version");
+          localStorage.removeItem("guest_shifts");
           localStorage.removeItem("guestEmailAttached");
           window.location.reload();
         } catch (e) {
@@ -21,6 +25,10 @@ export default function GuestApp() {
           localStorage.setItem("token", "guest-mock");
           localStorage.setItem("user", JSON.stringify({ id: "guest", name: "Гость", role: "OWNER", orgId: "guest-org" }));
           localStorage.setItem("isGuest", "true");
+          localStorage.removeItem("guest_workspace");
+          localStorage.removeItem("guest_db");
+          localStorage.removeItem("guest_db_version");
+          localStorage.removeItem("guest_shifts");
           window.location.reload();
         }
       }
