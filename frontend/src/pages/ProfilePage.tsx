@@ -90,7 +90,7 @@ function initials(name: string): string {
 // ═══════════════════════════════════════════════════
 export default function ProfilePage() {
   const { changePassword, user } = useAuth();
-  const isAdmin = user?.email === import.meta.env.VITE_ADMIN_EMAIL;
+        
   const [profile, setProfile] = useState<MyProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -115,6 +115,10 @@ export default function ProfilePage() {
   const [orgEditing, setOrgEditing] = useState(false);
   const [orgSaving, setOrgSaving] = useState(false);
   const [togglingTime, setTogglingTime] = useState(false);
+
+  const ADMIN_EMAIL = String(import.meta.env.VITE_ADMIN_EMAIL ?? "prihodko999@inbox.ru").trim().toLowerCase();
+  const isAdmin = String(user?.email ?? "").trim().toLowerCase() === ADMIN_EMAIL;
+    
 
   const {
     register,
@@ -268,7 +272,7 @@ export default function ProfilePage() {
                 )}
 
                 {/* 🔥 Кнопка для админа сервиса */}
-                {user?.email === import.meta.env.VITE_ADMIN_EMAIL && (
+                {isAdmin && (
                   <div className="pt-3 mt-3 border-t border-slate-100">
                     <div className="px-3 py-1.5 text-[10px] uppercase tracking-wide font-semibold text-brand-600">
                       Администратор

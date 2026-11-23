@@ -2,6 +2,7 @@ import { useAuth } from "./store/auth";
 import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useOrganization } from "./store/organization";
+import { meApi } from "./api/me";
 
 // Основные страницы (Lazy Loading)
 const LoginPage = lazy(() => import("./pages/LoginPage"));
@@ -101,6 +102,18 @@ export default function App() {
   useEffect(() => {
     if (hydrated && token) {
       useOrganization.getState().fetch();
+      
+      // Автосинхронизация профиля (лечит зависший guest_email)
+      meApi.profile().then(p => {
+        if (p) {
+          const currentUser = useAuth.getState().user;
+          if (currentUser && (currentUser.email !== p.email || currentUser.role !== p.role || currentUser.name !== p.name)) {
+            const newUser = { ...currentUser, email: p.email, role: p.role, name: p.name };
+            useAuth.setState({ user: newUser });
+            localStorage.setItem("user", JSON.stringify(newUser));
+          }
+        }
+      }).catch(() => {});
     }
   }, [hydrated, token]);
 

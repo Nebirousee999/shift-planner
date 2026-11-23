@@ -63,7 +63,8 @@ const CATEGORIES: TabCategory[] = [
   },
 ];
 
-const ADMIN_EMAIL = const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL ?? "prihodko999@inbox.ru"; ?? "prihodko999@inbox.ru";
+const ADMIN_EMAIL = String(import.meta.env.VITE_ADMIN_EMAIL ?? "prihodko999@inbox.ru").trim().toLowerCase();
+const isAdminEmail = (email?: string | null) => String(email ?? "").trim().toLowerCase() === ADMIN_EMAIL;
 
 function isActive(pathname: string, path: string): boolean {
   return pathname === path || pathname.startsWith(path + "/");
@@ -134,9 +135,10 @@ export default function NavBar() {
     };
   }, [user?.email]);
 
-  const isAdmin = user?.role === "OWNER" || user?.role === "MANAGER";
-  // ADMIN_DEBUG — временный лог, удалить после диагностики
-  console.log("[ADMIN_DEBUG] user.email:", JSON.stringify(user?.email), "| ADMIN_EMAIL:", JSON.stringify(ADMIN_EMAIL), "| match:", user?.email === ADMIN_EMAIL);
+  
+  
+    const isAdmin = user?.role === "OWNER" || user?.role === "MANAGER";
+
   const timeTrackingOn = org?.timeTrackingEnabled === true;
 
   const visibleCategories = CATEGORIES.map((cat) => ({
@@ -234,6 +236,7 @@ export default function NavBar() {
       localStorage.setItem("guestEmailAttached", "true");
       localStorage.setItem("isGuest", "false");
       localStorage.setItem("token", tk);
+            if (data?.user) { localStorage.setItem("user", JSON.stringify(data.user)); }
       localStorage.removeItem("activeLocationId");
       window.location.reload();
     } catch (e: any) {
@@ -368,7 +371,7 @@ export default function NavBar() {
           
           <div className="flex items-center gap-2 shrink-0">
             <NotificationBell />
-            {user?.email === ADMIN_EMAIL && (
+            {isAdminEmail(user?.email) && (
               <button onClick={() => navigate("/admin-support")} className="relative flex items-center justify-center p-2 rounded-lg text-sm text-brand-600 bg-brand-50 hover:bg-brand-100 transition-colors" title="Панель поддержки">
                 <MessageSquare className="w-4 h-4" />
                 <Badge value={supportUnread} />
@@ -465,7 +468,7 @@ export default function NavBar() {
             <ListChecks className="w-4 h-4" />
           </button>
           
-          {user?.email === ADMIN_EMAIL && (
+          {isAdminEmail(user?.email) && (
             <button onClick={() => navigate("/admin-support")} className="relative flex items-center justify-center p-2 rounded-lg text-sm text-brand-600 bg-brand-50 hover:bg-brand-100 transition-colors" title="Панель поддержки">
               <MessageSquare className="w-4 h-4" />
               <Badge value={supportUnread} />
