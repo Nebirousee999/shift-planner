@@ -80,7 +80,9 @@ function CalcRoute() {
   const { token, hydrated } = useAuth();
   if (!hydrated) return null;
   const isGuest = localStorage.getItem("isGuest") === "true";
-  if (token && !isGuest) return <Navigate to="/" replace />;
+  // После регистрации с /calc ведём на /weeks, а не на главную,
+  // иначе <Navigate to="/" /> перебивает navigate("/weeks") из CalculatorPage.
+  if (token && !isGuest) return <Navigate to="/weeks" replace />;
   return <CalculatorPage />;
 }
 

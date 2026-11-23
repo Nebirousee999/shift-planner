@@ -30,6 +30,12 @@ export default function GuestRegisterModal({ guestData, onClose }: Props) {
       });
 
       // Сохраняем токен и заходим в систему
+      // Снимаем гостевые флаги и чистим гостевую БД,
+      // чтобы после регистрации не остаться в гостевом режиме.
+      localStorage.removeItem("isGuest");
+      localStorage.removeItem("guestEmailAttached");
+      localStorage.removeItem("guest_db");
+      localStorage.removeItem("guest_workspace");
       login(data.token, data.user);
       
       // Отправляем цель в Метрику (только после успешного сохранения!)

@@ -1,82 +1,66 @@
 // superpatch.mjs
-// Финальный фикс рассинхрона пользователя (guest -> real user) и появление кнопок
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+// Правка: после ввода почты на /calc редирект на /weeks перебивался
+// на "/" компонентом <Navigate to="/" /> из CalcRoute.
+// Меняем цель редиректа CalcRoute с "/" на "/weeks".
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { readFileSync, writeFileSync, existsSync } from "fs";
+import { resolve } from "path";
 
-function patchFile(relPath, patcher) {
-  const full = path.join(__dirname, relPath);
-  if (!fs.existsSync(full)) { console.log(`[SKIP] ${relPath} не найден`); return; }
-  const original = fs.readFileSync(full, "utf8");
-  const isCRLF = original.includes("\r\n");
-  let content = isCRLF ? original.replace(/\r\n/g, "\n") : original;
-  let result;
-  try { result = patcher(content); }
-  catch (e) { console.log(`[ERROR] ${relPath}: ${e.message}`); return; }
-  if (result !== content) {
-    fs.writeFileSync(full, isCRLF ? result.replace(/\n/g, "\r\n") : result, "utf8");
-    console.log(`[SAVE] ${relPath}`);
-  } else {
-    console.log(`[NOOP] ${relPath}`);
+function replaceBlockBetweenAnchors(relPath, startAnchor, endAnchor, newLines) {
+  const filePath = resolve(process.cwd(), relPath);
+  if (!existsSync(filePath)) {
+    console.error(`✗ Файл не найден: ${relPath}`);
+    process.exit(1);
   }
+
+  const raw = readFileSync(filePath, "utf8");
+  const eol = raw.includes("\r\n") ? "\r\n" : "\n";
+  const lines = raw.split(/\r?\n/);
+
+  const startTrimmed = startAnchor.trim();
+  const endTrimmed = endAnchor.trim();
+
+  const startIdx = lines.findIndex((l) => l.trim() === startTrimmed);
+  if (startIdx === -1) {
+    console.error(`✗ Стартовый якорь не найден в ${relPath}: "${startTrimmed}"`);
+    process.exit(1);
+  }
+
+  let endIdx = -1;
+  for (let i = startIdx; i < lines.length; i++) {
+    if (lines[i].trim() === endTrimmed) {
+      endIdx = i;
+      break;
+    }
+  }
+  if (endIdx === -1) {
+    console.error(`✗ Конечный якорь не найден после стартового в ${relPath}: "${endTrimmed}"`);
+    process.exit(1);
+  }
+
+  const indent = lines[startIdx].match(/^\s*/)[0];
+  const replacement = newLines.map((l) => (l ? indent + l : ""));
+
+  lines.splice(startIdx, endIdx - startIdx + 1, ...replacement);
+
+  writeFileSync(filePath, lines.join(eol), "utf8");
+  console.log(`✓ ${relPath} — блок заменён (строки ${startIdx + 1}-${endIdx + 1} → ${replacement.length})`);
 }
 
-// ─── 1. NavBar.tsx ───
-patchFile("frontend/src/components/NavBar.tsx", (out) => {
-  // Удаляем отладочные alert
-  out = out.replace(/setTimeout\(\(\) => \{\s*alert\("NAVBAR DEBUG[^]*?\}, 500\);\n?/g, "");
-  
-  // Фиксим вход: сохраняем пользователя в localStorage
-  const anchor = 'localStorage.setItem("token", tk);';
-  if (out.includes(anchor) && !out.includes('localStorage.setItem("user", JSON.stringify(data.user))')) {
-    out = out.replace(anchor, `${anchor}\n            if (data?.user) { localStorage.setItem("user", JSON.stringify(data.user)); }`);
-    console.log("  [PATCH] NavBar: исправлено сохранение пользователя при входе");
-  }
-  
-  return out;
-});
+replaceBlockBetweenAnchors(
+  "frontend/src/App.tsx",
+  `function CalcRoute() {`,
+  `return <CalculatorPage />;`,
+  [
+    `function CalcRoute() {`,
+    `  const { token, hydrated } = useAuth();`,
+    `  if (!hydrated) return null;`,
+    `  const isGuest = localStorage.getItem("isGuest") === "true";`,
+    `  // После регистрации с /calc ведём на /weeks, а не на главную,`,
+    `  // иначе <Navigate to="/" /> перебивает navigate("/weeks") из CalculatorPage.`,
+    `  if (token && !isGuest) return <Navigate to="/weeks" replace />;`,
+    `  return <CalculatorPage />;`,
+  ]
+);
 
-// ─── 2. ProfilePage.tsx ───
-patchFile("frontend/src/pages/ProfilePage.tsx", (out) => {
-  // Удаляем отладочные alert
-  out = out.replace(/setTimeout\(\(\) => \{\s*alert\("PROFILE DEBUG[^]*?\}, 1000\);\n?/g, "");
-  console.log("  [PATCH] ProfilePage: отладочные окна удалены");
-  return out;
-});
-
-// ─── 3. App.tsx ───
-patchFile("frontend/src/App.tsx", (out) => {
-  // Добавляем импорт meApi, если его нет
-  if (!out.includes("import { meApi }")) {
-    out = out.replace('import { useOrganization } from "./store/organization";', 'import { useOrganization } from "./store/organization";\nimport { meApi } from "./api/me";');
-    console.log("  [PATCH] App.tsx: добавлен импорт meApi");
-  }
-
-  // Добавляем фоновую синхронизацию пользователя с сервером
-  const anchor = 'useOrganization.getState().fetch();\n    }';
-  const syncBlock = `useOrganization.getState().fetch();
-      
-      // Автосинхронизация профиля (лечит зависший guest_email)
-      meApi.profile().then(p => {
-        if (p) {
-          const currentUser = useAuth.getState().user;
-          if (currentUser && (currentUser.email !== p.email || currentUser.role !== p.role || currentUser.name !== p.name)) {
-            const newUser = { ...currentUser, email: p.email, role: p.role, name: p.name };
-            useAuth.setState({ user: newUser });
-            localStorage.setItem("user", JSON.stringify(newUser));
-          }
-        }
-      }).catch(() => {});
-    }`;
-
-  if (out.includes(anchor) && !out.includes("Автосинхронизация профиля")) {
-    out = out.replace(anchor, syncBlock);
-    console.log("  [PATCH] App.tsx: добавлена фоновая синхронизация профиля");
-  }
-
-  return out;
-});
-
-console.log("\n✅ Готово! Перезапустите Vite (Ctrl+C → npm run dev) и обновите страницу.");
+console.log("\nПравка применена успешно.");

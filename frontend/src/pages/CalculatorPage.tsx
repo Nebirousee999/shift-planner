@@ -190,14 +190,16 @@ export default function CalculatorPage() {
       
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
+      // ВАЖНО: снимаем гостевые флаги — иначе пользователь после регистрации
+      // с калькулятора снова попадает в гостевой режим (см. api/client.ts).
+      localStorage.removeItem("isGuest");
+      localStorage.removeItem("guestEmailAttached");
+      localStorage.removeItem("guest_db");
+      localStorage.removeItem("guest_workspace");
       useAuth.setState({ token: data.token, user: data.user, hydrated: true });
       
       trackEvent("calc_register_success");
-      if (data.user?.firstWeekId) {
-        navigate(`/weeks/${data.user.firstWeekId}`);
-      } else {
-        navigate("/weeks");
-      }
+      navigate("/weeks");
     } catch (e: any) {
       const errMsg = e.response?.data?.error ?? "Ошибка сохранения";
       const isEmailTaken = typeof errMsg === "string" && /уже зарегистрирован/i.test(errMsg);
