@@ -6,6 +6,7 @@ export type DashboardUser = {
   name: string;
   hourlyRate: string | null;
   position: string | null;
+  color?: string | null;
 };
 
 export type TimeEntry = {

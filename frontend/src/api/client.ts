@@ -78,35 +78,33 @@ api.interceptors.request.use((config) => {
     } else // Если это POST (создание сотрудника)
       if (url.includes("/users") && method === "POST") {
         const body = typeof config.data === 'string' ? JSON.parse(config.data) : (config.data || {});
-        return Promise.resolve({
-          data: {
-            user: {
-              id: Math.random().toString(),
-              name: body.name || "Новый сотрудник",
-              email: body.email || "new@test.ru",
-              phone: body.phone || null,
-              role: body.role || "EMPLOYEE",
-              position: body.position || null,
-              hourlyRate: body.hourlyRate || null,
-              createdAt: new Date().toISOString(),
-              locationIds: body.locationIds || [],
-              areaIds: body.areaIds || [],
-              paymentType: body.paymentType || "HOURLY",
-              employmentType: body.employmentType || "SHTAT",
-              color: body.color || "#3B82F6",
-              tempPassword: "temp123",
-              isTempPasswordSent: false
-            },
-            tempPassword: "temp123"
-          }
-        });
+        mockData = {
+          user: {
+            id: Math.random().toString(),
+            name: body.name || "Новый сотрудник",
+            email: body.email || "new@test.ru",
+            phone: body.phone || null,
+            role: body.role || "EMPLOYEE",
+            position: body.position || null,
+            hourlyRate: body.hourlyRate || null,
+            createdAt: new Date().toISOString(),
+            locationIds: body.locationIds || [],
+            areaIds: body.areaIds || [],
+            paymentType: body.paymentType || "HOURLY",
+            employmentType: body.employmentType || "SHTAT",
+            color: body.color || "#3B82F6",
+            tempPassword: "temp123",
+            isTempPasswordSent: false
+          },
+          tempPassword: "temp123"
+        };
       }
 
       // Если это GET (список сотрудников)
       if (url.includes("/users") && method === "GET") {
       mockData = GUEST_SEED.employees;
     } else if (url.includes("/organization")) {
-        return Promise.resolve({ data: GUEST_SEED.organization });
+        mockData = GUEST_SEED.organization;
       }
       if (url.includes("/me")) {
       mockData = GUEST_SEED.me;

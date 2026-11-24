@@ -42,7 +42,7 @@ const formatMoney = (n: number) =>
   new Intl.NumberFormat("ru-RU").format(n) + " ₽";
 
 if (typeof window !== "undefined") {
-  const navEntries = performance.getEntriesByType("navigation");
+  const navEntries = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[];
   if (navEntries.length > 0 && navEntries[0].type === "reload") {
     localStorage.removeItem("guest_shifts");
   }

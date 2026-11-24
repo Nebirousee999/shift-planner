@@ -34,15 +34,15 @@ export function useGuestMode() {
     }, [guestData]);
 
   const addGuestEmployee = (emp: any) => {
-    setGuestData((prev) => ({ ...prev, employees: [...prev.employees, emp] }));
+    setGuestData((prev: any) => ({ ...prev, employees: [...prev.employees, emp] }));
   };
 
   const addGuestShift = (shift: any) => {
-    setGuestData((prev) => ({ ...prev, shifts: [...prev.shifts, shift] }));
+    setGuestData((prev: any) => ({ ...prev, shifts: [...prev.shifts, shift] }));
   };
 
   const removeGuestShift = (id: string) => {
-    setGuestData((prev) => ({ ...prev, shifts: prev.shifts.filter((s: any) => s.id !== id) }));
+    setGuestData((prev: any) => ({ ...prev, shifts: prev.shifts.filter((s: any) => s.id !== id) }));
   };
 
   return { guestData, addGuestEmployee, addGuestShift, removeGuestShift };

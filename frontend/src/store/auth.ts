@@ -41,7 +41,7 @@ export const useAuth = create<AuthState>((set) => ({
   hydrate: () => {
     const token = localStorage.getItem("token");
     // Фейковый пользователь для гостя
-    const guestUser = { id: "guest", name: "Гость", role: "OWNER", orgId: "guest-org" };
+    const guestUser: User = { id: "guest", name: "Гость", email: "guest@local", role: "OWNER", orgId: "guest-org" };
     if (!token) {
       set({ token: null, user: guestUser, hydrated: true });
       return;
