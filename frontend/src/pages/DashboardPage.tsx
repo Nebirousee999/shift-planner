@@ -649,7 +649,7 @@ export default function DashboardPage() {
                         ? "#dc2626"
                         : isEnded
                         ? "#cbd5e1"
-                        : shift.userColor || shift.templateColor || "#3b82f6";
+                        : shift.userColor || "#3b82f6";
 
                       return (
                         <div
@@ -706,7 +706,19 @@ export default function DashboardPage() {
 
                             <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-white truncate drop-shadow-md z-20 flex items-center gap-1.5">
                               {isAbsent && <span className="font-bold">{shift.isNoShow ? "ПР" : "НН"}</span>}
-                              <span className={`px-1.5 py-0.5 rounded shadow-sm ${isAbsent ? "opacity-80 font-normal" : "font-semibold"}`} style={{ backgroundColor: shift.pendingTimeOff ? "#d97706" : (shift.templateColor || "#3b82f6") }}>{shift.startTime} – {shift.endTime}</span>
+                              <span 
+      className={`px-1.5 py-0.5 rounded shadow-sm border ${isAbsent ? "opacity-80 font-normal" : "font-semibold"}`} 
+      style={{ 
+        backgroundColor: shift.pendingTimeOff 
+          ? "rgba(217, 119, 6, 0.5)" 
+          : `${shift.templateColor || "#3b82f6"}80`,
+        borderColor: shift.pendingTimeOff 
+          ? "#d97706" 
+          : (shift.templateColor || "#3b82f6")
+      }}
+    >
+      {shift.startTime} – {shift.endTime}
+    </span>
                               {shift.templateName && !shift.pendingTimeOff && (
                                 <span className="opacity-80 font-normal">· {shift.templateName}</span>
                               )}

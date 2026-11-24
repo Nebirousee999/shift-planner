@@ -105,7 +105,7 @@ export const dashboardService = {
     }
 
     const orgUsersData = await db
-      .select({ id: users.id, name: users.name, hourlyRate: users.hourlyRate, position: users.position })
+      .select({ id: users.id, name: users.name, hourlyRate: users.hourlyRate, position: users.position, color: users.color })
       .from(users)
       .where(eq(users.orgId, orgId));
 
