@@ -1314,7 +1314,9 @@ export default function WeekDetailPage() {
                 >
                   {dayShifts.map((s) => {
                     const tpl = templateById(s.templateId);
-                    const color = tpl?.color ?? "#3B82F6";
+                    const userColor = activeUsers.find((u) => u.id === s.userId)?.color;
+                    const color = userColor || tpl?.color || "#3B82F6";
+                    const tplColor = tpl?.color || "#3B82F6";
                     const isDragging = draggingShiftId === s.id;
                     const pendingInc = pendingIncomingByShift.get(s.id);
                     const pendingOut = pendingOutgoingByShift.get(s.id);
@@ -1376,24 +1378,23 @@ export default function WeekDetailPage() {
                           borderLeftColor: activeTimeOff ? "#f59e0b" : color,
                           backgroundColor: activeTimeOff
                             ? "#fef3c7"
-                            : color + "10",
+                            : color + "18",
                         }}
                       >
                         <div className="flex items-center gap-1 font-medium text-slate-900 flex-wrap pr-6">
                           {canEdit && !hasPending && !activeTimeOff && (
                             <GripVertical className="w-3 h-3 text-slate-400 shrink-0" />
                           )}
-                          <Clock
-                            className="w-3 h-3 shrink-0"
+                          <div
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border shadow-sm"
                             style={{
-                              color: hasPending
-                                ? "#B45309"
-                                : activeTimeOff
-                                ? "#B45309"
-                                : color,
+                              backgroundColor: hasPending || activeTimeOff ? "#fef3c7" : tplColor + "25",
+                              borderColor: hasPending || activeTimeOff ? "#f59e0b" : tplColor + "60",
+                              color: hasPending || activeTimeOff ? "#B45309" : tplColor,
                             }}
-                          />
-                          {timeChanged ? (
+                          >
+                            <Clock className="w-3 h-3 shrink-0" />
+                            {timeChanged ? (
                               <>
                                 <span className="line-through text-slate-400">
                                   {s.startTime}–{s.endTime}
@@ -1408,6 +1409,7 @@ export default function WeekDetailPage() {
                                 {s.startTime}–{s.endTime}
                               </span>
                             )}
+                          </div>
                         </div>
                         <div className="flex flex-col mt-0.5">
                             <span className="text-slate-900 font-medium truncate">

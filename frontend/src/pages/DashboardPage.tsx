@@ -190,6 +190,7 @@ export default function DashboardPage() {
           templateId: s.templateId,
           templateName: (s as any).templateName ?? tpl?.name ?? null,
           templateColor: tpl?.color ?? null,
+          userColor: u?.color ?? null,
           latenessMinutes: (s as any).latenessMinutes ?? 0,
           earlyLeaveMinutes: (s as any).earlyLeaveMinutes ?? 0,
           isNoShow: (s as any).isNoShow ?? false,
@@ -648,7 +649,7 @@ export default function DashboardPage() {
                         ? "#dc2626"
                         : isEnded
                         ? "#cbd5e1"
-                        : shift.templateColor || "#3b82f6";
+                        : shift.userColor || shift.templateColor || "#3b82f6";
 
                       return (
                         <div
@@ -705,9 +706,7 @@ export default function DashboardPage() {
 
                             <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-white truncate drop-shadow-md z-20 flex items-center gap-1.5">
                               {isAbsent && <span className="font-bold">{shift.isNoShow ? "ПР" : "НН"}</span>}
-                              <span className={isAbsent ? "opacity-80 font-normal" : "font-medium"}>
-                                {shift.startTime} – {shift.endTime}
-                              </span>
+                              <span className={`px-1.5 py-0.5 rounded shadow-sm ${isAbsent ? "opacity-80 font-normal" : "font-semibold"}`} style={{ backgroundColor: shift.pendingTimeOff ? "#d97706" : (shift.templateColor || "#3b82f6") }}>{shift.startTime} – {shift.endTime}</span>
                               {shift.templateName && !shift.pendingTimeOff && (
                                 <span className="opacity-80 font-normal">· {shift.templateName}</span>
                               )}
