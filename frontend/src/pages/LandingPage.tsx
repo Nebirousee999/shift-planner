@@ -118,8 +118,8 @@ export default function LandingPage() {
         {/* 1. Hero (Мгновенная загрузка) */}
         <HeroSection onCtaClick={() => handleRegisterClick("hero")} />
         <Reveal><TrustBar /></Reveal>
-        <Reveal><SocialProof /></Reveal>
-        <Reveal><FeaturesOverview /></Reveal>
+        <Reveal><div id="reviews"><SocialProof /></div></Reveal>
+        <Reveal><div id="features"><FeaturesOverview /></div></Reveal>
 
         {/* 2. Демо-секции (Отложенная загрузка при скролле) */}
         <Reveal>
@@ -275,11 +275,11 @@ export default function LandingPage() {
         </Reveal>
 
         {/* 4. Информационные секции */}
-        <Reveal><ForWhom /></Reveal>
+        <Reveal><div id="for-whom"><ForWhom /></div></Reveal>
         <Reveal><ProblemSolution /></Reveal>
-        <Reveal><HowItWorks /></Reveal>
-        <Reveal><PricingSection onStartGuest={handleRegisterClick} /></Reveal>
-        <Reveal><FAQSection /></Reveal>
+        <Reveal><div id="how-it-works"><HowItWorks /></div></Reveal>
+        <Reveal><div id="pricing"><PricingSection onStartGuest={handleRegisterClick} /></div></Reveal>
+        <Reveal><div id="faq"><FAQSection /></div></Reveal>
         
         {/* 5. Финальный CTA */}
         <Reveal>

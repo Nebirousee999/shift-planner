@@ -200,6 +200,7 @@ export default function WalletPage() {
         return;
       }
       localStorage.setItem("guestEmailAttached", "true");
+      trackEvent("wallet_attach_email");
       setIsGuest(false);
       setShowEmailInput(false);
       setEmailMode("input");

@@ -1,7 +1,9 @@
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, CheckCircle2, AlertTriangle, Quote } from "lucide-react";
 import LandingHeader from "../components/landing/LandingHeader";
 import LandingFooter from "../components/landing/LandingFooter";
+import { api } from "../api/client";
+import { trackEvent } from "../lib/metrika";
 
 // Общие классы для красивых статей
 const pClass = "text-slate-600 leading-relaxed mb-5 text-base sm:text-lg";
@@ -9,11 +11,36 @@ const h2Class = "text-2xl font-bold text-slate-900 mt-12 mb-4";
 const h3Class = "text-xl font-semibold text-slate-900 mt-8 mb-3";
 const ulClass = "list-disc pl-6 mb-6 space-y-2 text-slate-600 text-base sm:text-lg marker:text-brand-500";
 const olClass = "list-decimal pl-6 mb-6 space-y-2 text-slate-600 text-base sm:text-lg marker:text-brand-500 font-medium";
-const linkClass = "text-brand-600 font-medium hover:text-brand-700 underline decoration-brand-200 underline-offset-4 transition-colors";
+const linkClass = "text-brand-600 font-medium hover:text-brand-700 underline decoration-brand-200 underline-offset-4 transition-colors cursor-pointer";
 const imgClass = "w-full h-64 sm:h-80 object-cover rounded-2xl shadow-sm mb-8 mt-4 border border-slate-100";
 
 export default function BlogArticlePage() {
   const { slug } = useParams<{ slug: string }>();
+  const navigate = useNavigate();
+
+  const handleRegisterClick = async (source: string, target: string = "/weeks") => {
+    trackEvent("CTA_click", { source });
+    if (localStorage.getItem("isGuest") === "true" && localStorage.getItem("token")) {
+      window.location.href = target;
+      return;
+    }
+    try {
+      const { data } = await api.post("/auth/guest-seed");
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+      localStorage.setItem("isGuest", "true");
+      localStorage.removeItem("activeLocationId");
+      localStorage.removeItem("guest_workspace");
+      localStorage.removeItem("guest_db");
+      localStorage.removeItem("guest_db_version");
+      localStorage.removeItem("guest_shifts");
+      localStorage.removeItem("guestEmailAttached");
+      window.location.href = target;
+    } catch (e) {
+      console.error("Ошибка создания гостевой сессии:", e);
+      navigate("/login?mode=register");
+    }
+  };
 
   const renderContent = () => {
     switch (slug) {
@@ -57,7 +84,7 @@ export default function BlogArticlePage() {
 
             <h2 className={h2Class}>Как автоматизировать процесс?</h2>
             <p className={pClass}>
-              Рисовать таблицы в Excel — прошлый век. В <Link to="/login?mode=register" className={linkClass}>Планировщике смен</Link> вы просто выбираете шаблон 2/2, система сама расставляет сотрудников. А если кто-то уходит в отпуск или заболевает, календарь перестраивается в один клик.
+              Рисовать таблицы в Excel — прошлый век. В <span onClick={() => handleRegisterClick("article_text_link")} className={linkClass}>Планировщике смен</span> вы просто выбираете шаблон 2/2, система сама расставляет сотрудников. А если кто-то уходит в отпуск или заболевает, календарь перестраивается в один клик.
             </p>
           </>
         );
@@ -69,7 +96,6 @@ export default function BlogArticlePage() {
               Сменный график — это не просто способ распределить людей по времени. Это юридический документ, который должен строго соответствовать Трудовому кодексу. За грубые нарушения инспекторы могут выписать штраф до 50 000 рублей.
             </p>
 
-            {/* Картинка с заглушкой */}
             <div className="relative mb-8 mt-4">
               <img src="/blog/tk-rf.svg" alt="ТК РФ" className={imgClass} onError={(e) => { e.currentTarget.style.display='none'; e.currentTarget.nextElementSibling?.classList.remove('hidden'); }} />
               <div className="hidden w-full h-64 sm:h-80 bg-gradient-to-r from-slate-200 to-slate-100 rounded-2xl flex items-center justify-center text-slate-700 font-bold text-xl">Трудовой кодекс</div>
@@ -99,7 +125,7 @@ export default function BlogArticlePage() {
 
             <h2 className={h2Class}>Как не получить штраф?</h2>
             <p className={pClass}>
-              Составляя график, вы должны быть на 100% уверены в расчетах. В <Link to="/login?mode=register" className={linkClass}>нашем сервисе</Link> встроен автоматический валидатор. Он не даст опубликовать график, если в нем есть нарушения: например, если сотрудник работает две смены подряд или не получает 42 часа отдыха в неделю.
+              Составляя график, вы должны быть на 100% уверены в расчетах. В <span onClick={() => handleRegisterClick("article_text_link")} className={linkClass}>нашем сервисе</span> встроен автоматический валидатор. Он не даст опубликовать график, если в нем есть нарушения: например, если сотрудник работает две смены подряд или не получает 42 часа отдыха в неделю.
             </p>
           </>
         );
@@ -111,7 +137,6 @@ export default function BlogArticlePage() {
               Многие компании до сих пор используют Excel для ведения графиков смен. Это неудивительно: он кажется бесплатным и знакомым. Но давайте посчитаем реальную стоимость этого «бесплатного» метода.
             </p>
 
-            {/* Картинка с заглушкой */}
             <div className="relative mb-8 mt-4">
               <img src="/blog/excel.svg" alt="Excel" className={imgClass} onError={(e) => { e.currentTarget.style.display='none'; e.currentTarget.nextElementSibling?.classList.remove('hidden'); }} />
               <div className="hidden w-full h-64 sm:h-80 bg-gradient-to-r from-emerald-100 to-green-50 rounded-2xl flex items-center justify-center text-emerald-800 font-bold text-xl">Таблицы Excel</div>
@@ -137,7 +162,7 @@ export default function BlogArticlePage() {
 
             <h2 className={h2Class}>Переходите на современные сервисы</h2>
             <p className={pClass}>
-              Потратьте 10 минут на освоение <Link to="/login?mode=register" className={linkClass}>Планировщика смен</Link>, и вы сэкономите 4 часа работы управляющего каждую неделю. Экспорт табеля, расчет переработок, отправка уведомлений — всё это займет пару кликов.
+              Потратьте 10 минут на освоение <span onClick={() => handleRegisterClick("article_text_link")} className={linkClass}>Планировщика смен</span>, и вы сэкономите 4 часа работы управляющего каждую неделю. Экспорт табеля, расчет переработок, отправка уведомлений — всё это займет пару кликов.
             </p>
           </>
         );
@@ -149,7 +174,6 @@ export default function BlogArticlePage() {
               Кадровый учет — штука строгая. Если вам нужно изменить график работы сотрудника (даже по его собственной просьбе), устной договоренности недостаточно. Нужен официальный документ.
             </p>
 
-            {/* Картинка с заглушкой */}
             <div className="relative mb-8 mt-4">
               <img src="/blog/zayavlenie.svg" alt="Документы" className={imgClass} onError={(e) => { e.currentTarget.style.display='none'; e.currentTarget.nextElementSibling?.classList.remove('hidden'); }} />
               <div className="hidden w-full h-64 sm:h-80 bg-gradient-to-r from-amber-100 to-orange-50 rounded-2xl flex items-center justify-center text-amber-800 font-bold text-xl">Кадровые документы</div>
@@ -183,7 +207,7 @@ export default function BlogArticlePage() {
 
             <h2 className={h2Class}>Как сэкономить время на оформлении?</h2>
             <p className={pClass}>
-              Если нужно быстро сформировать приказ об изменении графика или уведомление, воспользуйтесь шаблонами в разделе «Документы» внутри <Link to="/login?mode=register" className={linkClass}>Планировщика смен</Link>. Данные сотрудников подставятся автоматически.
+              Если нужно быстро сформировать приказ об изменении графика или уведомление, воспользуйтесь шаблонами в разделе «Документы» внутри <span onClick={() => handleRegisterClick("article_text_link")} className={linkClass}>Планировщика смен</span>. Данные сотрудников подставятся автоматически.
             </p>
           </>
         );
@@ -227,9 +251,9 @@ export default function BlogArticlePage() {
           <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-2xl pointer-events-none" />
           <h3 className="text-2xl font-bold text-white mb-3 relative z-10">Устали считать смены вручную?</h3>
           <p className="text-brand-100 mb-8 text-base sm:text-lg relative z-10">Попробуйте наш сервис — 14 дней Pro-функций бесплатно, без привязки карты.</p>
-          <Link to="/login?mode=register" className="inline-flex items-center gap-2 bg-white text-brand-700 px-8 py-3.5 rounded-xl font-bold hover:bg-slate-50 shadow-lg transition-all hover:-translate-y-0.5 relative z-10">
+          <button onClick={() => handleRegisterClick("article_bottom_cta")} className="inline-flex items-center gap-2 bg-white text-brand-700 px-8 py-3.5 rounded-xl font-bold hover:bg-slate-50 shadow-lg transition-all hover:-translate-y-0.5 relative z-10">
             <CheckCircle2 className="w-5 h-5" /> Создать график бесплатно
-          </Link>
+          </button>
         </div>
       </main>
       <LandingFooter />

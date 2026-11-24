@@ -22,6 +22,7 @@ import NavBar from "../components/NavBar";
 import TeamSummary from "../components/TeamSummary";
 import { weekDates, dayLabel, shortDate, fullDate } from "../lib/dates";
 import { validateShiftTimes } from "../lib/time";
+import { trackEvent } from "../lib/metrika";
 
 type ShiftSnapshot = {
   templateId: string | null;
@@ -86,6 +87,7 @@ export default function WeekDetailPage() {
         return;
       }
       localStorage.setItem("guestEmailAttached", "true");
+      trackEvent("guest_week_attach_email");
       setShowGuestEmailInput(false);
       setEmailMode("input");
       window.dispatchEvent(new Event("guest-email-attached"));

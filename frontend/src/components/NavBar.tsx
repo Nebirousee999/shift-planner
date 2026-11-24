@@ -11,6 +11,7 @@ import { useNotifications } from "../store/notifications";
 import { useOrganization } from "../store/organization";
 import { supportApi } from "../api/support";
 import { api } from "../api/client";
+import { trackEvent } from "../lib/metrika";
 import { confirmDialog } from "../store/dialogs";
 import { useState, useRef } from "react";
 import LocationSwitcher from "./LocationSwitcher";
@@ -206,6 +207,7 @@ export default function NavBar() {
         return;
       }
       localStorage.setItem("guestEmailAttached", "true");
+      trackEvent("guest_week_attach_email");
       setEmailAttached(true);
       setShowEmailInput(false);
       setEmailMode("input");
