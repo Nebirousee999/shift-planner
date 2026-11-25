@@ -285,10 +285,11 @@ export default function CalculatorPage() {
           nightShifts += 1;
           nightHours += nh;
           nightBonus += emp.rate * nh * ((emp.nightRate ?? 20) / 100);
+        }
+        
         const hols = getHolidays(dayObj.date.getFullYear());
         if (hols.includes(dayObj.date.toISOString().slice(0, 10))) {
           holidayBonus += h * emp.rate * ((emp.holidayRate ?? 2) - 1);
-        }
         }
       });
     });
@@ -328,10 +329,11 @@ export default function CalculatorPage() {
             if (nh > 0) {
               mNightShifts++;
               mNightBonus += emp.rate * nh * ((emp.nightRate ?? 20) / 100);
+            }
+            
             const hols = getHolidays(date.getFullYear());
             if (hols.includes(date.toISOString().slice(0, 10))) {
               mHolidayBonus += h * emp.rate * ((emp.holidayRate ?? 2) - 1);
-            }
             }
           }
         });
@@ -801,64 +803,80 @@ export default function CalculatorPage() {
           {/* ПРАВАЯ ПАНЕЛЬ (КАЛЕНДАРЬ) */}
           <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden w-full">
             
-            <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
-              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-                <div className="flex bg-slate-200 p-1 rounded-lg mr-2">
-                  <button onClick={() => setViewMode("month")} className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${viewMode === "month" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>Месяц</button>
-                  <button onClick={() => setViewMode("year")} className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${viewMode === "year" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>Год</button>
+            <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-col gap-3">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                  <div className="flex bg-slate-200 p-1 rounded-lg mr-2">
+                    <button onClick={() => setViewMode("month")} className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${viewMode === "month" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>Месяц</button>
+                    <button onClick={() => setViewMode("year")} className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${viewMode === "year" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>Год</button>
+                  </div>
+                  <button onClick={() => {
+                    if (viewMode === "month") setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
+                    else setCurrentMonth(new Date(currentMonth.getFullYear() - 1, 0, 1));
+                  }} className="p-2 hover:bg-white rounded-lg border border-transparent hover:border-slate-200 transition-colors">
+                    <ChevronLeft className="w-5 h-5 text-slate-600" />
+                  </button>
+                  <div className="font-bold text-slate-900 text-lg min-w-[160px] text-center capitalize">
+                    {viewMode === "month" ? `${MONTHS_RU[currentMonth.getMonth()]} ${currentMonth.getFullYear()}` : `${currentMonth.getFullYear()} год`}
+                  </div>
+                  <button onClick={() => {
+                    if (viewMode === "month") setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
+                    else setCurrentMonth(new Date(currentMonth.getFullYear() + 1, 0, 1));
+                  }} className="p-2 hover:bg-white rounded-lg border border-transparent hover:border-slate-200 transition-colors">
+                    <ChevronRight className="w-5 h-5 text-slate-600" />
+                  </button>
                 </div>
-                <button onClick={() => {
-                  if (viewMode === "month") setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
-                  else setCurrentMonth(new Date(currentMonth.getFullYear() - 1, 0, 1));
-                }} className="p-2 hover:bg-white rounded-lg border border-transparent hover:border-slate-200 transition-colors">
-                  <ChevronLeft className="w-5 h-5 text-slate-600" />
-                </button>
-                <div className="font-bold text-slate-900 text-lg min-w-[160px] text-center capitalize">
-                  {viewMode === "month" ? `${MONTHS_RU[currentMonth.getMonth()]} ${currentMonth.getFullYear()}` : `${currentMonth.getFullYear()} год`}
+              </div>
+
+              <div className="flex w-full flex-wrap sm:flex-nowrap justify-between items-center gap-3 bg-white px-4 py-2.5 rounded-xl border border-slate-200 shadow-sm">
+                <div className="flex flex-col items-center">
+                  <span className="text-[10px] text-slate-500 uppercase font-semibold mb-0.5">Норма</span>
+                  <span className="font-bold text-slate-900">{getNorm(currentMonth.getFullYear(), currentMonth.getMonth())} ч.</span>
                 </div>
-                <button onClick={() => {
-                  if (viewMode === "month") setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
-                  else setCurrentMonth(new Date(currentMonth.getFullYear() + 1, 0, 1));
-                }} className="p-2 hover:bg-white rounded-lg border border-transparent hover:border-slate-200 transition-colors">
-                  <ChevronRight className="w-5 h-5 text-slate-600" />
-                </button>
-              </div>
-              
-              <div className="flex flex-col bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm mr-4 text-xs">
-                <div className="text-slate-500">Норма: <b className="text-slate-900">{getNorm(currentMonth.getFullYear(), currentMonth.getMonth())} ч.</b></div>
-                <div className="text-slate-500">Отработано: <b className="text-slate-900">{viewMode === 'year' ? yearData.totalHours : monthStats.hours} ч.</b></div>
-                <div className="text-slate-500">Переработка: <b className={(viewMode === 'year' ? yearData.totalHours - (getNorm(currentMonth.getFullYear(), currentMonth.getMonth()) * 12) : monthStats.hours - getNorm(currentMonth.getFullYear(), currentMonth.getMonth())) > 0 ? "text-rose-600" : "text-emerald-600"}>
-                  {viewMode === 'year' ? (yearData.totalHours - (getNorm(currentMonth.getFullYear(), currentMonth.getMonth()) * 12) > 0 ? "+" : "") + (yearData.totalHours - (getNorm(currentMonth.getFullYear(), currentMonth.getMonth()) * 12)) : (monthStats.hours - getNorm(currentMonth.getFullYear(), currentMonth.getMonth()) > 0 ? "+" : "") + (monthStats.hours - getNorm(currentMonth.getFullYear(), currentMonth.getMonth()))} ч.
-                </b></div>
-              </div>
-              <div className="flex items-center gap-4 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm">
-                 <div className="text-center">
-                   <div className="text-[10px] text-slate-500 uppercase font-semibold">{viewMode === 'year' ? "Смен за год" : "Смен за месяц"}</div>
-                   <div className="font-bold text-slate-900">{viewMode === 'year' ? yearData.totalShifts : monthStats.shifts}</div>
-                 </div>
-                 <div className="w-px h-6 bg-slate-200" />
-                 <div className="text-center">
-                   <div className="text-[10px] text-slate-500 uppercase font-semibold">{viewMode === 'year' ? "Часов за год" : "Часов за месяц"}</div>
-                   <div className="font-bold text-slate-900">{viewMode === 'year' ? yearData.totalHours : monthStats.hours}</div>
-                 </div>
-                 <div className="w-px h-6 bg-slate-200" />
-                 <div className="text-center">
-                   <div className="text-[10px] text-slate-500 uppercase font-semibold">Ночных смен</div>
-                   <div className="font-bold text-slate-900">{viewMode === 'year' ? yearData.totalNightShifts : monthStats.nightShifts}</div>
-                 </div>
-                 <div className="w-px h-6 bg-slate-200" />
-                 <div className="text-center">
-                   <div className="text-[10px] text-slate-500 uppercase font-semibold">{viewMode === 'year' ? "Затраты за год" : "Затраты за месяц"}</div>
-                   <div className="font-bold text-emerald-600">
-                     {viewMode === 'year' ? yearData.totalCost : monthStats.cost} ₽
-                     {viewMode === 'month' && monthStats.nightBonus > 0 && (
-                       <span className="text-xs text-slate-500 font-normal ml-1">
-                         {monthStats.nightBonus > 0 && <span className="text-xs text-slate-500 font-normal ml-1">(в т.ч. ночные +{monthStats.nightBonus} ₽)</span>}
-                     {monthStats.holidayBonus > 0 && <span className="text-xs text-slate-500 font-normal ml-1">(в т.ч. праздничные +{monthStats.holidayBonus} ₽)</span>}
-                       </span>
-                     )}
-                   </div>
-                 </div>
+                <div className="w-px h-8 bg-slate-200 hidden sm:block" />
+                <div className="flex flex-col items-center">
+                  <span className="text-[10px] text-slate-500 uppercase font-semibold mb-0.5">Отработано</span>
+                  <span className="font-bold text-slate-900">{viewMode === 'year' ? yearData.totalHours : monthStats.hours} ч.</span>
+                </div>
+                <div className="w-px h-8 bg-slate-200 hidden sm:block" />
+                <div className="flex flex-col items-center">
+                  <span className="text-[10px] text-slate-500 uppercase font-semibold mb-0.5">Переработка</span>
+                  <span className={`font-bold ${(viewMode === 'year' ? yearData.totalHours - (getNorm(currentMonth.getFullYear(), currentMonth.getMonth()) * 12) : monthStats.hours - getNorm(currentMonth.getFullYear(), currentMonth.getMonth())) > 0 ? "text-rose-600" : "text-emerald-600"}`}>
+                    {viewMode === 'year' ? (yearData.totalHours - (getNorm(currentMonth.getFullYear(), currentMonth.getMonth()) * 12) > 0 ? "+" : "") + (yearData.totalHours - (getNorm(currentMonth.getFullYear(), currentMonth.getMonth()) * 12)) : (monthStats.hours - getNorm(currentMonth.getFullYear(), currentMonth.getMonth()) > 0 ? "+" : "") + (monthStats.hours - getNorm(currentMonth.getFullYear(), currentMonth.getMonth()))} ч.
+                  </span>
+                </div>
+                <div className="w-px h-8 bg-slate-200 hidden sm:block" />
+                <div className="flex flex-col items-center">
+                  <span className="text-[10px] text-slate-500 uppercase font-semibold mb-0.5">{viewMode === 'year' ? "Смен за год" : "Смен"}</span>
+                  <span className="font-bold text-slate-900">{viewMode === 'year' ? yearData.totalShifts : monthStats.shifts}</span>
+                </div>
+                <div className="w-px h-8 bg-slate-200 hidden sm:block" />
+                <div className="flex flex-col items-center">
+                  <span className="text-[10px] text-slate-500 uppercase font-semibold mb-0.5">{viewMode === 'year' ? "Часов за год" : "Часов"}</span>
+                  <span className="font-bold text-slate-900">{viewMode === 'year' ? yearData.totalHours : monthStats.hours}</span>
+                </div>
+                <div className="w-px h-8 bg-slate-200 hidden sm:block" />
+                <div className="flex flex-col items-center">
+                  <span className="text-[10px] text-slate-500 uppercase font-semibold mb-0.5">Ночных</span>
+                  <span className="font-bold text-slate-900">{viewMode === 'year' ? yearData.totalNightShifts : monthStats.nightShifts}</span>
+                </div>
+                <div className="w-px h-8 bg-slate-200 hidden sm:block" />
+                <div className="flex flex-col items-center">
+                  <span className="text-[10px] text-slate-500 uppercase font-semibold mb-0.5">Затраты</span>
+                  <span className="font-bold text-emerald-600">{viewMode === 'year' ? yearData.totalCost : monthStats.cost} ₽</span>
+                  {viewMode === 'year' && (yearData.totalNightBonus > 0 || yearData.totalHolidayBonus > 0) && (
+                    <div className="flex flex-col items-center text-[9px] text-slate-500 mt-0.5">
+                      {yearData.totalNightBonus > 0 && <span>(в т.ч. ночные +{yearData.totalNightBonus} ₽)</span>}
+                      {yearData.totalHolidayBonus > 0 && <span>(в т.ч. празд. +{yearData.totalHolidayBonus} ₽)</span>}
+                    </div>
+                  )}
+                  {viewMode === 'month' && (monthStats.nightBonus > 0 || monthStats.holidayBonus > 0) && (
+                    <div className="flex flex-col items-center text-[9px] text-slate-500 mt-0.5">
+                      {monthStats.nightBonus > 0 && <span>(в т.ч. ночные +{monthStats.nightBonus} ₽)</span>}
+                      {monthStats.holidayBonus > 0 && <span>(в т.ч. празд. +{monthStats.holidayBonus} ₽)</span>}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -922,9 +940,13 @@ export default function CalculatorPage() {
                               setSelectedDayInfo({ date, emps: workingEmps });
                             }
                           }}
-                          className={`relative flex flex-col transition-all min-h-[110px] group border-r border-slate-200/80 last:border-r-0 ${isOtherMonth ? "opacity-40 bg-slate-50" : "cursor-pointer hover:ring-2 hover:ring-brand-500 hover:z-10 hover:shadow-lg"} ${isHoliday && !isOtherMonth ? "ring-2 ring-rose-500 bg-rose-50/30" : ""}`}
+                          className={`relative flex flex-col transition-all min-h-[110px] group border-r border-slate-200/80 last:border-r-0 ${isOtherMonth ? "opacity-40 bg-slate-50" : "cursor-pointer hover:ring-2 hover:ring-brand-500 hover:z-10 hover:shadow-lg"} ${isHoliday && !isOtherMonth ? "ring-2 ring-rose-500" : ""}`}
                         >
-                          <div className="absolute top-1.5 left-1.5 z-20">
+                          {isHoliday && !isOtherMonth && (
+                  <div className="absolute inset-0 pointer-events-none z-[5]" 
+                       style={{ backgroundImage: "repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(225, 29, 72, 0.25) 10px, rgba(225, 29, 72, 0.25) 20px)" }} />
+                )}
+                <div className="absolute top-1.5 left-1.5 z-20">
                             <span className={`text-sm ${workingEmps.length > 0 ? "text-white font-bold drop-shadow-md" : isHoliday ? "text-rose-600 font-bold" : isToday && !isOtherMonth ? "bg-brand-600 text-white w-6 h-6 rounded-full flex items-center justify-center -ml-1 -mt-0.5" : "text-slate-900 font-medium"}`}>
                               {date.getDate()}
                             </span>
@@ -958,6 +980,10 @@ export default function CalculatorPage() {
                   </div>
                 );
               })}
+            </div>
+            <div className="flex items-center gap-2 mt-4 text-xs text-slate-500 px-4 pb-4">
+              <div className="w-8 h-4 border border-rose-500 rounded" style={{ backgroundImage: "repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(225, 29, 72, 0.3) 4px, rgba(225, 29, 72, 0.3) 8px)" }} />
+              <span>Праздничные дни (оплата ×2)</span>
             </div>
             </>
             )}
@@ -1008,7 +1034,7 @@ export default function CalculatorPage() {
                               <div
                                 key={day}
                                 title={`${day} ${monthName}${working.length ? ` (${working.map(w=>w.name).join(", ")})` : ""}`}
-                                className="relative w-full aspect-square rounded-sm flex flex-col overflow-hidden border border-white/20"
+                                className={`relative w-full aspect-square rounded-sm flex flex-col overflow-hidden border border-white/20 ${getHolidays(currentMonth.getFullYear()).includes(date.toISOString().slice(0, 10)) ? "ring-2 ring-rose-500 ring-inset" : ""}`}
                               >
                                 {working.length === 0 ? (
                                   <div className="flex-1 bg-slate-100 flex items-center justify-center text-[10px] text-slate-400">{day}</div>
@@ -1020,6 +1046,10 @@ export default function CalculatorPage() {
                                         return <div key={w.id} className="flex-1 w-full" style={{ backgroundColor: isNight ? '#1e293b' : w.color }} />
                                       })}
                                     </div>
+                                    {getHolidays(currentMonth.getFullYear()).includes(date.toISOString().slice(0, 10)) && (
+                                      <div className="absolute inset-0 pointer-events-none z-[5]" 
+                                           style={{ backgroundImage: "linear-gradient(45deg, transparent 48%, rgba(225, 29, 72, 0.4) 49%, rgba(225, 29, 72, 0.4) 51%, transparent 52%)" }} />
+                                    )}
                                     <div className="relative z-10 flex items-center justify-center w-full h-full">
                                       <span className={`text-[10px] font-bold text-white ${working.length > 1 ? "drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]" : ""}`}>
                                         {working.length === 1 && isNightDayFor(working[0], date) ? '🌙' : day}
