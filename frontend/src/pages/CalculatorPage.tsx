@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { 
   Download, Lock, ShieldCheck, Mail, AlertCircle,
@@ -22,6 +22,8 @@ type Employee = {
   startDate: string;
   isVisible: boolean;
   password?: string;
+  nightRate: number;
+  holidayRate: number;
 };
 
 const CYCLES: Record<string, { work: number; off: number; label: string; pattern?: ("D" | "N" | "O")[] }> = {
@@ -48,6 +50,14 @@ const COLOR_NAMES: Record<string, string> = {
   "#3b82f6": "Синий", "#8b5cf6": "Фиолетовый", "#10b981": "Зеленый", "#f59e0b": "Оранжевый",
   "#ef4444": "Красный", "#06b6d4": "Голубой", "#6366f1": "Индиго", "#ec4899": "Розовый",
 };
+
+const HOLIDAYS_2026 = ["2026-01-01","2026-01-02","2026-01-03","2026-01-04","2026-01-05","2026-01-06","2026-01-07","2026-01-08","2026-02-23","2026-03-08","2026-05-01","2026-05-09","2026-06-12","2026-11-04"];
+const HOLIDAYS_2027 = ["2027-01-01","2027-01-02","2027-01-03","2027-01-04","2027-01-05","2027-01-06","2027-01-07","2027-01-08","2027-02-23","2027-03-08","2027-05-01","2027-05-09","2027-06-12","2027-11-04"];
+const NORMS_2026 = [136, 151, 168, 175, 151, 167, 184, 168, 176, 184, 167, 175];
+const NORMS_2027 = [136, 151, 176, 168, 159, 167, 176, 184, 176, 176, 166, 175];
+const getHolidays = (y: number) => y === 2026 ? HOLIDAYS_2026 : y === 2027 ? HOLIDAYS_2027 : [];
+const getNorm = (y: number, m: number) => y === 2026 ? NORMS_2026[m] : y === 2027 ? NORMS_2027[m] : 0;
+
 const MONTHS_RU = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
 const SHORT_MONTHS_RU = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
 const WEEKDAYS_RU = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
@@ -60,15 +70,39 @@ export default function CalculatorPage() {
   const today = new Date();
   
   const [currentMonth, setCurrentMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
-  const [employees, setEmployees] = useState<Employee[]>([
-    { 
-      id: "1", name: "Сотрудник 1", color: COLORS[0], cycle: "2/2", 
-      startTime: "09:00", endTime: "18:00", rate: 300, 
+  const [employees, setEmployees] = useState<Employee[]>(() => {
+    try {
+      const saved = localStorage.getItem("calc_employees");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((e: any) => ({ ...e, nightRate: e.nightRate ?? 20, holidayRate: e.holidayRate ?? 2 }));
+        }
+      }
+    } catch {}
+    return [
+      { 
+        id: "1", name: "Сотрудник 1", color: COLORS[0], cycle: "2/2", 
+        startTime: "09:00", endTime: "18:00", rate: 300, nightRate: 20, holidayRate: 2,
       startDate: today.toISOString().slice(0, 10), isVisible: true, nightStart: "22:00", nightEnd: "06:00" 
-    }
-  ]);
-  
-  const [activeEmpId, setActiveEmpId] = useState<string>("1");
+      }
+    ];
+  });
+
+  const [activeEmpId, setActiveEmpId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem("calc_employees");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed[0].id;
+      }
+    } catch {}
+    return "1";
+  });
+
+  useEffect(() => {
+    localStorage.setItem("calc_employees", JSON.stringify(employees));
+  }, [employees]);
   const [activeTab, setActiveTab] = useState<"name" | "color" | "cycle" | "time" | "rate">("cycle");
   const [cycleSubTab, setCycleSubTab] = useState<"day" | "night">("day");
   const [selectedDayInfo, setSelectedDayInfo] = useState<{date: Date, emps: Employee[]} | null>(null);
@@ -98,7 +132,7 @@ export default function CalculatorPage() {
       cycle: "2/2",
       startTime: "09:00",
       endTime: "18:00",
-      rate: 300,
+      rate: 300, nightRate: 20, holidayRate: 2,
       startDate: today.toISOString().slice(0, 10),
       isVisible: true,
       nightStart: "22:00",
@@ -234,6 +268,8 @@ export default function CalculatorPage() {
     let cost = 0;
     let nightShifts = 0;
     let nightHours = 0;
+    let nightBonus = 0;
+    let holidayBonus = 0;
     
     calendarDays.forEach(dayObj => {
       if (dayObj.isOtherMonth) return;
@@ -248,11 +284,16 @@ export default function CalculatorPage() {
         if (nh > 0) {
           nightShifts += 1;
           nightHours += nh;
+          nightBonus += emp.rate * nh * ((emp.nightRate ?? 20) / 100);
+        const hols = getHolidays(dayObj.date.getFullYear());
+        if (hols.includes(dayObj.date.toISOString().slice(0, 10))) {
+          holidayBonus += h * emp.rate * ((emp.holidayRate ?? 2) - 1);
+        }
         }
       });
     });
     
-    return { shifts, hours: Math.round(hours * 10) / 10, cost: Math.round(cost), nightShifts, nightHours: Math.round(nightHours * 10) / 10 };
+    return { shifts, hours: Math.round(hours * 10) / 10, cost: Math.round(cost), nightShifts, nightHours: Math.round(nightHours * 10) / 10, nightBonus: Math.round(nightBonus), holidayBonus: Math.round(holidayBonus) };
   }, [calendarDays, employees]);
 
   const yearData = useMemo(() => {
@@ -260,6 +301,8 @@ export default function CalculatorPage() {
     let totalShifts = 0;
     let totalHours = 0;
     let totalNightShifts = 0;
+    let totalNightBonus = 0;
+    let totalHolidayBonus = 0;
     let totalCost = 0;
     const monthlyData = [];
 
@@ -267,7 +310,7 @@ export default function CalculatorPage() {
     if (empsToCalculate.length === 0) return { totalShifts: 0, totalHours: 0, totalNightShifts: 0, totalCost: 0, monthlyData: [] };
 
     for (let m = 0; m < 12; m++) {
-      let mShifts = 0, mHours = 0, mNightShifts = 0, mCost = 0;
+      let mShifts = 0, mHours = 0, mNightShifts = 0, mNightBonus = 0, mHolidayBonus = 0, mCost = 0;
       const daysInMonth = new Date(year, m + 1, 0).getDate();
       for (let d = 1; d <= daysInMonth; d++) {
         const date = new Date(year, m, d);
@@ -281,23 +324,36 @@ export default function CalculatorPage() {
             mShifts++;
             mHours += h;
             mCost += h * emp.rate;
-            if (isNight) mNightShifts++;
+            const nh = nightMinutes(s.start, s.end);
+            if (nh > 0) {
+              mNightShifts++;
+              mNightBonus += emp.rate * nh * ((emp.nightRate ?? 20) / 100);
+            const hols = getHolidays(date.getFullYear());
+            if (hols.includes(date.toISOString().slice(0, 10))) {
+              mHolidayBonus += h * emp.rate * ((emp.holidayRate ?? 2) - 1);
+            }
+            }
           }
         });
       }
       totalShifts += mShifts;
       totalHours += mHours;
       totalNightShifts += mNightShifts;
+      totalNightBonus += mNightBonus;
+      totalHolidayBonus += mHolidayBonus;
       totalCost += mCost;
       monthlyData.push({
         month: MONTHS_RU[m],
         shifts: mShifts,
         hours: Math.round(mHours * 10) / 10,
         nightShifts: mNightShifts,
+        nightBonus: Math.round(mNightBonus),
+        holidayBonus: Math.round(mHolidayBonus),
         cost: Math.round(mCost)
       });
     }
-    return { totalShifts, totalHours: Math.round(totalHours * 10) / 10, totalNightShifts, totalCost: Math.round(totalCost), monthlyData };
+    return { totalShifts, totalHours: Math.round(totalHours * 10) / 10, totalNightShifts, totalNightBonus: Math.round(totalNightBonus),
+      totalHolidayBonus: Math.round(totalHolidayBonus), totalCost: Math.round(totalCost), monthlyData };
   }, [currentMonth.getFullYear(), selectedYearEmpId, employees]);
 
   const performSave = async (targetEmail: string) => {
@@ -306,7 +362,7 @@ export default function CalculatorPage() {
     try {
       const guestData = { 
         startDate: employees[0].startDate, 
-        employees: employees.filter(e => e.isVisible).map(e => ({ ...e, rate: String(e.rate) })) 
+        employees: employees.filter(e => e.isVisible).map(e => ({ ...e, rate: String(e.rate), nightRate: String(e.nightRate ?? 20), holidayRate: String(e.holidayRate ?? 2) })) 
       };
       
       const isYear = viewMode === "year";
@@ -701,6 +757,27 @@ export default function CalculatorPage() {
                       min="0"
                     />
                   </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1.5">Доплата за ночные (%)</label>
+                    <input 
+                      type="number" 
+                      value={activeEmp.nightRate ?? 20} 
+                      onChange={(e) => updateActiveEmp("nightRate", Number(e.target.value))}
+                      className="w-full !py-2 !text-sm" 
+                      min="0"
+                      max="200"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1.5">Коэффициент праздничных</label>
+                    <input 
+                      type="number" 
+                      value={activeEmp.holidayRate ?? 2} 
+                      onChange={(e) => updateActiveEmp("holidayRate", Number(e.target.value))}
+                      className="w-full !py-2 !text-sm" 
+                      min="1" step="0.5"
+                    />
+                  </div>
                 </div>
               )}
               </div>
@@ -747,6 +824,13 @@ export default function CalculatorPage() {
                 </button>
               </div>
               
+              <div className="flex flex-col bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm mr-4 text-xs">
+                <div className="text-slate-500">Норма: <b className="text-slate-900">{getNorm(currentMonth.getFullYear(), currentMonth.getMonth())} ч.</b></div>
+                <div className="text-slate-500">Отработано: <b className="text-slate-900">{viewMode === 'year' ? yearData.totalHours : monthStats.hours} ч.</b></div>
+                <div className="text-slate-500">Переработка: <b className={(viewMode === 'year' ? yearData.totalHours - (getNorm(currentMonth.getFullYear(), currentMonth.getMonth()) * 12) : monthStats.hours - getNorm(currentMonth.getFullYear(), currentMonth.getMonth())) > 0 ? "text-rose-600" : "text-emerald-600"}>
+                  {viewMode === 'year' ? (yearData.totalHours - (getNorm(currentMonth.getFullYear(), currentMonth.getMonth()) * 12) > 0 ? "+" : "") + (yearData.totalHours - (getNorm(currentMonth.getFullYear(), currentMonth.getMonth()) * 12)) : (monthStats.hours - getNorm(currentMonth.getFullYear(), currentMonth.getMonth()) > 0 ? "+" : "") + (monthStats.hours - getNorm(currentMonth.getFullYear(), currentMonth.getMonth()))} ч.
+                </b></div>
+              </div>
               <div className="flex items-center gap-4 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm">
                  <div className="text-center">
                    <div className="text-[10px] text-slate-500 uppercase font-semibold">{viewMode === 'year' ? "Смен за год" : "Смен за месяц"}</div>
@@ -765,7 +849,15 @@ export default function CalculatorPage() {
                  <div className="w-px h-6 bg-slate-200" />
                  <div className="text-center">
                    <div className="text-[10px] text-slate-500 uppercase font-semibold">{viewMode === 'year' ? "Затраты за год" : "Затраты за месяц"}</div>
-                   <div className="font-bold text-emerald-600">{viewMode === 'year' ? yearData.totalCost : monthStats.cost} ₽</div>
+                   <div className="font-bold text-emerald-600">
+                     {viewMode === 'year' ? yearData.totalCost : monthStats.cost} ₽
+                     {viewMode === 'month' && monthStats.nightBonus > 0 && (
+                       <span className="text-xs text-slate-500 font-normal ml-1">
+                         {monthStats.nightBonus > 0 && <span className="text-xs text-slate-500 font-normal ml-1">(в т.ч. ночные +{monthStats.nightBonus} ₽)</span>}
+                     {monthStats.holidayBonus > 0 && <span className="text-xs text-slate-500 font-normal ml-1">(в т.ч. праздничные +{monthStats.holidayBonus} ₽)</span>}
+                       </span>
+                     )}
+                   </div>
                  </div>
               </div>
             </div>
@@ -820,6 +912,7 @@ export default function CalculatorPage() {
                       const { date, isOtherMonth } = dayObj;
                       const workingEmps = getWorkingEmployees(date);
                       const isToday = date.toDateString() === today.toDateString();
+                      const isHoliday = getHolidays(date.getFullYear()).includes(date.toISOString().slice(0, 10));
 
                       return (
                         <div 
@@ -829,10 +922,10 @@ export default function CalculatorPage() {
                               setSelectedDayInfo({ date, emps: workingEmps });
                             }
                           }}
-                          className={`relative flex flex-col transition-all min-h-[110px] group border-r border-slate-200/80 last:border-r-0 ${isOtherMonth ? "opacity-40 bg-slate-50" : "cursor-pointer hover:ring-2 hover:ring-brand-500 hover:z-10 hover:shadow-lg"}`}
+                          className={`relative flex flex-col transition-all min-h-[110px] group border-r border-slate-200/80 last:border-r-0 ${isOtherMonth ? "opacity-40 bg-slate-50" : "cursor-pointer hover:ring-2 hover:ring-brand-500 hover:z-10 hover:shadow-lg"} ${isHoliday && !isOtherMonth ? "ring-2 ring-rose-500 bg-rose-50/30" : ""}`}
                         >
                           <div className="absolute top-1.5 left-1.5 z-20">
-                            <span className={`text-sm ${workingEmps.length > 0 ? "text-white font-bold drop-shadow-md" : isToday && !isOtherMonth ? "bg-brand-600 text-white w-6 h-6 rounded-full flex items-center justify-center -ml-1 -mt-0.5" : "text-slate-900 font-medium"}`}>
+                            <span className={`text-sm ${workingEmps.length > 0 ? "text-white font-bold drop-shadow-md" : isHoliday ? "text-rose-600 font-bold" : isToday && !isOtherMonth ? "bg-brand-600 text-white w-6 h-6 rounded-full flex items-center justify-center -ml-1 -mt-0.5" : "text-slate-900 font-medium"}`}>
                               {date.getDate()}
                             </span>
                           </div>
@@ -951,6 +1044,8 @@ export default function CalculatorPage() {
                         <th className="px-4 py-3 text-center">Смены</th>
                         <th className="px-4 py-3 text-center">Часы</th>
                         <th className="px-4 py-3 text-center">Ночные</th>
+                        <th className="px-4 py-3 text-center">Ночные (₽)</th>
+                        <th className="px-4 py-3 text-center">Праздничные (₽)</th>
                         <th className="px-4 py-3 text-right">Затраты</th>
                       </tr>
                     </thead>
@@ -961,6 +1056,8 @@ export default function CalculatorPage() {
                           <td className="px-4 py-2 text-center">{row.shifts}</td>
                           <td className="px-4 py-2 text-center">{row.hours}</td>
                           <td className="px-4 py-2 text-center">{row.nightShifts}</td>
+                          <td className="px-4 py-2 text-center">{row.nightBonus}</td>
+                          <td className="px-4 py-2 text-center">{row.holidayBonus}</td>
                           <td className="px-4 py-2 text-right text-emerald-600 font-medium">{row.cost} ₽</td>
                         </tr>
                       ))}
@@ -971,6 +1068,8 @@ export default function CalculatorPage() {
                         <td className="px-4 py-3 text-center">{yearData.totalShifts}</td>
                         <td className="px-4 py-3 text-center">{yearData.totalHours}</td>
                         <td className="px-4 py-3 text-center">{yearData.totalNightShifts}</td>
+                        <td className="px-4 py-3 text-center">{yearData.totalNightBonus}</td>
+                        <td className="px-4 py-3 text-center">{yearData.totalHolidayBonus}</td>
                         <td className="px-4 py-3 text-right text-emerald-600">{yearData.totalCost} ₽</td>
                       </tr>
                     </tfoot>

@@ -416,6 +416,8 @@ export const authService = {
       id: emp.id || String(emp.name).trim(),
       name: String(emp.name).trim(),
       hourlyRate: Number(emp.rate ?? emp.hourlyRate ?? 300),
+      nightRate: Number(emp.nightRate ?? 20),
+      holidayRate: Number(emp.holidayRate ?? 2),
     });
 
     if (options.mode === "year") {

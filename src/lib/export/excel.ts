@@ -1,4 +1,8 @@
 import ExcelJS from "exceljs";
+const HOLIDAYS_2026 = ["2026-01-01","2026-01-02","2026-01-03","2026-01-04","2026-01-05","2026-01-06","2026-01-07","2026-01-08","2026-02-23","2026-03-08","2026-05-01","2026-05-09","2026-06-12","2026-11-04"];
+const HOLIDAYS_2027 = ["2027-01-01","2027-01-02","2027-01-03","2027-01-04","2027-01-05","2027-01-06","2027-01-07","2027-01-08","2027-02-23","2027-03-08","2027-05-01","2027-05-09","2027-06-12","2027-11-04"];
+const getHolidays = (y: number) => y === 2026 ? HOLIDAYS_2026 : y === 2027 ? HOLIDAYS_2027 : [];
+
 
 // ─── Утилиты ─────────────────────────────────────────
 function hoursBetween(start: string, end: string): number {
@@ -419,7 +423,7 @@ export async function exportTimesheetToExcel(
 export async function exportYearToExcel(input: {
   orgName: string;
   year: number;
-  employee: { id: string; name: string; hourlyRate?: number };
+  employee: { id: string; name: string; hourlyRate?: number; nightRate?: number; holidayRate?: number };
   shifts: {
     userId: string;
     userName: string;
@@ -471,13 +475,13 @@ export async function exportYearToExcel(input: {
       return d.getUTCFullYear() === year && d.getUTCMonth() === m;
     });
 
-    let mShifts = 0, mHours = 0, mNightHours = 0, mNightShifts = 0;
+    let mShifts = 0, mHours = 0, mNightHours = 0, mNightShifts = 0, mNightBonus = 0, mHolidayBonus = 0;
     for (const s of monthShifts) {
       mShifts++;
       const h = hoursBetween(s.startTime, s.endTime);
       mHours += h;
       const nh = nightHoursBetween(s.startTime, s.endTime);
-      if (nh > 0) { mNightShifts++; mNightHours += nh; }
+      if (nh > 0) { mNightShifts++; mNightHours += nh; mNightBonus += nh * (emp.hourlyRate || 0) * ((emp.nightRate ?? 20) / 100); }
     }
     const mCost = Math.round(mHours * (emp.hourlyRate || 0));
 
@@ -485,7 +489,7 @@ export async function exportYearToExcel(input: {
     totalYearHours += mHours;
     totalYearNightShifts += mNightShifts;
     totalYearCost += mCost;
-    monthSummaries.push({ month: monthName, shifts: mShifts, hours: Math.round(mHours * 10) / 10, nightShifts: mNightShifts, cost: mCost });
+    monthSummaries.push({ month: monthName, shifts: mShifts, hours: Math.round(mHours * 10) / 10, nightShifts: mNightShifts, nightBonus: Math.round(mNightBonus), holidayBonus: Math.round(mHolidayBonus), cost: mCost });
 
     // --- Шапка листа ---
     ws.mergeCells("A1:H1");
@@ -560,11 +564,12 @@ export async function exportYearToExcel(input: {
         const isOtherMonth = currentDay.getUTCMonth() !== m;
         const dayNum = currentDay.getUTCDate();
         const dayShift = userShifts.find(s => s.shiftDate === dateStr);
+        const isHoliday = hols.includes(dateStr);
 
         if (dayShift) {
           const isNight = nightHoursBetween(dayShift.startTime, dayShift.endTime) > 0;
           cell.value = (isNight ? "🌙 " : "") + `${dayShift.startTime}-\n${dayShift.endTime}`;
-          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: isNight ? "FF312E81" : "FF3B82F6" } };
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: isHoliday ? "FFDC2626" : isNight ? "FF312E81" : "FF3B82F6" } };
           cell.font = { color: { argb: "FFFFFFFF" }, size: 9, bold: true };
           weekShifts++;
           weekHours += hoursBetween(dayShift.startTime, dayShift.endTime);
@@ -611,9 +616,9 @@ export async function exportYearToExcel(input: {
   const summaryWs = wb.addWorksheet("Итоги года", {
     pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1 },
   });
-  summaryWs.columns = [{ width: 20 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 20 }];
+  summaryWs.columns = [{ width: 20 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 20 }];
   
-  summaryWs.mergeCells("A1:E1");
+  summaryWs.mergeCells("A1:G1");
   const sumTitle = summaryWs.getCell("A1");
   sumTitle.value = `${input.orgName} — Итоги за ${year} год (${emp.name})`;
   sumTitle.font = { bold: true, size: 14 };
@@ -621,7 +626,7 @@ export async function exportYearToExcel(input: {
   summaryWs.getRow(1).height = 30;
 
   const sumHeader = summaryWs.getRow(3);
-  sumHeader.values = ["Месяц", "Смены", "Часы", "Ночные смены", "Затраты"];
+  sumHeader.values = ["Месяц", "Смены", "Часы", "Ночные смены", "Ночные (₽)", "Праздничные (₽)", "Затраты"];
   sumHeader.font = { bold: true, size: 10 };
   sumHeader.eachCell((c) => {
     c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE5E7EB" } };
@@ -632,9 +637,9 @@ export async function exportYearToExcel(input: {
   let sRow = 4;
   for (const m of monthSummaries) {
     const row = summaryWs.getRow(sRow);
-    row.values = [m.month, m.shifts, m.hours, m.nightShifts, m.cost];
+    row.values = [m.month, m.shifts, m.hours, m.nightShifts, m.nightBonus, m.holidayBonus, m.cost];
     row.getCell(1).alignment = { horizontal: "left" };
-    row.getCell(5).numFmt = "#,##0 ₽";
+    row.getCell(7).numFmt = "#,##0 ₽";
     row.eachCell((c) => {
       c.border = { top: { style: "thin", color: { argb: "FFE5E7EB" } }, bottom: { style: "thin", color: { argb: "FFE5E7EB" } }, left: { style: "thin", color: { argb: "FFE5E7EB" } }, right: { style: "thin", color: { argb: "FFE5E7EB" } } };
     });
@@ -642,9 +647,9 @@ export async function exportYearToExcel(input: {
   }
 
   const totalRow = summaryWs.getRow(sRow);
-  totalRow.values = ["ИТОГО ЗА ГОД", totalYearShifts, Math.round(totalYearHours * 10) / 10, totalYearNightShifts, totalYearCost];
+  totalRow.values = ["ИТОГО ЗА ГОД", totalYearShifts, Math.round(totalYearHours * 10) / 10, totalYearNightShifts, Math.round(totalYearNightBonus), Math.round(totalYearHolidayBonus), totalYearCost];
   totalRow.font = { bold: true, size: 11 };
-  totalRow.getCell(5).numFmt = "#,##0 ₽";
+  totalRow.getCell(7).numFmt = "#,##0 ₽";
   totalRow.eachCell((c) => {
     c.border = { top: { style: "medium", color: { argb: "FF374151" } }, bottom: { style: "thin", color: { argb: "FFE5E7EB" } }, left: { style: "thin", color: { argb: "FFE5E7EB" } }, right: { style: "thin", color: { argb: "FFE5E7EB" } } };
   });
@@ -661,7 +666,7 @@ export async function exportYearToExcel(input: {
 export async function exportMonthToExcel(input: {
   orgName: string;
   monthStartDate: string;
-  employees: { id: string; name: string; hourlyRate?: number }[];
+  employees: { id: string; name: string; hourlyRate?: number; nightRate?: number; holidayRate?: number }[];
   shifts: {
     userId: string;
     userName: string;
@@ -716,6 +721,11 @@ export async function exportMonthToExcel(input: {
     const totalCost = Math.round(totalHours * (emp.hourlyRate || 0));
     const totalNightHours = userShifts.reduce((acc, s) => acc + nightHoursBetween(s.startTime, s.endTime), 0);
     const totalNightShifts = userShifts.filter((s) => nightHoursBetween(s.startTime, s.endTime) > 0).length;
+    const totalNightBonus = userShifts.reduce((acc, s) => acc + nightHoursBetween(s.startTime, s.endTime) * (emp.hourlyRate || 0) * ((emp.nightRate ?? 20) / 100), 0);
+    const hols = getHolidays(year);
+    const holidayShifts = userShifts.filter((s) => hols.includes(s.shiftDate));
+    const totalHolidayHours = holidayShifts.reduce((acc, s) => acc + hoursBetween(s.startTime, s.endTime), 0);
+    const totalHolidayBonus = holidayShifts.reduce((acc, s) => acc + hoursBetween(s.startTime, s.endTime) * (emp.hourlyRate || 0) * ((emp.holidayRate ?? 2) - 1), 0);
 
     // --- Шапка ---
     ws.mergeCells("A1:H1");
@@ -745,7 +755,7 @@ export async function exportMonthToExcel(input: {
     ws.getCell("G2").font = { bold: true, size: 12 };
     ws.getCell("G2").alignment = { horizontal: "center", vertical: "middle" };
 
-    ws.getCell("H2").value = `ЗАТРАТЫ: ${new Intl.NumberFormat("ru-RU").format(totalCost)} ₽`;
+    ws.getCell("H2").value = `ЗАТРАТЫ: ${new Intl.NumberFormat("ru-RU").format(totalCost)} ₽` + (totalNightBonus + totalHolidayBonus > 0 ? ` (в т.ч. ` + (totalNightBonus > 0 ? `ночные +${Math.round(totalNightBonus)} ₽` : "") + (totalHolidayBonus > 0 ? `${totalNightBonus > 0 ? ", " : ""}праздничные +${Math.round(totalHolidayBonus)} ₽` : "") + `)` : "");
     ws.getCell("H2").font = { bold: true, size: 10, color: { argb: "FF10B981" } };
     ws.getCell("H2").alignment = { horizontal: "center", vertical: "middle" };
     ws.getRow(2).height = 24;
@@ -753,7 +763,7 @@ export async function exportMonthToExcel(input: {
     if (totalNightShifts > 0) {
       ws.mergeCells("A3:H3");
       const nightCell = ws.getCell("A3");
-      nightCell.value = `Ночных смен: ${totalNightShifts} · ночных часов: ${Math.round(totalNightHours * 10) / 10} (с 22:00 до 06:00)`;
+      nightCell.value = `Ночных смен: ${totalNightShifts} · ночных часов: ${Math.round(totalNightHours * 10) / 10} · доплата: ${Math.round(totalNightBonus)} ₽` + (totalHolidayBonus > 0 ? ` | Праздничных часов: ${totalHolidayHours} · доплата: ${Math.round(totalHolidayBonus)} ₽` : "");
       nightCell.font = { size: 10, bold: true, color: { argb: "FF4338CA" } };
       nightCell.alignment = { horizontal: "center", vertical: "middle" };
       ws.getRow(3).height = 20;
