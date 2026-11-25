@@ -89,7 +89,7 @@ export const mailerService = {
     });
   },
 
-  async sendWelcomeEmail(to: string, name: string, password: string, excelBuffer: Buffer | null) {
+  async sendWelcomeEmail(to: string, name: string, password: string, excelBuffer: Buffer | null, attachmentName?: string) {
     if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
       console.log(`⚠️ SMTP не настроен. Письмо для ${to} не отправлено. Пароль: ${password}`);
       return false;
@@ -97,10 +97,17 @@ export const mailerService = {
     try {
       const attachments = [];
       if (excelBuffer) {
+        const filename = attachmentName || "График_на_месяц.xlsx";
+        const lower = filename.toLowerCase();
+        let contentType = "application/octet-stream";
+        if (lower.endsWith(".zip")) contentType = "application/zip";
+        else if (lower.endsWith(".xlsx")) contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        else if (lower.endsWith(".docx")) contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        else if (lower.endsWith(".pdf")) contentType = "application/pdf";
         attachments.push({
-          filename: "График_на_месяц.xlsx",
+          filename,
           content: excelBuffer,
-          contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          contentType,
         });
       }
 

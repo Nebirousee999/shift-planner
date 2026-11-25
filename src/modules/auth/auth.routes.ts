@@ -55,10 +55,10 @@ export async function authRoutes(app: FastifyInstance) {
 
   app.post("/quick-register", async (req, reply) => {
         try {
-            const { email, name, guestData } = req.body;
+            const { email, name, guestData, mode, year, exportMode, selectedEmpId } = req.body;
             if (!email) return reply.code(400).send({ error: "Email обязателен" });
 
-            const user = await authService.quickRegister({ email, name, guestData });
+            const user = await authService.quickRegister({ email, name, guestData, mode, year, exportMode, selectedEmpId });
             const token = app.jwt.sign({ sub: user.id, orgId: user.orgId, role: user.role });
             
             return { user, token };
@@ -72,6 +72,38 @@ export async function authRoutes(app: FastifyInstance) {
             app.log.error(e);
             return reply.code(500).send({ error: "Ошибка регистрации" });
         }
+    });
+
+    // ─── Скачивание Excel с калькулятора БЕЗ регистрации ───
+    const calcExcelHits = new Map<string, number[]>();
+    app.post("/calc-excel", async (req, reply) => {
+      try {
+        const ip = req.ip || "unknown";
+        const now = Date.now();
+        const hits = (calcExcelHits.get(ip) || []).filter((t: number) => now - t < 60_000);
+        if (hits.length >= 5) {
+          return reply.code(429).send({ error: "Слишком много запросов, попробуйте через минуту" });
+        }
+        hits.push(now);
+        calcExcelHits.set(ip, hits);
+
+        const { guestData, mode, year, exportMode, selectedEmpId } = req.body || {};
+        const result = await authService.buildCalcExcel(guestData, { mode, year, exportMode, selectedEmpId });
+        
+        const filename = result.filename || "Расписание смен.xlsx";
+        const isZip = filename.endsWith(".zip");
+
+        reply.header("Content-Type", isZip ? "application/zip" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        reply.header("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+        reply.header("Access-Control-Expose-Headers", "Content-Disposition");
+        return reply.send(result.buffer);
+      } catch (e: any) {
+        if (e.message === "NO_DATE" || e.message === "NO_EMPLOYEES") {
+          return reply.code(400).send({ error: "Не хватает данных для графика" });
+        }
+        app.log.error(e);
+        return reply.code(500).send({ error: "Ошибка генерации Excel" });
+      }
     });
 
     app.post("/update-email", async (req, reply) => {

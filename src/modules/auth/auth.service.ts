@@ -17,8 +17,23 @@ import {
   positionTemplates
 } from "../../../db/schema.js";
 import { mailerService } from "../../lib/mailer.service.js";
-import { exportMonthToExcel } from "../../lib/export/excel.js";
+import { exportMonthToExcel, exportYearToExcel } from "../../lib/export/excel.js";
+import archiver from "archiver";
 import { getMonday } from "../../lib/time.js";
+
+// Тёмно-синий цвет для Excel, если смена задевает ночные часы (22:00–06:00)
+function nightColorFor(start: string, end: string): string {
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  let s = sh * 60 + sm;
+  let e = eh * 60 + em;
+  if (e <= s) e += 24 * 60;
+  for (let t = s; t < e; t++) {
+    const hour = Math.floor((t % (24 * 60)) / 60);
+    if (hour >= 22 || hour < 6) return "#312E81";
+  }
+  return "#3B82F6";
+}
 
 function generateTempPassword(length = 8): string {
   const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
@@ -70,7 +85,7 @@ export const authService = {
     return { id: user.id, email: user.email, orgId: org.id, role: user.role };
   },
 
-  async quickRegister(input: { email: string; name: string; guestData: any }) {
+  async quickRegister(input: { email: string; name: string; guestData: any; mode?: string; year?: number; exportMode?: string; selectedEmpId?: string }) {
     // ЗАЩИТА ОТ БОТОВ: Проверяем реальность почты
     const isReal = await isValidRealEmail(input.email);
     if (!isReal) throw new Error("INVALID_EMAIL");
@@ -206,7 +221,10 @@ export const authService = {
           const cycleParts = (empData.cycle || "2/2").split("/");
           const workDays = Number(cycleParts[0]) || 2;
           const offDays = Number(cycleParts[1]) || 2;
-          const cycleLen = workDays + offDays;
+          // Паттерн дня: D — дневная смена, N — ночная, O — выходной (для циклов день/ночь)
+          const pat = typeof empData.pattern === "string" ? empData.pattern.trim().toUpperCase() : "";
+          const hasPattern = /^[DNO]+$/.test(pat);
+          const cycleLen = hasPattern ? pat.length : workDays + offDays;
 
           for (let d = 0; d < 28; d++) {
             const currentDate = new Date(monday + "T00:00:00Z");
@@ -222,17 +240,40 @@ export const authService = {
             let dayInCycle = diffDays % cycleLen;
             if (dayInCycle < 0) dayInCycle += cycleLen;
 
-            if (dayInCycle < workDays) {
-              shiftsToInsert.push({
-                weekId: weeksMap[weekIdx].id,
-                templateId: templateId,
-                userId: emp.id,
-                shiftDate: dateStr,
-                startTime: sTime,
-                endTime: eTime,
-                status: "SCHEDULED"
-              });
+            let dayType = "D";
+            if (hasPattern) {
+              if (pat[dayInCycle] === "N") dayType = "N";
+              if (pat[dayInCycle] === "O") continue;
+            } else if (dayInCycle >= workDays) continue;
+
+            const shiftStart = dayType === "N" ? (empData.nightStart || "22:00") : sTime;
+            const shiftEnd = dayType === "N" ? (empData.nightEnd || "06:00") : eTime;
+
+            let dayTemplateId = templateId;
+            if (shiftStart !== sTime || shiftEnd !== eTime) {
+              const nKey = `${shiftStart}-${shiftEnd}`;
+              if (!templatesMap.has(nKey)) {
+                const [nt] = await tx.insert(shiftTemplates).values({
+                  orgId: org.id,
+                  name: `Ночная смена ${templatesMap.size + 1}`,
+                  startTime: shiftStart,
+                  endTime: shiftEnd,
+                  color: "#312E81"
+                }).returning();
+                templatesMap.set(nKey, nt.id);
+              }
+              dayTemplateId = templatesMap.get(nKey)!;
             }
+
+            shiftsToInsert.push({
+              weekId: weeksMap[weekIdx].id,
+              templateId: dayTemplateId,
+              userId: emp.id,
+              shiftDate: dateStr,
+              startTime: shiftStart,
+              endTime: shiftEnd,
+              status: "SCHEDULED"
+            });
           }
         }
 
@@ -247,7 +288,7 @@ export const authService = {
           startTime: s.startTime,
           endTime: s.endTime,
           templateName: "Смена",
-          templateColor: "#3B82F6"
+          templateColor: nightColorFor(s.startTime, s.endTime)
         }));
 
         excelDataForExport = {
@@ -261,19 +302,39 @@ export const authService = {
       return { org, user, excelDataForExport, firstWeekId };
     });
 
-    // Генерируем Excel, если есть смены
-    let excelBuffer = null;
-    if (result.excelDataForExport && result.excelDataForExport.shifts.length > 0) {
+    // Генерируем Excel или ZIP для письма.
+    // Опции могут приходить на верхнем уровне запроса, а могут лежать в guestData.
+    // Если сотрудников несколько и exportMode не задан — по умолчанию собираем
+    // ZIP (exportMode="all"), чтобы на почту пришёл архив, а не один Excel за месяц.
+    const __multiEmps = Array.isArray((input.guestData as any)?.employees) && (input.guestData as any).employees.length > 1;
+    const __optMode = input.mode ?? (input.guestData as any)?.mode;
+    const __optYear = input.year ?? (input.guestData as any)?.year;
+    const __optExportMode = input.exportMode ?? (input.guestData as any)?.exportMode ?? (__multiEmps ? "all" : undefined);
+    const __optSelectedEmpId = input.selectedEmpId ?? (input.guestData as any)?.selectedEmpId;
+
+    let attachmentBuffer = null;
+    let attachmentName = "";
+    if (input.guestData && input.guestData.employees && input.guestData.employees.length > 0) {
       try {
-        excelBuffer = await exportMonthToExcel(result.excelDataForExport);
+        const calcResult = await this.buildCalcExcel(input.guestData, {
+          mode: __optMode,
+          year: __optYear,
+          exportMode: __optExportMode,
+          selectedEmpId: __optSelectedEmpId
+        });
+        attachmentBuffer = calcResult.buffer;
+        
+        if (calcResult.filename) {
+          attachmentName = calcResult.filename;
+        }
       } catch (e) {
-        console.error("Ошибка генерации Excel:", e);
+        console.error("Ошибка генерации файла для почты:", e);
       }
     }
 
     // Отправляем письмо
     try {
-      await mailerService.sendWelcomeEmail(input.email, result.user.name, tempPassword, excelBuffer);
+      await mailerService.sendWelcomeEmail(input.email, result.user.name, tempPassword, attachmentBuffer, attachmentName);
     } catch (e) {
       console.error("Ошибка отправки письма:", e);
     }
@@ -281,6 +342,160 @@ export const authService = {
     return { id: result.user.id, email: result.user.email, orgId: result.org.id, role: result.user.role, firstWeekId: result.firstWeekId };
   },
 
+
+  // ─── Excel с калькулятора без регистрации: тот же расчёт, что в превью ───
+  async buildCalcExcel(guestData: any, options: { mode?: string, year?: number, exportMode?: string, selectedEmpId?: string } = {}): Promise<any> {
+    const startDate: string | undefined = guestData?.startDate;
+    if (!startDate) throw new Error("NO_DATE");
+
+    const emps: any[] = (guestData?.employees || [])
+      .filter((e: any) => e && String(e.name || "").trim())
+      .slice(0, 6);
+    if (emps.length === 0) throw new Error("NO_EMPLOYEES");
+
+    // Функция для генерации смен на произвольный период (дней)
+    const generateShifts = (emp: any, startDay: Date, daysCount: number) => {
+      const res = [];
+      const empName = String(emp.name).trim();
+      const empId = emp.id || empName;
+      const empStart = emp.startDate ? new Date(emp.startDate + "T00:00:00Z") : startDay;
+
+      const sTime = emp.startTime || "09:00";
+      const eTime = emp.endTime || "18:00";
+      const nStart = emp.nightStart || "22:00";
+      const nEnd = emp.nightEnd || "06:00";
+
+      const pat = typeof emp.pattern === "string" ? emp.pattern.trim().toUpperCase() : "";
+      const hasPattern = /^[DNO]+$/.test(pat);
+      let workDays = 2;
+      let cycleLen = 4;
+      if (hasPattern) {
+        cycleLen = pat.length;
+      } else {
+        const parts = String(emp.cycle || "2/2").split("/");
+        workDays = Number(parts[0]) || 2;
+        const offDays = Number(parts[1]) || 2;
+        cycleLen = workDays + offDays;
+      }
+
+      for (let d = 0; d < daysCount; d++) {
+        const currentDate = new Date(startDay);
+        currentDate.setUTCDate(currentDate.getUTCDate() + d);
+        if (currentDate < empStart) continue;
+
+        let dayInCycle = Math.floor((currentDate.getTime() - empStart.getTime()) / (1000 * 3600 * 24)) % cycleLen;
+        if (dayInCycle < 0) dayInCycle += cycleLen;
+
+        let shiftStart: string | null = null;
+        let shiftEnd: string | null = null;
+        let isNight = false;
+        if (hasPattern) {
+          const t = pat[dayInCycle];
+          if (t === "D") { shiftStart = sTime; shiftEnd = eTime; }
+          else if (t === "N") { shiftStart = nStart; shiftEnd = nEnd; isNight = true; }
+        } else if (dayInCycle < workDays) {
+          shiftStart = sTime;
+          shiftEnd = eTime;
+        }
+        if (!shiftStart || !shiftEnd) continue;
+
+        res.push({
+          userId: empId,
+          userName: empName,
+          shiftDate: currentDate.toISOString().slice(0, 10),
+          startTime: shiftStart,
+          endTime: shiftEnd,
+          templateName: isNight ? "Ночная смена" : "Смена",
+          templateColor: isNight ? "#312E81" : "#3B82F6",
+        });
+      }
+      return res;
+    };
+
+    const getEmpData = (emp: any) => ({
+      id: emp.id || String(emp.name).trim(),
+      name: String(emp.name).trim(),
+      hourlyRate: Number(emp.rate ?? emp.hourlyRate ?? 300),
+    });
+
+    if (options.mode === "year") {
+      const targetYear = options.year || new Date().getFullYear();
+      const yearStart = new Date(Date.UTC(targetYear, 0, 1));
+      const daysInYear = (targetYear % 4 === 0 && (targetYear % 100 !== 0 || targetYear % 400 === 0)) ? 366 : 365;
+
+      if (options.exportMode === "all") {
+        // ZIP для всех
+        const archive = archiver("zip", { zlib: { level: 9 } });
+        const chunks: Buffer[] = [];
+        archive.on("data", (chunk: Buffer) => chunks.push(chunk));
+        
+        for (const emp of emps) {
+          const shifts = generateShifts(emp, yearStart, daysInYear);
+          const buffer = await exportYearToExcel({
+            orgName: "График смен",
+            year: targetYear,
+            employee: getEmpData(emp),
+            shifts,
+          });
+          const safeName = emp.name.replace(/[\/?*\[\]:]/g, "").slice(0, 31) || "Сотрудник";
+          archive.append(buffer, { name: `Расписание смен ${emp.name} ${targetYear} год.xlsx` });
+        }
+        
+        await archive.finalize();
+        return { buffer: Buffer.concat(chunks), filename: `Расписание смен на ${targetYear} год.zip` };
+      } else {
+        // Один выбранный
+        const targetId = options.selectedEmpId || emps[0].id;
+        const emp = emps.find(e => (e.id || String(e.name).trim()) === targetId) || emps[0];
+        const shifts = generateShifts(emp, yearStart, daysInYear);
+        const buffer = await exportYearToExcel({
+          orgName: "График смен",
+          year: targetYear,
+          employee: getEmpData(emp),
+          shifts,
+        });
+        return { buffer, filename: `Расписание смен ${emp.name} ${targetYear} год.xlsx` };
+      }
+    }
+
+    // Месячный режим
+    const mondayRaw = getMonday(startDate);
+    const monday = typeof mondayRaw === "string" ? mondayRaw : new Date(mondayRaw).toISOString().slice(0, 10);
+    const monthStart = new Date(monday + "T00:00:00Z");
+    const yearStr = monthStart.getUTCFullYear();
+    const monthName = monthStart.toLocaleString("ru-RU", { month: "long" });
+
+    if (options.exportMode === "all" && emps.length > 1) {
+      const archive = archiver("zip", { zlib: { level: 9 } });
+      const chunks: Buffer[] = [];
+      archive.on("data", (chunk: Buffer) => chunks.push(chunk));
+      
+      for (const emp of emps) {
+        const shifts = generateShifts(emp, monthStart, 28);
+        const buffer = await exportMonthToExcel({
+          orgName: "График смен",
+          monthStartDate: monday,
+          employees: [getEmpData(emp)],
+          shifts,
+        });
+        const safeName = emp.name.replace(/[\/?*\[\]:]/g, "").slice(0, 31) || "Сотрудник";
+        archive.append(buffer, { name: `Расписание смен ${emp.name} ${monthName} ${yearStr}.xlsx` });
+      }
+      await archive.finalize();
+      return { buffer: Buffer.concat(chunks), filename: `Расписание смен на ${monthName} ${yearStr}.zip` };
+    } else {
+      const targetId = options.selectedEmpId || emps[0].id;
+      const emp = emps.find(e => (e.id || String(e.name).trim()) === targetId) || emps[0];
+      const shifts = generateShifts(emp, monthStart, 28);
+      const buffer = await exportMonthToExcel({
+        orgName: "График смен",
+        monthStartDate: monday,
+        employees: [getEmpData(emp)],
+        shifts,
+      });
+      return { buffer, filename: `Расписание смен ${emp.name} ${monthName} ${yearStr}.xlsx` };
+    }
+  },
 
   async guestSeed() {
     const { randomUUID } = await import('crypto');

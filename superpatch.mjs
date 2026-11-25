@@ -1,164 +1,216 @@
 // superpatch.mjs
-// Правка: исправление 5 TypeScript-ошибок, из-за которых падает `npm run build`.
-//  1. client.ts — request-интерсептор должен возвращать config, а не Promise<{data}>.
-//  2. useGuestMode.ts — параметр prev у сеттеров должен быть типизирован.
-//  3. dashboard.ts — в DashboardUser должно быть поле color.
-//  4. WeekDetailPage.tsx — getEntriesByType("navigation") приводим к PerformanceNavigationTiming[].
-//  5. auth.ts — объект guestUser приводим к типу User (добавляем email).
+// Задача: письмо с графиком на почту должно приходить архивом (ZIP),
+// если сотрудников несколько (режим месяц/год), а не одним Excel за 1 месяц.
+//
+// Причины бага:
+//   1) GuestRegisterModal не передаёт mode/year/exportMode/selectedEmpId в /auth/quick-register
+//      → buildCalcExcel уходит в ветку «1 сотрудник, месяц» → возвращает один xlsx.
+//   2) sendWelcomeEmail игнорирует 5-й аргумент (имя файла) и хардкодит
+//      "График_на_месяц.xlsx" + content-type xlsx — даже ZIP уходит под именем xlsx.
+//
+// Что делает патч:
+//   1) mailer.service.ts — принимает attachmentName, ставит content-type по расширению.
+//   2) auth.service.ts — options берутся из input или guestData; по умолчанию
+//      exportMode="all" при >1 сотруднике → ZIP.
+//   3) GuestRegisterModal.tsx — принимает mode/year/exportMode/selectedEmpId
+//      и прокидывает в /auth/quick-register.
+//
+// Скрипт идемпотентен: повторный запуск ничего не сломает.
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { readFileSync, writeFileSync, existsSync } from "fs";
-import { resolve } from "path";
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const normalizeLF = (s) => s.replace(/\r\n/g, "\n");
+// Читаем с сохранением EOL (CRLF/LF), матчим в LF, пишем обратно в исходном EOL
+function patchFile(file, replaceFn, checks) {
+  const fullPath = path.join(__dirname, file);
+  if (!fs.existsSync(fullPath)) {
+    console.error(`[SKIP] файл не найден: ${file}`);
+    return { ok: false };
+  }
+  const raw = fs.readFileSync(fullPath, "utf8");
+  const eol = raw.includes("\r\n") ? "\r\n" : "\n";
+  const normalized = raw.replace(/\r\n/g, "\n");
 
-function patchFile(relPath, replacements) {
-  const filePath = resolve(process.cwd(), relPath);
-  if (!existsSync(filePath)) {
-    console.error(`✗ Файл не найден: ${relPath}`);
-    process.exit(1);
+  console.log(`\n── ${file} (EOL=${eol === "\r\n" ? "CRLF" : "LF"})`);
+  const patched = replaceFn(normalized);
+
+  if (patched === normalized) {
+    console.log("  [NOOP] изменений нет (всё уже пропатчено или маркер не найден)");
+  } else {
+    const restored = patched.replace(/\n/g, eol);
+    fs.writeFileSync(fullPath, restored, "utf8");
+    console.log("  [SAVE] записано");
   }
 
-  const raw = readFileSync(filePath, "utf8");
-  const hadCRLF = raw.includes("\r\n");
-
-  // Работаем в LF-представлении, чтобы паттерны совпадали независимо от ОС
-  let content = normalizeLF(raw);
-  let applied = 0;
-
-  for (const [from, to] of replacements) {
-    const fromN = normalizeLF(from);
-    const toN = normalizeLF(to);
-    if (!content.includes(fromN)) {
-      console.error(`✗ Паттерн не найден в ${relPath}:`);
-      console.error("---");
-      console.error(from);
-      console.error("---");
-      // Диагностика: показываем, есть ли хотя бы начало паттерна в файле
-      const probe = fromN.split("\n")[0].trim();
-      const found = content.split("\n").findIndex((l) => l.includes(probe));
-      if (found >= 0) {
-        console.error(`Найдена похожая строка #${found + 1}:`);
-        console.error("  " + content.split("\n")[found]);
-      } else {
-        console.error(`Строка-маркер не найдена: "${probe}"`);
-      }
-      process.exit(1);
-    }
-    content = content.replace(fromN, toN);
-    applied++;
+  const finalContent = fs.readFileSync(fullPath, "utf8").replace(/\r\n/g, "\n");
+  for (const [label, re, expectMin] of checks) {
+    const n = (finalContent.match(new RegExp(re.source, "g")) || []).length;
+    const ok = n >= expectMin;
+    console.log(`  ${ok ? "✓" : "✗"} ${label} (встреч: ${n}, нужно ≥${expectMin})`);
   }
-
-  // Возвращаем исходный тип переводов строк
-  const finalContent = hadCRLF ? content.replace(/\n/g, "\r\n") : content;
-  writeFileSync(filePath, finalContent, "utf8");
-  console.log(`✓ ${relPath} — применено замен: ${applied}`);
+  return { ok: true };
 }
 
-// ─── 1. frontend/src/api/client.ts ──────────────────────────────
-patchFile("frontend/src/api/client.ts", [
+// ─────────────────────────────────────────────────────────
+// 1) mailer.service.ts — attachmentName + content-type by extension
+// ─────────────────────────────────────────────────────────
+patchFile(
+  "src/lib/mailer.service.ts",
+  (c) => {
+    const from = `  async sendWelcomeEmail(to: string, name: string, password: string, excelBuffer: Buffer | null) {
+    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+      console.log(\`⚠️ SMTP не настроен. Письмо для \${to} не отправлено. Пароль: \${password}\`);
+      return false;
+    }
+    try {
+      const attachments = [];
+      if (excelBuffer) {
+        attachments.push({
+          filename: "График_на_месяц.xlsx",
+          content: excelBuffer,
+          contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        });
+      }`;
+    const to = `  async sendWelcomeEmail(to: string, name: string, password: string, excelBuffer: Buffer | null, attachmentName?: string) {
+    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+      console.log(\`⚠️ SMTP не настроен. Письмо для \${to} не отправлено. Пароль: \${password}\`);
+      return false;
+    }
+    try {
+      const attachments = [];
+      if (excelBuffer) {
+        const filename = attachmentName || "График_на_месяц.xlsx";
+        const lower = filename.toLowerCase();
+        let contentType = "application/octet-stream";
+        if (lower.endsWith(".zip")) contentType = "application/zip";
+        else if (lower.endsWith(".xlsx")) contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        else if (lower.endsWith(".docx")) contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        else if (lower.endsWith(".pdf")) contentType = "application/pdf";
+        attachments.push({
+          filename,
+          content: excelBuffer,
+          contentType,
+        });
+      }`;
+    if (!c.includes(from)) {
+      // Возможно уже пропатчено — проверим по маркеру
+      if (c.includes("attachmentName?: string")) return c;
+      return c;
+    }
+    return c.split(from).join(to);
+  },
   [
-    `        return Promise.resolve({
-          data: {
-            user: {
-              id: Math.random().toString(),
-              name: body.name || "Новый сотрудник",
-              email: body.email || "new@test.ru",
-              phone: body.phone || null,
-              role: body.role || "EMPLOYEE",
-              position: body.position || null,
-              hourlyRate: body.hourlyRate || null,
-              createdAt: new Date().toISOString(),
-              locationIds: body.locationIds || [],
-              areaIds: body.areaIds || [],
-              paymentType: body.paymentType || "HOURLY",
-              employmentType: body.employmentType || "SHTAT",
-              color: body.color || "#3B82F6",
-              tempPassword: "temp123",
-              isTempPasswordSent: false
-            },
-            tempPassword: "temp123"
-          }
-        });`,
-    `        mockData = {
-          user: {
-            id: Math.random().toString(),
-            name: body.name || "Новый сотрудник",
-            email: body.email || "new@test.ru",
-            phone: body.phone || null,
-            role: body.role || "EMPLOYEE",
-            position: body.position || null,
-            hourlyRate: body.hourlyRate || null,
-            createdAt: new Date().toISOString(),
-            locationIds: body.locationIds || [],
-            areaIds: body.areaIds || [],
-            paymentType: body.paymentType || "HOURLY",
-            employmentType: body.employmentType || "SHTAT",
-            color: body.color || "#3B82F6",
-            tempPassword: "temp123",
-            isTempPasswordSent: false
-          },
-          tempPassword: "temp123"
-        };`
+    ["sendWelcomeEmail принимает attachmentName", /attachmentName\?:\s*string/, 1],
+    ["content-type по расширению (.zip)", /endsWith\("\.zip"\)\)\s*contentType\s*=\s*"application\/zip"/, 1],
   ],
-  [
-    `    } else if (url.includes("/organization")) {
-        return Promise.resolve({ data: GUEST_SEED.organization });
-      }`,
-    `    } else if (url.includes("/organization")) {
-        mockData = GUEST_SEED.organization;
-      }`
-  ]
-]);
+);
 
-// ─── 2. frontend/src/hooks/useGuestMode.ts ──────────────────────
-patchFile("frontend/src/hooks/useGuestMode.ts", [
+// ─────────────────────────────────────────────────────────
+// 2) auth.service.ts — options fallback + default exportMode="all"
+// ─────────────────────────────────────────────────────────
+patchFile(
+  "src/modules/auth/auth.service.ts",
+  (c) => {
+    const from = `    // Генерируем Excel или ZIP для письма
+    let attachmentBuffer = null;
+    let attachmentName = "";
+    if (input.guestData && input.guestData.employees && input.guestData.employees.length > 0) {
+      try {
+        const calcResult = await this.buildCalcExcel(input.guestData, {
+          mode: input.mode,
+          year: input.year,
+          exportMode: input.exportMode,
+          selectedEmpId: input.selectedEmpId
+        });`;
+    const to = `    // Генерируем Excel или ZIP для письма.
+    // Опции могут приходить на верхнем уровне запроса, а могут лежать в guestData.
+    // Если сотрудников несколько и exportMode не задан — по умолчанию собираем
+    // ZIP (exportMode="all"), чтобы на почту пришёл архив, а не один Excel за месяц.
+    const __multiEmps = Array.isArray((input.guestData as any)?.employees) && (input.guestData as any).employees.length > 1;
+    const __optMode = input.mode ?? (input.guestData as any)?.mode;
+    const __optYear = input.year ?? (input.guestData as any)?.year;
+    const __optExportMode = input.exportMode ?? (input.guestData as any)?.exportMode ?? (__multiEmps ? "all" : undefined);
+    const __optSelectedEmpId = input.selectedEmpId ?? (input.guestData as any)?.selectedEmpId;
+
+    let attachmentBuffer = null;
+    let attachmentName = "";
+    if (input.guestData && input.guestData.employees && input.guestData.employees.length > 0) {
+      try {
+        const calcResult = await this.buildCalcExcel(input.guestData, {
+          mode: __optMode,
+          year: __optYear,
+          exportMode: __optExportMode,
+          selectedEmpId: __optSelectedEmpId
+        });`;
+    if (!c.includes(from)) {
+      if (c.includes("__optExportMode")) return c;
+      return c;
+    }
+    return c.split(from).join(to);
+  },
   [
-    `    setGuestData((prev) => ({ ...prev, employees: [...prev.employees, emp] }));`,
-    `    setGuestData((prev: any) => ({ ...prev, employees: [...prev.employees, emp] }));`
+    ["quickRegister: fallback options из guestData", /__optExportMode\s*=\s*input\.exportMode\s*\?\?/, 1],
+    ["quickRegister: default exportMode=\"all\" при >1", /__multiEmps\s*\?\s*"all"/, 1],
   ],
+);
+
+// ─────────────────────────────────────────────────────────
+// 3) GuestRegisterModal.tsx — принимает и прокидывает options
+// ─────────────────────────────────────────────────────────
+patchFile(
+  "frontend/src/components/GuestRegisterModal.tsx",
+  (c) => {
+    let r = c;
+
+    const pFrom = `type Props = {
+  guestData: any;
+  onClose: () => void;
+};
+
+export default function GuestRegisterModal({ guestData, onClose }: Props) {`;
+    const pTo = `type Props = {
+  guestData: any;
+  onClose: () => void;
+  mode?: string;
+  year?: number;
+  exportMode?: string;
+  selectedEmpId?: string;
+};
+
+export default function GuestRegisterModal({ guestData, onClose, mode, year, exportMode, selectedEmpId }: Props) {`;
+    if (r.includes(pFrom)) {
+      r = r.split(pFrom).join(pTo);
+    } else if (!r.includes("mode?: string;")) {
+      // не нашли — не патчим
+    }
+
+    const qFrom = `      const { data } = await api.post("/auth/quick-register", {
+        email,
+        name: "Владелец",
+        guestData,
+      });`;
+    const qTo = `      const { data } = await api.post("/auth/quick-register", {
+        email,
+        name: "Владелец",
+        guestData,
+        mode,
+        year,
+        exportMode,
+        selectedEmpId,
+      });`;
+    if (r.includes(qFrom)) {
+      r = r.split(qFrom).join(qTo);
+    }
+
+    return r;
+  },
   [
-    `    setGuestData((prev) => ({ ...prev, shifts: [...prev.shifts, shift] }));`,
-    `    setGuestData((prev: any) => ({ ...prev, shifts: [...prev.shifts, shift] }));`
+    ["Modal принимает mode/year/exportMode/selectedEmpId", /mode\?:\s*string;[\s\S]{0,120}selectedEmpId\?:\s*string;/, 1],
+    ["Modal прокидывает options в /auth/quick-register", /guestData,\s*\n\s*mode,\s*\n\s*year,/, 1],
   ],
-  [
-    `    setGuestData((prev) => ({ ...prev, shifts: prev.shifts.filter((s: any) => s.id !== id) }));`,
-    `    setGuestData((prev: any) => ({ ...prev, shifts: prev.shifts.filter((s: any) => s.id !== id) }));`
-  ]
-]);
+);
 
-// ─── 3. frontend/src/api/dashboard.ts ───────────────────────────
-patchFile("frontend/src/api/dashboard.ts", [
-  [
-    `export type DashboardUser = {
-  id: string;
-  name: string;
-  hourlyRate: string | null;
-  position: string | null;
-};`,
-    `export type DashboardUser = {
-  id: string;
-  name: string;
-  hourlyRate: string | null;
-  position: string | null;
-  color?: string | null;
-};`
-  ]
-]);
-
-// ─── 4. frontend/src/pages/WeekDetailPage.tsx ───────────────────
-patchFile("frontend/src/pages/WeekDetailPage.tsx", [
-  [
-    `  const navEntries = performance.getEntriesByType("navigation");`,
-    `  const navEntries = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[];`
-  ]
-]);
-
-// ─── 5. frontend/src/store/auth.ts ──────────────────────────────
-patchFile("frontend/src/store/auth.ts", [
-  [
-    `    const guestUser = { id: "guest", name: "Гость", role: "OWNER", orgId: "guest-org" };`,
-    `    const guestUser: User = { id: "guest", name: "Гость", email: "guest@local", role: "OWNER", orgId: "guest-org" };`
-  ]
-]);
-
-console.log("\nВсе правки применены успешно.");
+console.log("\nГотово.");
+console.log("Если что-то ✗ — см. вывод выше. Если всё ✓ — пересоберите фронт/сервер.");

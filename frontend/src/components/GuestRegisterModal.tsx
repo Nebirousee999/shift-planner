@@ -6,9 +6,13 @@ import { useAuth } from "../store/auth"; // Укажи правильный пу
 type Props = {
   guestData: any;
   onClose: () => void;
+  mode?: string;
+  year?: number;
+  exportMode?: string;
+  selectedEmpId?: string;
 };
 
-export default function GuestRegisterModal({ guestData, onClose }: Props) {
+export default function GuestRegisterModal({ guestData, onClose, mode, year, exportMode, selectedEmpId }: Props) {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,6 +31,10 @@ export default function GuestRegisterModal({ guestData, onClose }: Props) {
         email,
         name: "Владелец",
         guestData,
+        mode,
+        year,
+        exportMode,
+        selectedEmpId,
       });
 
       // Сохраняем токен и заходим в систему
