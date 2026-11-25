@@ -7,13 +7,16 @@ import {
 import { api } from "../api/client";
 import { trackEvent } from "../lib/metrika";
 import { useAuth } from "../store/auth";
+import { useSeo } from "../lib/useSeo";
 //asd
 type Employee = {
   id: string;
   name: string;
   color: string;
-  cycle: "2/2" | "3/3" | "1/3" | "5/2" | "1/1" | "4/4" | "1/2" | "2/2/3" | "3/2" | "4/2" | "6/1" | "5/5" | "dn4" | "ddnn2" | "ddnn7" | "nn2";
+  cycle: "2/2" | "3/3" | "1/3" | "5/2" | "1/1" | "4/4" | "1/2" | "2/2/3" | "3/2" | "4/2" | "6/1" | "5/5" | "dn4" | "ddnn2" | "ddnn7" | "nn2" | "15/15" | "30/30" | "30/60" | "60/30" | "custom";
   pattern?: string;
+  customPattern?: { days: number; type: "D" | "N" | "O" }[];
+  customSegmentsCount?: number;
   startTime: string;
   endTime: string;
   nightStart: string;
@@ -31,14 +34,18 @@ const CYCLES: Record<string, { work: number; off: number; label: string; pattern
   "3/3": { work: 3, off: 3, label: "3/3" },
   "1/3": { work: 1, off: 3, label: "1/3" },
   "5/2": { work: 5, off: 2, label: "5/2" },
-  "1/1": { work: 1, off: 1, label: "1/1 (сутки через сутки)" },
+  "1/1": { work: 1, off: 1, label: "1/1" },
   "4/4": { work: 4, off: 4, label: "4/4" },
-  "1/2": { work: 1, off: 2, label: "1/2 (сутки через двое)" },
-  "2/2/3": { work: 2, off: 3, label: "2/2/3 (2 смены подряд)" },
+  "1/2": { work: 1, off: 2, label: "1/2" },
+  "2/2/3": { work: 2, off: 3, label: "2/2/3" },
   "3/2": { work: 3, off: 2, label: "3/2" },
   "4/2": { work: 4, off: 2, label: "4/2" },
   "6/1": { work: 6, off: 1, label: "6/1" },
   "5/5": { work: 5, off: 5, label: "5/5" },
+  "15/15": { work: 15, off: 15, label: "15/15" },
+  "30/30": { work: 30, off: 30, label: "30/30" },
+  "30/60": { work: 30, off: 60, label: "30/60" },
+  "60/30": { work: 60, off: 30, label: "60/30" },
   "dn4": { work: 4, off: 0, label: "День-ночь-отсыпной-выходной 🌙", pattern: ["D", "N", "O", "O"] },
   "ddnn2": { work: 6, off: 0, label: "2 дня / 2 ночи / 2 выходных", pattern: ["D", "D", "N", "N", "O", "O"] },
   "ddnn7": { work: 7, off: 0, label: "День-день-ночь-ночь + 3 выходных", pattern: ["D", "D", "N", "N", "O", "O", "O"] },
@@ -62,6 +69,26 @@ const MONTHS_RU = ["Январь", "Февраль", "Март", "Апрель",
 const SHORT_MONTHS_RU = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
 const WEEKDAYS_RU = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 
+const FAQ_ITEMS = [
+  {
+    q: "Как считаются ночные часы в калькуляторе?",
+    a: "Ночными считаются часы с 22:00 до 06:00. Если смена начинается в 21:00 и заканчивается в 07:00, из 10 часов смены 8 приходятся на ночное время. Для циклов с отдельной ночной сменой (например, «день-ночь-отсыпной-выходной») укажите время ночной смены во вкладке «Время» — калькулятор посчитает ночные смены и часы за месяц и за год.",
+  },
+  {
+    q: "Какая доплата за ночные часы по ТК РФ?",
+    a: "По статье 154 ТК РФ каждый час ночной работы (с 22:00 до 06:00) оплачивается в повышенном размере — минимум на 20% выше обычной часовой ставки. Конкретный процент устанавливается работодателем в локальном акте или коллективном договоре. В калькуляторе можно указать свой процент доплаты — затраты пересчитаются автоматически.",
+  },
+  {
+    q: "Как перевести график смен в Excel?",
+    a: "Нажмите кнопку «Скачать Excel» — файл с календарём смен, итогами по неделям, ночными сменами и затратами скачается без регистрации. В годовом режиме скачивается файл на весь выбранный год. График также можно сохранить на сайт по email — тогда он закрепится в личном кабинете.",
+  },
+  {
+    q: "Как работает калькулятор графика смен 2/2?",
+    a: "Укажите дату старта цикла, время смен и ставку. Калькулятор отмечает рабочие и выходные дни по циклу 2 через 2 и считает смены, часы, ночные смены и затраты на месяц или год. Цикл не сбрасывается в начале месяца — если сотрудник начал 30 числа, счёт продолжается корректно и в следующем месяце.",
+  },
+];
+  
+
 const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
 const MINUTES = ["00", "15", "30", "45"];
 
@@ -84,7 +111,9 @@ export default function CalculatorPage() {
       { 
         id: "1", name: "Сотрудник 1", color: COLORS[0], cycle: "2/2", 
         startTime: "09:00", endTime: "18:00", rate: 300, nightRate: 20, holidayRate: 2,
-      startDate: today.toISOString().slice(0, 10), isVisible: true, nightStart: "22:00", nightEnd: "06:00" 
+      startDate: today.toISOString().slice(0, 10), isVisible: true, nightStart: "22:00", nightEnd: "06:00",
+        customSegmentsCount: 3,
+        customPattern: [{ days: 2, type: "D" }, { days: 2, type: "N" }, { days: 3, type: "O" }]
       }
     ];
   });
@@ -104,7 +133,8 @@ export default function CalculatorPage() {
     localStorage.setItem("calc_employees", JSON.stringify(employees));
   }, [employees]);
   const [activeTab, setActiveTab] = useState<"name" | "color" | "cycle" | "time" | "rate">("cycle");
-  const [cycleSubTab, setCycleSubTab] = useState<"day" | "night">("day");
+  const [cycleSubTab, setCycleSubTab] = useState<"day" | "night" | "custom">("day");
+  const [activeCustomSegment, setActiveCustomSegment] = useState(0);
   const [selectedDayInfo, setSelectedDayInfo] = useState<{date: Date, emps: Employee[]} | null>(null);
 
   const [isSaving, setIsSaving] = useState(false);
@@ -136,7 +166,9 @@ export default function CalculatorPage() {
       startDate: today.toISOString().slice(0, 10),
       isVisible: true,
       nightStart: "22:00",
-      nightEnd: "06:00"
+      nightEnd: "06:00",
+      customSegmentsCount: 3,
+      customPattern: [{ days: 2, type: "D" }, { days: 2, type: "N" }, { days: 3, type: "O" }]
     };
     setEmployees([...employees, newEmp]);
     setActiveEmpId(newId);
@@ -189,6 +221,18 @@ export default function CalculatorPage() {
     return minutes / 60;
   };
 
+  const getEmpPattern = (emp: Employee): ("D" | "N" | "O")[] | undefined => {
+    if (emp.cycle === "custom") {
+      if (!emp.customPattern) return undefined;
+      const arr: ("D" | "N" | "O")[] = [];
+      emp.customPattern.forEach(seg => {
+        for (let i = 0; i < seg.days; i++) arr.push(seg.type);
+      });
+      return arr.length > 0 ? arr : undefined;
+    }
+    return CYCLES[emp.cycle]?.pattern;
+  };
+
   const getWorkingEmployees = (date: Date) => {
     return employees.filter(emp => {
       if (!emp.isVisible) return false;
@@ -199,17 +243,20 @@ export default function CalculatorPage() {
       const diffTime = current.getTime() - start.getTime();
       const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
 
+      const pattern = getEmpPattern(emp);
+      if (pattern) {
+        const cycleLen = pattern.length;
+        let dayInCycle = diffDays % cycleLen;
+        if (dayInCycle < 0) dayInCycle += cycleLen;
+        return pattern[dayInCycle] !== "O";
+      }
+
       const config = CYCLES[emp.cycle];
+      if (!config) return false;
       const cycleLen = config.work + config.off;
       
       let dayInCycle = diffDays % cycleLen;
       if (dayInCycle < 0) dayInCycle += cycleLen;
-
-      // Циклы день/ночь: тип дня задается паттерном D/N/O
-      if (config.pattern) {
-        const type = config.pattern[dayInCycle];
-        return type !== "O";
-      }
 
       return dayInCycle < config.work;
     });
@@ -222,15 +269,15 @@ export default function CalculatorPage() {
 
   // Ночная ли смена у сотрудника в этот день
   const isNightDayFor = (emp: Employee, date: Date) => {
-    const config = CYCLES[emp.cycle];
-    if (!config.pattern) return false;
+    const pattern = getEmpPattern(emp);
+    if (!pattern) return false;
     const start = new Date(emp.startDate + "T00:00:00");
     const current = new Date(date.getFullYear(), date.getMonth(), date.getDate());
     const diffDays = Math.round((current.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-    const cycleLen = config.work + config.off;
+    const cycleLen = pattern.length;
     let dayInCycle = diffDays % cycleLen;
     if (dayInCycle < 0) dayInCycle += cycleLen;
-    return config.pattern[dayInCycle] === "N";
+    return pattern[dayInCycle] === "N";
   };
 
   const calendarDays = useMemo(() => {
@@ -475,6 +522,16 @@ export default function CalculatorPage() {
 
   const activeEmp = employees.find(e => e.id === activeEmpId)!;
 
+
+  // SEO-год: с декабря показываем следующий год — в декабре ищут график на новый
+  const nowDate = new Date();
+  const seoYear = nowDate.getMonth() === 11 ? nowDate.getFullYear() + 1 : nowDate.getFullYear();
+
+  useSeo(
+    `Калькулятор графика смен на ${seoYear} год — расчет онлайн`,
+    `Рассчитайте график смен ${seoYear} онлайн: смены, часы, ночные смены и затраты по ставке. Скачайте Excel бесплатно, без регистрации.`
+  );
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       <header className="bg-white border-b border-slate-200 py-4 px-6 flex items-center justify-between sticky top-0 z-30">
@@ -621,7 +678,7 @@ export default function CalculatorPage() {
                   className={`flex items-center justify-between px-3 py-2 text-sm rounded-lg transition-colors text-left ${activeTab === "cycle" ? "bg-white shadow-sm ring-1 ring-slate-200 text-slate-900 font-medium" : "text-slate-600 hover:bg-slate-100"}`}
                 >
                   <span className="text-slate-500">Цикл смен:</span>
-                  <span className="text-right leading-snug ml-2 text-xs">{CYCLES[activeEmp.cycle].label}</span>
+                  <span className="text-right leading-snug ml-2 text-xs">{CYCLES[activeEmp.cycle]?.label || (activeEmp.cycle === "custom" ? "Свой график" : "Выберите")}</span>
                 </button>
                 <button
                   onClick={() => setActiveTab("color")}
@@ -640,7 +697,7 @@ export default function CalculatorPage() {
                   <span className="text-slate-500 shrink-0">Время:</span>
                   <div className="flex flex-col items-end">
                     <span>{activeEmp.startTime} - {activeEmp.endTime}</span>
-                    {CYCLES[activeEmp.cycle].pattern && (
+                    {(CYCLES[activeEmp.cycle]?.pattern || activeEmp.cycle === "custom") && (
                       <span className="text-[11px] text-slate-500 font-normal mt-0.5">
                         🌙 {activeEmp.nightStart} - {activeEmp.nightEnd}
                       </span>
@@ -704,22 +761,120 @@ export default function CalculatorPage() {
                         onClick={() => setCycleSubTab("night")} 
                         className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${cycleSubTab === "night" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
                       >
-                        Дневные с ночными
+                        Ночные
+                      </button>
+                      <button 
+                        onClick={() => { setCycleSubTab("custom"); if (activeEmp.cycle !== "custom") updateActiveEmp("cycle", "custom"); }} 
+                        className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${cycleSubTab === "custom" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                      >
+                        Своя
                       </button>
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      {Object.entries(CYCLES)
-                        .filter(([_, data]) => cycleSubTab === "day" ? !data.pattern : !!data.pattern)
-                        .map(([key, data]) => (
-                        <button
-                          key={key}
-                          onClick={() => { updateActiveEmp("cycle", key); updateActiveEmp("pattern", (data as any).pattern || ""); }}
-                          className={`py-2 text-sm font-medium rounded-xl border-2 transition-all ${activeEmp.cycle === key ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 text-slate-600 hover:border-slate-300"}`}
-                        >
-                          {data.label}
-                        </button>
-                      ))}
-                    </div>
+                    {cycleSubTab !== "custom" ? (
+                      <div className="grid grid-cols-3 gap-2">
+                        {Object.entries(CYCLES)
+                          .filter(([_, data]) => cycleSubTab === "day" ? !data.pattern : !!data.pattern)
+                          .map(([key, data]) => (
+                          <button
+                            key={key}
+                            onClick={() => { updateActiveEmp("cycle", key); updateActiveEmp("pattern", (data as any).pattern || ""); }}
+                            className={`py-2 text-xs text-center font-medium rounded-xl border-2 transition-all ${activeEmp.cycle === key ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 text-slate-600 hover:border-slate-300"}`}
+                          >
+                            {data.label}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="space-y-3 mt-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="text-xs font-medium text-slate-700">Колич разделов</label>
+                          <input 
+                            type="number" 
+                            min="1" max="10"
+                            value={activeEmp.customSegmentsCount || 3} 
+                            onChange={(e) => {
+                              const count = Math.max(1, parseInt(e.target.value) || 1);
+                              updateActiveEmp("customSegmentsCount", count);
+                              let newPattern = [...(activeEmp.customPattern || [])];
+                              while (newPattern.length < count) newPattern.push({ days: 1, type: "D" });
+                              newPattern = newPattern.slice(0, count);
+                              updateActiveEmp("customPattern", newPattern);
+                              if (activeCustomSegment >= count) setActiveCustomSegment(0);
+                            }}
+                            className="!w-20 !py-1 !px-2 !text-sm text-center border border-slate-300 rounded-lg outline-none focus:border-brand-500" 
+                          />
+                        </div>
+                        <div className="grid grid-cols-4 gap-2">
+                          {Array.from({ length: activeEmp.customSegmentsCount || 3 }).map((_, i) => {
+                            const seg = activeEmp.customPattern?.[i];
+                            const type = seg?.type || "D";
+                            const isActive = activeCustomSegment === i;
+                            
+                            let bgClass = "bg-white text-slate-700 border-slate-200 hover:border-slate-300";
+                            let typeText = "День";
+                            
+                            if (type === "N") {
+                              bgClass = isActive ? "bg-slate-700 text-white border-slate-900 shadow-sm" : "bg-slate-100 text-slate-600 border-slate-200";
+                              typeText = "Ночь";
+                            } else if (type === "O") {
+                              bgClass = isActive ? "bg-emerald-100 text-emerald-800 border-emerald-500 shadow-sm" : "bg-emerald-50 text-emerald-700 border-emerald-200";
+                              typeText = "Выходной";
+                            } else {
+                              bgClass = isActive ? "bg-blue-50 text-blue-700 border-brand-500 shadow-sm" : "bg-white text-slate-700 border-slate-200";
+                              typeText = "День";
+                            }
+
+                            return (
+                              <button
+                                key={i}
+                                onClick={() => setActiveCustomSegment(i)}
+                                className={`aspect-square flex flex-col items-center justify-center p-1 rounded-xl border-2 transition-all ${bgClass}`}
+                              >
+                                <span className="font-bold text-lg leading-none mb-1">{seg?.days || 1}</span>
+                                <span className="text-[10px] font-medium leading-none truncate w-full text-center">{typeText}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        
+                        {activeEmp.customPattern?.[activeCustomSegment] && (
+                          <div className="bg-white border border-slate-200 p-3 rounded-xl space-y-3 shadow-sm">
+                            <div>
+                              <label className="block text-xs font-medium text-slate-700 mb-1.5">Колич дней</label>
+                              <input 
+                                type="number" 
+                                min="1"
+                                value={activeEmp.customPattern[activeCustomSegment].days} 
+                                onChange={(e) => {
+                                  const newPattern = [...activeEmp.customPattern!];
+                                  newPattern[activeCustomSegment] = { ...newPattern[activeCustomSegment], days: Math.max(1, parseInt(e.target.value) || 1) };
+                                  updateActiveEmp("customPattern", newPattern);
+                                  updateActiveEmp("cycle", "custom");
+                                }}
+                                className="!w-32 !py-2 !px-3 !text-sm border border-slate-300 rounded-lg outline-none focus:border-brand-500 bg-white" 
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-slate-700 mb-1.5">Тип</label>
+                              <select
+                                value={activeEmp.customPattern[activeCustomSegment].type}
+                                onChange={(e) => {
+                                  const newPattern = [...activeEmp.customPattern!];
+                                  newPattern[activeCustomSegment] = { ...newPattern[activeCustomSegment], type: e.target.value as "D" | "N" | "O" };
+                                  updateActiveEmp("customPattern", newPattern);
+                                  updateActiveEmp("cycle", "custom");
+                                }}
+                                className="!w-32 !py-2 !px-3 !text-sm rounded-lg border border-slate-300 outline-none focus:border-brand-500 bg-white"
+                              >
+                                <option value="D">Дневной</option>
+                                <option value="N">Ночной</option>
+                                <option value="O">Выходной</option>
+                              </select>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1110,6 +1265,94 @@ export default function CalculatorPage() {
           </div>
         </div>
       </main>
+
+      
+      {/* SEO-разделы под калькулятором */}
+      <section className="max-w-7xl w-full mx-auto px-4 pb-6">
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 space-y-8">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mb-3">Как пользоваться калькулятором</h2>
+            <p className="text-slate-600 text-sm sm:text-base leading-relaxed">
+              Калькулятор графика смен считает расписание по циклам: 2/2, 3/3, 1/3, сутки через сутки (1/1),
+              сутки через двое (1/2), 5/2, 6/1, 2/2/3, 3/2, 4/2, 5/5, а также циклы с ночными сменами —
+              «день-ночь-отсыпной-выходной», «2 дня / 2 ночи / 2 выходных» и «2/2 только ночные».
+            </p>
+            <ol className="mt-3 space-y-2 text-slate-600 text-sm sm:text-base leading-relaxed list-decimal list-inside">
+              <li><b>Настройте сотрудников</b> — добавьте до 6 человек. Для каждого можно переименовать его, изменить ставку (₽/час), выбрать цвет для календаря, а также задать точное время начала и конца дневных и ночных смен во вкладке «Время».</li>
+              <li><b>Выберите цикл смен</b> — стандартные (2/2, 3/3, 1/1) или с ночными сменами. Если нужного графика нет, перейдите во вкладку <b>«Своя»</b>: укажите количество разделов и настройте для каждого из них число дней и тип (Дневной, Ночной, Выходной).</li>
+              <li><b>Настройте коэффициенты</b> — во вкладке «Ставка» можно указать свой процент доплаты за ночные часы (по умолчанию 20%) и коэффициент оплаты праздничных дней (по умолчанию ×2). Калькулятор автоматически посчитает переработки, ночные и праздничные надбавки.</li>
+              <li><b>Укажите дату старта цикла</b> — от неё считается первая смена. Цикл продолжается и в следующие месяцы: если сотрудник начал 30-го числа, график 2/2 не сбросится 1 числа.</li>
+              <li><b>Скачайте Excel</b> — файл с календарём, итогами по неделям, ночными сменами и затратами. Без регистрации (или сохраните на сайт по email).</li>
+            </ol>
+          </div>
+
+          <div>
+            <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mb-3">Ночные смены по ТК РФ</h2>
+            <p className="text-slate-600 text-sm sm:text-base leading-relaxed">
+              Ночным временем по статье 96 ТК РФ считается период с 22:00 до 06:00. Смена считается ночной, если больше половины её длительности приходится на этот период.
+            </p>
+            <p className="text-slate-600 text-sm sm:text-base leading-relaxed mt-2">
+              По статье 154 ТК РФ каждый час работы в ночное время оплачивается в повышенном размере — не менее чем на 20% выше часовой ставки. Конкретный процент устанавливается коллективным договором или локальным актом работодателя.
+            </p>
+            <p className="text-slate-600 text-sm sm:text-base leading-relaxed mt-2">
+              Калькулятор считает ночные часы автоматически: для смен, пересекающих интервал 22:00–06:00, выделяется ночная часть и показывается в плитках за месяц и год, в Excel-выгрузке и в итогах недели.
+            </p>
+          </div>
+
+          <div>
+            <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mb-3">Примеры циклов</h2>
+            <p className="text-slate-600 text-sm sm:text-base leading-relaxed">
+              Разные циклы подходят разным бизнесам:
+            </p>
+            <ul className="mt-3 space-y-1.5 text-slate-600 text-sm sm:text-base leading-relaxed list-disc list-inside">
+              <li><b>2/2</b> — 2 рабочих дня через 2 выходных. Удобно для кафе, магазинов, складов со сменами по 8–12 часов.</li>
+              <li><b>1/1 (сутки через сутки)</b> — стандарт скорой помощи, диспетчеров и охранных предприятий.</li>
+              <li><b>1/2 (сутки через двое)</b> — часто для вахтового графика и графика с подменой.</li>
+              <li><b>5/2</b> — классическая пятидневка для офисов и управляющих компаний.</li>
+              <li><b>6/1</b> — для ритейла и услуг с работой всю неделю.</li>
+            </ul>
+
+            <div className="mt-6 pt-4 border-t border-slate-100 flex flex-wrap gap-4">
+              <a href="/calc" className="inline-flex items-center text-brand-600 hover:text-brand-700 font-medium text-sm transition-colors">
+                График 2/2 на {seoYear} год →
+              </a>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ: вопросы и ответы по графику смен */}
+      <section className="max-w-7xl w-full mx-auto px-4 pb-10">
+        <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mb-4">
+          Частые вопросы о графике смен
+        </h2>
+        <div className="space-y-2">
+          {FAQ_ITEMS.map((item, i) => (
+            <details key={i} className="bg-white rounded-xl border border-slate-200 shadow-sm group">
+              <summary className="cursor-pointer px-4 py-3 font-semibold text-slate-800 text-sm sm:text-base select-none group-open:text-brand-700">
+                {item.q}
+              </summary>
+              <p className="px-4 pb-4 text-sm text-slate-600 leading-relaxed">{item.a}</p>
+            </details>
+          ))}
+        </div>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "FAQPage",
+              mainEntity: FAQ_ITEMS.map((item) => ({
+                "@type": "Question",
+                name: item.q,
+                acceptedAnswer: { "@type": "Answer", text: item.a },
+              })),
+            }),
+          }}
+        />
+      </section>
+
 
       {/* Модалка после скачивания */}
       {showSaveModal && (
