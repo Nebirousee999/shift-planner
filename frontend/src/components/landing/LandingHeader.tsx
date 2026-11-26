@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { CalendarDays, Menu, X, ArrowRight } from "lucide-react";
+import { CalendarDays, Menu, X, ArrowRight, LayoutDashboard } from "lucide-react";
+import { useAuth } from "../../store/auth";
 
 const NAV_LINKS = [
   { href: "#features", label: "Возможности" },
@@ -12,6 +13,7 @@ const NAV_LINKS = [
 export default function LandingHeader({ onStartGuest }: { onStartGuest?: (source: string) => void }) {
   const navigate = useNavigate();
   const { pathname } = useLocation(); // <-- Добавили
+  const token = useAuth((s) => s.token);
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -88,13 +90,23 @@ export default function LandingHeader({ onStartGuest }: { onStartGuest?: (source
         {/* Десктоп-кнопки */}
         <div className="hidden md:flex items-center gap-2">
           
-          <button
-            onClick={goRegister}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-xl hover:bg-brand-700 transition-colors shadow-sm hover:shadow"
-          >
-            Попробовать бесплатно и без регистрации
-            <ArrowRight className="w-4 h-4" />
-          </button>
+          {token ? (
+            <button
+              onClick={() => navigate("/dashboard")}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-xl hover:bg-slate-800 transition-colors shadow-sm hover:shadow"
+            >
+              Перейти в кабинет
+              <LayoutDashboard className="w-4 h-4" />
+            </button>
+          ) : (
+            <button
+              onClick={goRegister}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-xl hover:bg-brand-700 transition-colors shadow-sm hover:shadow"
+            >
+              Попробовать бесплатно и без регистрации
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         {/* Мобильный бургер */}
@@ -122,12 +134,21 @@ export default function LandingHeader({ onStartGuest }: { onStartGuest?: (source
             ))}
             <div className="pt-3 border-t border-slate-100 space-y-2">
               
-              <button
-                onClick={goRegister}
-                className="w-full px-3 py-2.5 text-sm font-medium bg-brand-600 text-white rounded-xl hover:bg-brand-700"
-              >
-                Попробовать бесплатно и без регистрации
-              </button>
+              {token ? (
+                <button
+                  onClick={() => { setMobileOpen(false); navigate("/dashboard"); }}
+                  className="w-full px-3 py-2.5 text-sm font-medium bg-slate-900 text-white rounded-xl hover:bg-slate-800"
+                >
+                  Перейти в кабинет
+                </button>
+              ) : (
+                <button
+                  onClick={goRegister}
+                  className="w-full px-3 py-2.5 text-sm font-medium bg-brand-600 text-white rounded-xl hover:bg-brand-700"
+                >
+                  Попробовать бесплатно и без регистрации
+                </button>
+              )}
             </div>
           </div>
         </div>

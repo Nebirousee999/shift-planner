@@ -51,7 +51,7 @@ export default function LoginPage() {
         sessionStorage.removeItem("pendingCheckout");
       }
     }
-    return "/";
+    return "/dashboard";
   };
 
   const onLogin = async (data: LoginForm) => {

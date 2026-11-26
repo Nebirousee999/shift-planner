@@ -61,12 +61,6 @@ function ProtectedRoute({
   return <>{children}</>;
 }
 
-function HomeRoute() {
-  const { token, hydrated } = useAuth();
-  if (!hydrated) return null;
-  if (!token) return <LandingPage />;
-  return <DashboardPage />;
-}
 
 function InfoRoute() {
   const { token, hydrated } = useAuth();
@@ -90,7 +84,7 @@ function LoginRoute() {
   const { token, hydrated } = useAuth();
   if (!hydrated) return null;
   const isGuest = localStorage.getItem("isGuest") === "true";
-  if (token && !isGuest) return <Navigate to="/" replace />;
+  if (token && !isGuest) return <Navigate to="/dashboard" replace />;
   return <LoginPage />;
 }
 
@@ -133,7 +127,7 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<LoginRoute />} />
           <Route path="/calc" element={<CalcRoute />} />
-          <Route path="/" element={<HomeRoute />} />
+          <Route path="/" element={<LandingPage />} />
           <Route path="/info" element={<InfoRoute />} />
           <Route path="/welcome" element={<Navigate to="/" replace />} />
           
@@ -149,6 +143,7 @@ export default function App() {
           <Route path="/team" element={<ProtectedRoute adminOnly><TeamPage /></ProtectedRoute>} />
           <Route path="/locations" element={<ProtectedRoute adminOnly><LocationsPage /></ProtectedRoute>} />
           <Route path="/vacations" element={<ProtectedRoute adminOnly><VacationsPage /></ProtectedRoute>} />
+          <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="/weeks" element={<ProtectedRoute adminOnly><WeeksPage /></ProtectedRoute>} />
           <Route path="/weeks/:id" element={<ProtectedRoute adminOnly><WeekDetailPage /></ProtectedRoute>} />
           <Route path="/time" element={<ProtectedRoute adminOnly><TimePage /></ProtectedRoute>} />

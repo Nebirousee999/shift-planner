@@ -98,6 +98,12 @@ export default function CalculatorPage() {
   
   const [currentMonth, setCurrentMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [employees, setEmployees] = useState<Employee[]>(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlCycle = urlParams.get("cycle");
+    const urlStart = urlParams.get("start");
+    const urlRate = urlParams.get("rate");
+    const urlTime = urlParams.get("time");
+
     try {
       const saved = localStorage.getItem("calc_employees");
       if (saved) {
@@ -1318,6 +1324,124 @@ export default function CalculatorPage() {
               </a>
             </div>
 
+          </div>
+        </div>
+      </section>
+
+      
+      
+
+      
+      {/* Блок перелинковки на лендинги */}
+      <section className="max-w-7xl w-full mx-auto px-4 pb-10">
+        <div className="bg-slate-50 rounded-2xl border border-slate-200 p-6">
+          <h3 className="text-lg font-bold text-slate-900 mb-4">Популярные графики смен</h3>
+          <div className="flex flex-wrap gap-2">
+            
+              <a 
+                href="/grafik-2-2/" 
+                onClick={(e) => { e.preventDefault(); window.location.href = "/grafik-2-2/"; }}
+                className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm"
+              >
+                График 2/2
+              </a>
+            
+              <a 
+                href="/grafik-3-3/" 
+                onClick={(e) => { e.preventDefault(); window.location.href = "/grafik-3-3/"; }}
+                className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm"
+              >
+                График 3/3
+              </a>
+            
+              <a 
+                href="/grafik-sutki-cherez-troe/" 
+                onClick={(e) => { e.preventDefault(); window.location.href = "/grafik-sutki-cherez-troe/"; }}
+                className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm"
+              >
+                Сутки через трое (1/3)
+              </a>
+            
+              <a 
+                href="/grafik-sutki-cherez-sutki/" 
+                onClick={(e) => { e.preventDefault(); window.location.href = "/grafik-sutki-cherez-sutki/"; }}
+                className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm"
+              >
+                Сутки через сутки (1/1)
+              </a>
+            
+              <a 
+                href="/grafik-sutki-cherez-dvoe/" 
+                onClick={(e) => { e.preventDefault(); window.location.href = "/grafik-sutki-cherez-dvoe/"; }}
+                className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm"
+              >
+                Сутки через двое (1/2)
+              </a>
+            
+              <a 
+                href="/grafik-5-2/" 
+                onClick={(e) => { e.preventDefault(); window.location.href = "/grafik-5-2/"; }}
+                className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm"
+              >
+                График 5/2
+              </a>
+            
+              <a 
+                href="/grafik-4-4/" 
+                onClick={(e) => { e.preventDefault(); window.location.href = "/grafik-4-4/"; }}
+                className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm"
+              >
+                График 4/4
+              </a>
+            
+              <a 
+                href="/grafik-den-noch-otspynoy-vyhodnoy/" 
+                onClick={(e) => { e.preventDefault(); window.location.href = "/grafik-den-noch-otspynoy-vyhodnoy/"; }}
+                className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm"
+              >
+                День-ночь-отспной-выходной
+              </a>
+            
+              <a 
+                href="/grafik-2-dnya-2-nochi/" 
+                onClick={(e) => { e.preventDefault(); window.location.href = "/grafik-2-dnya-2-nochi/"; }}
+                className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm"
+              >
+                2 дня / 2 ночи / 2 выходных
+              </a>
+            
+              <a 
+                href="/grafik-nochnye-2-2/" 
+                onClick={(e) => { e.preventDefault(); window.location.href = "/grafik-nochnye-2-2/"; }}
+                className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm"
+              >
+                Только ночные 2/2
+              </a>
+            
+              <a 
+                href="/grafik-2-2-3/" 
+                onClick={(e) => { e.preventDefault(); window.location.href = "/grafik-2-2-3/"; }}
+                className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm"
+              >
+                График 2/2/3
+              </a>
+            
+              <a 
+                href="/grafik-6-1/" 
+                onClick={(e) => { e.preventDefault(); window.location.href = "/grafik-6-1/"; }}
+                className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm"
+              >
+                График 6/1
+              </a>
+            
+              <a 
+                href="/grafik-5-5/" 
+                onClick={(e) => { e.preventDefault(); window.location.href = "/grafik-5-5/"; }}
+                className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm"
+              >
+                График 5/5
+              </a>
+            
           </div>
         </div>
       </section>
