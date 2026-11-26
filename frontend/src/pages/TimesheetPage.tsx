@@ -84,14 +84,14 @@ export default function TimesheetPage() {
     onExport();
   };
 
-  const filteredUsers = data?.users.filter((u) =>
+  const filteredUsers = data?.users?.filter((u) =>
     !search.trim() || u.name.toLowerCase().includes(search.toLowerCase().trim())
   ) ?? [];
 
   return (
     <div className="min-h-screen bg-slate-50">
       <NavBar />
-      <main className="max-w-[1800px] mx-auto px-2 sm:px-4 py-6">
+      <main className="max-w-7xl mx-auto px-2 sm:px-4 py-6">
         <div className="mb-4 flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-3xl font-bold text-slate-900">Табель</h1>
@@ -137,11 +137,11 @@ export default function TimesheetPage() {
           </div>
           {data && (
             <div className="flex gap-4 text-sm">
-              <div><span className="text-slate-500">Явок:</span> <b className="text-slate-900">{data.totals.attendance}</b></div>
-              <div><span className="text-slate-500">Часов:</span> <b className="text-slate-900">{data.totals.hours}</b></div>
-              <div><span className="text-slate-500">Начислено:</span> <b className="text-slate-900">{fmtMoney(data.totals.gross)}</b></div>
-              <div><span className="text-slate-500">НДФЛ {data.taxRate}%:</span> <b className="text-rose-600">{fmtMoney(data.totals.tax)}</b></div>
-              <div><span className="text-slate-500">К выплате:</span> <b className="text-emerald-600">{fmtMoney(data.totals.net)}</b></div>
+              <div><span className="text-slate-500">Явок:</span> <b className="text-slate-900">{data.totals?.attendance || 0}</b></div>
+              <div><span className="text-slate-500">Часов:</span> <b className="text-slate-900">{data.totals?.hours || 0}</b></div>
+              <div><span className="text-slate-500">Начислено:</span> <b className="text-slate-900">{fmtMoney(data.totals?.gross || 0)}</b></div>
+              <div><span className="text-slate-500">НДФЛ {data.taxRate}%:</span> <b className="text-rose-600">{fmtMoney(data.totals?.tax || 0)}</b></div>
+              <div><span className="text-slate-500">К выплате:</span> <b className="text-emerald-600">{fmtMoney(data.totals?.net || 0)}</b></div>
             </div>
           )}
         </div>
@@ -172,7 +172,7 @@ export default function TimesheetPage() {
                     </th>
 
                     {/* Дни */}
-                    {Array.from({ length: data.daysInMonth }, (_, i) => i + 1).map((d) => {
+                    {Array.from({ length: data.daysInMonth || 30 }, (_, i) => i + 1).map((d) => {
                       const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
                       const dow = new Date(dateStr + "T00:00:00Z").getUTCDay();
                       const isWeekend = dow === 0 || dow === 6;
@@ -312,10 +312,10 @@ export default function TimesheetPage() {
                       ИТОГО · {filteredUsers.length}
                     </td>
                     <td
-                      colSpan={data.daysInMonth}
+                      colSpan={data.daysInMonth || 30}
                       className="border-r border-slate-300 px-2 py-2 text-right pr-4 text-slate-500 text-[10px] font-normal"
                     >
-                      Явок: {data.totals.attendance} · НДФЛ {data.taxRate}%: {fmtMoney(data.totals.tax)}
+                      Явок: {data.totals?.attendance || 0} · НДФЛ {data.taxRate}%: {fmtMoney(data.totals?.tax || 0)}
                     </td>
                     <td
                       className="sticky bg-slate-100 border-l-2 border-slate-300 px-1 py-2 text-center text-slate-900 text-xs"
@@ -326,7 +326,7 @@ export default function TimesheetPage() {
                         maxWidth: COL_HOURS_W,
                       }}
                     >
-                      {data.totals.hours}
+                      {data.totals?.hours || 0}
                     </td>
                     <td
                       className="sticky bg-slate-100 border-slate-300 px-1 py-2 text-right text-slate-900 text-xs whitespace-nowrap"
@@ -337,7 +337,7 @@ export default function TimesheetPage() {
                         maxWidth: COL_GROSS_W,
                       }}
                     >
-                      {fmtMoney(data.totals.gross)}
+                      {fmtMoney(data.totals?.gross || 0)}
                     </td>
                     <td
                       className="sticky bg-slate-100 border-slate-300 px-1 py-2 text-right text-emerald-700 text-xs whitespace-nowrap"
@@ -348,7 +348,7 @@ export default function TimesheetPage() {
                         maxWidth: COL_NET_W,
                       }}
                     >
-                      {fmtMoney(data.totals.net)}
+                      {fmtMoney(data.totals?.net || 0)}
                     </td>
                   </tr>
                 </tbody>

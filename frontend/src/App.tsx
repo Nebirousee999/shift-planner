@@ -1,6 +1,6 @@
 import { useAuth } from "./store/auth";
 import { lazy, Suspense, useEffect } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useOrganization } from "./store/organization";
 import { meApi } from "./api/me";
 
@@ -52,6 +52,14 @@ function ProtectedRoute({
   employeeOnly?: boolean;
 }) {
   const { token, user } = useAuth();
+  const location = useLocation();
+  const isGuest = localStorage.getItem("isGuest") === "true";
+
+  // Если это гость — принудительно отправляем в /demo
+  if (isGuest) {
+    return <Navigate to={`/demo${location.pathname}`} replace />;
+  }
+
   if (!token) return <Navigate to="/" replace />;
 
   const isEmployee = user?.role === "EMPLOYEE";
@@ -165,7 +173,7 @@ export default function App() {
           <Route path="/admin-support" element={<ProtectedRoute><AdminSupportPage /></ProtectedRoute>} />
           <Route path="/admin-database" element={<ProtectedRoute><AdminDatabasePage /></ProtectedRoute>} />
         
-        <Route path="/demo" element={<GuestApp />} />
+        <Route path="/demo/*" element={<GuestApp />} />
         </Routes>
       </Suspense>
     </BrowserRouter>

@@ -1,230 +1,195 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+// superpatch.mjs
+// Правка: Добавление кухни (зон), новых поваров и опозданий на текущий день.
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const srcDir = path.join(__dirname, 'frontend', 'src');
+import { readFileSync, writeFileSync, existsSync } from "fs";
+import { resolve } from "path";
 
-console.log("⏳ Перестраиваем Демо-режим (изоляция в /demo, localStorage)...");
+const normalizeLF = (s) => s.replace(/\r\n/g, "\n");
 
-// ==========================================
-// 1. ПАТЧ APP.TSX (Маршрут /demo/*)
-// ==========================================
-const appPath = path.join(srcDir, 'App.tsx');
-if (fs.existsSync(appPath)) {
-  let content = fs.readFileSync(appPath, 'utf8');
-  content = content.replace(
-    '<Route path="/demo" element={<GuestApp />} />',
-    '<Route path="/demo/*" element={<GuestApp />} />'
-  );
-  fs.writeFileSync(appPath, content, 'utf8');
-  console.log("   [+] App.tsx: маршрут демо теперь /demo/*");
-}
+function patchFile(relPath, replacements) {
+  const filePath = resolve(process.cwd(), relPath);
+  if (!existsSync(filePath)) {
+    console.error(`✗ Файл не найден: ${relPath}`);
+    process.exit(1);
+  }
 
-// ==========================================
-// 2. ПЕРЕПИСЫВАЕМ GUESTAPP.TSX (Роутер демо)
-// ==========================================
-const guestAppPath = path.join(srcDir, 'pages', 'GuestApp.tsx');
-const guestAppContent = `import { useEffect } from "react";
-import { Routes, Route, Navigate, useLocation } from "react-router-dom";
-import NavBar from "../components/NavBar";
-import DashboardPage from "./DashboardPage";
-import WeeksPage from "./WeeksPage";
-import SwapsPage from "./SwapsPage";
+  const raw = readFileSync(filePath, "utf8");
+  const hadCRLF = raw.includes("\r\n");
+  let content = normalizeLF(raw);
+  let applied = 0;
 
-export default function GuestApp() {
-  const { pathname } = useLocation();
-
-  useEffect(() => {
-    // Устанавливаем флаги гостя
-    if (localStorage.getItem("isGuest") !== "true") {
-      localStorage.setItem("isGuest", "true");
-      localStorage.setItem("token", "guest-mock");
-      localStorage.setItem("user", JSON.stringify({ id: "guest", name: "Гость", role: "OWNER", orgId: "guest-org" }));
+  for (const [from, to] of replacements) {
+    const fromN = normalizeLF(from);
+    const toN = normalizeLF(to);
+    if (!content.includes(fromN)) {
+      console.error(`✗ Паттерн не найден в ${relPath}:`);
+      console.error("---");
+      console.error(from);
+      console.error("---");
+      process.exit(1);
     }
-    
-    // SEO: запрещаем индексацию всего демо
-    document.title = "Демо-режим | Планировщик смен";
-    let meta = document.querySelector('meta[name="robots"]');
-    if (!meta) {
-      meta = document.createElement("meta");
-      meta.setAttribute("name", "robots");
-      document.head.appendChild(meta);
+    content = content.replace(fromN, toN);
+    applied++;
+  }
+
+  const finalContent = hadCRLF ? content.replace(/\n/g, "\r\n") : content;
+  writeFileSync(filePath, finalContent, "utf8");
+  console.log(`✓ ${relPath} — применено замен: ${applied}`);
+}
+
+// ─── 1. ФРОНТЕНД: guestSeed.ts ───────────────────────────────────
+patchFile("frontend/src/lib/guestSeed.ts", [
+  // 1.1 Добавляем типы и структуру зон (Areas)
+  [
+    `export type GuestTemplate = { id: string; name: string; startTime: string; endTime: string; color: string };`,
+    `export type GuestArea = { id: string; orgId: string; locationId: string; name: string };
+export type GuestTemplate = { id: string; name: string; startTime: string; endTime: string; color: string };`
+  ],
+  // 1.2 Добавляем latenessMinutes в тип смены
+  [
+    `export type GuestShift = { id: string; weekId: string; templateId: string; userId: string; shiftDate: string; startTime: string; endTime: string; status: string };`,
+    `export type GuestShift = { id: string; weekId: string; templateId: string; userId: string; shiftDate: string; startTime: string; endTime: string; status: string; latenessMinutes?: number; earlyLeaveMinutes?: number; };`
+  ],
+  // 1.3 Обновляем сотрудников (добавляем поваров и привязываем к зонам)
+  [
+    `const EMPLOYEES: GuestEmployee[] = [
+  { id: "gu1", name: "Алексей Смирнов", email: "alex@guest.ru", phone: null, role: "OWNER", position: "Управляющий", hourlyRate: "600", createdAt: new Date().toISOString(), locationIds: ["gloc1"], areaIds: [], paymentType: "HOURLY", employmentType: "SHTAT", color: "#3b82f6", tempPassword: null, isTempPasswordSent: false },
+  { id: "gu2", name: "Мария Иванова", email: "maria@guest.ru", phone: null, role: "MANAGER", position: "Шеф-повар", hourlyRate: "550", createdAt: new Date().toISOString(), locationIds: ["gloc1"], areaIds: [], paymentType: "HOURLY", employmentType: "SHTAT", color: "#ef4444", tempPassword: null, isTempPasswordSent: false },
+  { id: "gu3", name: "Дмитрий Петров", email: "dmitry@guest.ru", phone: null, role: "EMPLOYEE", position: "Бармен", hourlyRate: "450", createdAt: new Date().toISOString(), locationIds: ["gloc1", "gloc3"], areaIds: [], paymentType: "HOURLY", employmentType: "SHTAT", color: "#8b5cf6", tempPassword: null, isTempPasswordSent: false },
+  { id: "gu4", name: "Елена Козлова", email: "elena@guest.ru", phone: null, role: "EMPLOYEE", position: "Официант", hourlyRate: "400", createdAt: new Date().toISOString(), locationIds: ["gloc1"], areaIds: [], paymentType: "HOURLY", employmentType: "SHTAT", color: "#f59e0b", tempPassword: null, isTempPasswordSent: false },
+  { id: "gu5", name: "Сергей Волков", email: "sergey@guest.ru", phone: null, role: "EMPLOYEE", position: "Повар", hourlyRate: "450", createdAt: new Date().toISOString(), locationIds: ["gloc1"], areaIds: [], paymentType: "HOURLY", employmentType: "SHTAT", color: "#10b981", tempPassword: null, isTempPasswordSent: false },
+  { id: "gu6", name: "Анна Соколова", email: "anna.s@guest.ru", phone: null, role: "EMPLOYEE", position: "Официант", hourlyRate: "400", createdAt: new Date().toISOString(), locationIds: ["gloc2"], areaIds: [], paymentType: "HOURLY", employmentType: "SHTAT", color: "#ec4899", tempPassword: null, isTempPasswordSent: false },
+  { id: "gu7", name: "Иван Морозов", email: "ivan@guest.ru", phone: null, role: "EMPLOYEE", position: "Официант", hourlyRate: "400", createdAt: new Date().toISOString(), locationIds: ["gloc3"], areaIds: [], paymentType: "HOURLY", employmentType: "GPH", color: "#06b6d4", tempPassword: null, isTempPasswordSent: false },
+  { id: "gu8", name: "Ольга Новикова", email: "olga@guest.ru", phone: null, role: "EMPLOYEE", position: "Хостес", hourlyRate: "350", createdAt: new Date().toISOString(), locationIds: ["gloc1", "gloc2"], areaIds: [], paymentType: "HOURLY", employmentType: "SHTAT", color: "#6366f1", tempPassword: null, isTempPasswordSent: false },
+  { id: "gu9", name: "Павел Зайцев", email: "pavel@guest.ru", phone: null, role: "EMPLOYEE", position: "Кальянщик", hourlyRate: "500", createdAt: new Date().toISOString(), locationIds: ["gloc3"], areaIds: [], paymentType: "HOURLY", employmentType: "GPH", color: "#84cc16", tempPassword: null, isTempPasswordSent: false },
+  { id: "gu10", name: "Виктория Павлова", email: "vika@guest.ru", phone: null, role: "EMPLOYEE", position: "Уборщик", hourlyRate: "300", createdAt: new Date().toISOString(), locationIds: ["gloc1", "gloc2", "gloc3"], areaIds: [], paymentType: "HOURLY", employmentType: "SHTAT", color: "#f97316", tempPassword: null, isTempPasswordSent: false },
+];`,
+    `const AREAS: GuestArea[] = [
+  { id: "garea1", orgId: "gorg", locationId: "gloc1", name: "Кухня" },
+  { id: "garea2", orgId: "gorg", locationId: "gloc1", name: "Зал" },
+  { id: "garea3", orgId: "gorg", locationId: "gloc1", name: "Бар" },
+];
+
+const EMPLOYEES: GuestEmployee[] = [
+  { id: "gu1", name: "Алексей Смирнов", email: "alex@guest.ru", phone: null, role: "OWNER", position: "Управляющий", hourlyRate: "600", createdAt: new Date().toISOString(), locationIds: ["gloc1"], areaIds: ["garea2"], paymentType: "HOURLY", employmentType: "SHTAT", color: "#3b82f6", tempPassword: null, isTempPasswordSent: false },
+  { id: "gu2", name: "Мария Иванова", email: "maria@guest.ru", phone: null, role: "MANAGER", position: "Шеф-повар", hourlyRate: "550", createdAt: new Date().toISOString(), locationIds: ["gloc1"], areaIds: ["garea1"], paymentType: "HOURLY", employmentType: "SHTAT", color: "#ef4444", tempPassword: null, isTempPasswordSent: false },
+  { id: "gu3", name: "Дмитрий Петров", email: "dmitry@guest.ru", phone: null, role: "EMPLOYEE", position: "Бармен", hourlyRate: "450", createdAt: new Date().toISOString(), locationIds: ["gloc1", "gloc3"], areaIds: ["garea3"], paymentType: "HOURLY", employmentType: "SHTAT", color: "#8b5cf6", tempPassword: null, isTempPasswordSent: false },
+  { id: "gu4", name: "Елена Козлова", email: "elena@guest.ru", phone: null, role: "EMPLOYEE", position: "Официант", hourlyRate: "400", createdAt: new Date().toISOString(), locationIds: ["gloc1"], areaIds: ["garea2"], paymentType: "HOURLY", employmentType: "SHTAT", color: "#f59e0b", tempPassword: null, isTempPasswordSent: false },
+  { id: "gu5", name: "Сергей Волков", email: "sergey@guest.ru", phone: null, role: "EMPLOYEE", position: "Повар", hourlyRate: "450", createdAt: new Date().toISOString(), locationIds: ["gloc1"], areaIds: ["garea1"], paymentType: "HOURLY", employmentType: "SHTAT", color: "#10b981", tempPassword: null, isTempPasswordSent: false },
+  { id: "gu6", name: "Анна Соколова", email: "anna.s@guest.ru", phone: null, role: "EMPLOYEE", position: "Официант", hourlyRate: "400", createdAt: new Date().toISOString(), locationIds: ["gloc2"], areaIds: ["garea2"], paymentType: "HOURLY", employmentType: "SHTAT", color: "#ec4899", tempPassword: null, isTempPasswordSent: false },
+  { id: "gu7", name: "Иван Морозов", email: "ivan@guest.ru", phone: null, role: "EMPLOYEE", position: "Официант", hourlyRate: "400", createdAt: new Date().toISOString(), locationIds: ["gloc3"], areaIds: ["garea2"], paymentType: "HOURLY", employmentType: "GPH", color: "#06b6d4", tempPassword: null, isTempPasswordSent: false },
+  { id: "gu8", name: "Ольга Новикова", email: "olga@guest.ru", phone: null, role: "EMPLOYEE", position: "Хостес", hourlyRate: "350", createdAt: new Date().toISOString(), locationIds: ["gloc1", "gloc2"], areaIds: ["garea2"], paymentType: "HOURLY", employmentType: "SHTAT", color: "#6366f1", tempPassword: null, isTempPasswordSent: false },
+  { id: "gu9", name: "Павел Зайцев", email: "pavel@guest.ru", phone: null, role: "EMPLOYEE", position: "Кальянщик", hourlyRate: "500", createdAt: new Date().toISOString(), locationIds: ["gloc3"], areaIds: ["garea2"], paymentType: "HOURLY", employmentType: "GPH", color: "#84cc16", tempPassword: null, isTempPasswordSent: false },
+  { id: "gu10", name: "Виктория Павлова", email: "vika@guest.ru", phone: null, role: "EMPLOYEE", position: "Уборщик", hourlyRate: "300", createdAt: new Date().toISOString(), locationIds: ["gloc1", "gloc2", "gloc3"], areaIds: [], paymentType: "HOURLY", employmentType: "SHTAT", color: "#f97316", tempPassword: null, isTempPasswordSent: false },
+  { id: "gu11", name: "Андрей Николаев", email: "andrey@guest.ru", phone: null, role: "EMPLOYEE", position: "Су-шеф", hourlyRate: "500", createdAt: new Date().toISOString(), locationIds: ["gloc1"], areaIds: ["garea1"], paymentType: "HOURLY", employmentType: "SHTAT", color: "#14b8a6", tempPassword: null, isTempPasswordSent: false },
+  { id: "gu12", name: "Кристина Белова", email: "kristina@guest.ru", phone: null, role: "EMPLOYEE", position: "Повар", hourlyRate: "450", createdAt: new Date().toISOString(), locationIds: ["gloc1"], areaIds: ["garea1"], paymentType: "HOURLY", employmentType: "SHTAT", color: "#a855f7", tempPassword: null, isTempPasswordSent: false },
+];`
+  ],
+  // 1.4 Добавляем опоздания в генератор смен
+  [
+    `// Генерируем график на 4 недели (28 дней) для 10 сотрудников
+for (let d = 0; d < 28; d++) {
+  // Алексей (5/2, дневная)
+  if (d % 7 < 5) pushShift(d, "gu1", "gt4");
+  // Мария (5/2, утренняя)
+  if (d % 7 < 5) pushShift(d, "gu2", "gt1");
+  // Дмитрий (2/2, вечерняя)
+  if (d % 4 < 2) pushShift(d, "gu3", "gt2");
+  // Елена (2/2, дневная)
+  if (d % 4 >= 2) pushShift(d, "gu4", "gt4");
+  // Сергей (3/3, вечерняя)
+  if (d % 6 < 3) pushShift(d, "gu5", "gt2");
+  // Анна С. (2/2, утренняя)
+  if (d % 4 < 2) pushShift(d, "gu6", "gt1");
+  // Иван (2/2, ночная)
+  if (d % 4 >= 2) pushShift(d, "gu7", "gt3");
+  // Ольга (5/2, дневная)
+  if (d % 7 >= 2) pushShift(d, "gu8", "gt4");
+  // Павел (2/2, вечерняя)
+  if (d % 4 < 2) pushShift(d, "gu9", "gt2");
+  // Виктория (2/2, утренняя)
+  if (d % 4 >= 2) pushShift(d, "gu10", "gt1");
+}`,
+    `// Генерируем график на 4 недели (28 дней) для 12 сотрудников
+// Определяем, какой сегодня день недели (0 - Пн, 6 - Вс)
+const today = new Date();
+const todayOffset = (today.getDay() === 0 ? 6 : today.getDay() - 1);
+
+function pushShiftWithLateness(dayOffset: number, userId: string, templateId: string) {
+  const tpl = TEMPLATES.find((t) => t.id === templateId)!;
+  const shift: GuestShift = {
+    id: \`gshift-\${SHIFTS.length + 1}\`,
+    weekId: WEEK_ID,
+    templateId,
+    userId,
+    shiftDate: addDays(WEEK_START, dayOffset),
+    startTime: tpl.startTime,
+    endTime: tpl.endTime,
+    status: "SCHEDULED",
+  };
+  
+  // Если это сегодняшний день, добавляем опоздания для некоторых
+  if (dayOffset === todayOffset) {
+    if (userId === "gu1" || userId === "gu5") {
+      shift.latenessMinutes = 15; // Опоздание на 15 минут
     }
-    meta.setAttribute("content", "noindex, follow");
-  }, []);
-
-  // Если пользователь зашел по старому пути /demo без слеша, редиректим на /demo/dashboard
-  if (pathname === "/demo" || pathname === "/demo/") {
-    return <Navigate to="/demo/dashboard" replace />;
-  }
-
-  return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
-      <NavBar />
-      <div className="flex-1">
-        <Routes>
-          <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="weeks" element={<WeeksPage />} />
-          <Route path="swaps" element={<SwapsPage />} />
-          <Route path="*" element={<Navigate to="/demo/dashboard" replace />} />
-        </Routes>
-      </div>
-    </div>
-  );
-}`;
-fs.writeFileSync(guestAppPath, guestAppContent, 'utf8');
-console.log("   [+] GuestApp.tsx: переписан на реальные страницы в /demo/*");
-
-// ==========================================
-// 3. ПАТЧ CLIENT.TS (Подключаем guestAdapter)
-// ==========================================
-const clientPath = path.join(srcDir, 'api', 'client.ts');
-if (fs.existsSync(clientPath)) {
-  let content = fs.readFileSync(clientPath, 'utf8');
-  
-  // Удаляем старый громоздкий перехватчик
-  const oldInterceptorRegex = /\/\/ ГОСТЕВОЙ ПЕРЕХВАТЧИК API \(100% без ошибок 401\)[\s\S]*?return config;\n\}\);/;
-  
-  const newInterceptor = `// ГОСТЕВОЙ ПЕРЕХВАТЧИК API (Используем guestAdapter)
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
-  const isDemo = window.location.pathname.startsWith('/demo') || localStorage.getItem("isGuest") === "true";
-  const isInvalidToken = !token || token === "undefined" || token === "null" || token === "guest-mock";
-  
-  if (isInvalidToken && isDemo) {
-    const url = config.url || "";
-    // Auth-запросы (логин, регистрация) ВСЕГДА идут в реальную сеть, чтобы можно было выйти из демо
-    if (!url.includes("/auth/")) {
-      // Подменяем адаптер Axios на наш guestAdapter, который читает/пишет в localStorage
-      config.adapter = guestAdapter;
+    if (userId === "gu3") {
+      shift.latenessMinutes = 30; // Опоздание на 30 минут
     }
   }
-  return config;
-});`;
-
-  // Импортируем адаптер
-  if (!content.includes('import { guestAdapter }')) {
-    content = content.replace(
-      'import { GUEST_SEED } from "../lib/guestSeed";',
-      'import { GUEST_SEED } from "../lib/guestSeed";\nimport { guestAdapter } from "./guestAdapter";'
-    );
-  }
-
-  if (oldInterceptorRegex.test(content)) {
-    content = content.replace(oldInterceptorRegex, newInterceptor);
-  } else {
-    // Если регулярка не сработала, просто добавляем в конец файла
-    content += '\n' + newInterceptor;
-  }
   
-  fs.writeFileSync(clientPath, content, 'utf8');
-  console.log("   [+] client.ts: заменен жесткий мок на guestAdapter (localStorage)");
+  SHIFTS.push(shift);
 }
 
-// ==========================================
-// 4. ПАТЧ NAVBAR.TSX (Префикс /demo и скрытие платных вкладок)
-// ==========================================
-const navBarPath = path.join(srcDir, 'components', 'NavBar.tsx');
-if (fs.existsSync(navBarPath)) {
-  let content = fs.readFileSync(navBarPath, 'utf8');
-
-  // Определяем, что мы в демо
-  if (!content.includes('const isDemo =')) {
-    content = content.replace(
-      'const { pathname } = useLocation();',
-      'const { pathname } = useLocation();\n  const isDemo = pathname.startsWith("/demo");\n  const prefix = isDemo ? "/demo" : "";'
-    );
-  }
-
-  // Скрываем платные вкладки для демо
-  content = content.replace(
-    '{ path: "/locations", label: "Точки", icon: MapPin },',
-    '...(isDemo ? [] : [{ path: "/locations", label: "Точки", icon: MapPin }]),'
-  );
-  content = content.replace(
-    '{ path: "/sick-leaves", label: "Больничные", icon: AlertCircle },',
-    '...(isDemo ? [] : [{ path: "/sick-leaves", label: "Больничные", icon: AlertCircle }]),'
-  );
-  content = content.replace(
-    '{ path: "/history", label: "История действий", icon: History },',
-    '...(isDemo ? [] : [{ path: "/history", label: "История действий", icon: History }]),'
-  );
-
-  // Переопределяем навигацию (добавляем префикс)
-  // 1. Логотип
-  content = content.replace(/navigate\("\/dashboard"\)/g, 'navigate(prefix + "/dashboard")');
+for (let d = 0; d < 28; d++) {
+  // Алексей (5/2, дневная)
+  if (d % 7 < 5) pushShiftWithLateness(d, "gu1", "gt4");
+  // Мария (5/2, утренняя)
+  if (d % 7 < 5) pushShiftWithLateness(d, "gu2", "gt1");
+  // Дмитрий (2/2, вечерняя)
+  if (d % 4 < 2) pushShiftWithLateness(d, "gu3", "gt2");
+  // Елена (2/2, дневная)
+  if (d % 4 >= 2) pushShiftWithLateness(d, "gu4", "gt4");
+  // Сергей (3/3, вечерняя)
+  if (d % 6 < 3) pushShiftWithLateness(d, "gu5", "gt2");
+  // Анна С. (2/2, утренняя)
+  if (d % 4 < 2) pushShiftWithLateness(d, "gu6", "gt1");
+  // Иван (2/2, ночная)
+  if (d % 4 >= 2) pushShiftWithLateness(d, "gu7", "gt3");
+  // Ольга (5/2, дневная)
+  if (d % 7 >= 2) pushShiftWithLateness(d, "gu8", "gt4");
+  // Павел (2/2, вечерняя)
+  if (d % 4 < 2) pushShiftWithLateness(d, "gu9", "gt2");
+  // Виктория (2/2, утренняя)
+  if (d % 4 >= 2) pushShiftWithLateness(d, "gu10", "gt1");
   
-  // 2. Верхнее меню (категории)
-  content = content.replace(
-    'onClick={() => navigate(firstLink.path)}',
-    'onClick={() => navigate(prefix + firstLink.path)}'
-  );
-  
-  // 3. Подменю
-  content = content.replace(
-    'onClick={() => navigate(link.path)}',
-    'onClick={() => navigate(prefix + link.path)}'
-  );
+  // Новые повара (2/2)
+  if (d % 4 < 2) pushShiftWithLateness(d, "gu11", "gt1");
+  if (d % 4 >= 2) pushShiftWithLateness(d, "gu12", "gt2");
+}`
+  ],
+  // 1.5 Экспортируем AREAS
+  [
+    `  locations: LOCATIONS,
+  templates: TEMPLATES,
+  shifts: SHIFTS,`,
+    `  locations: LOCATIONS,
+  areas: AREAS,
+  templates: TEMPLATES,
+  shifts: SHIFTS,`
+  ]
+]);
 
-  // 4. Скрываем кошелек и поддержку в демо
-  content = content.replace(
-    '{user?.role === "OWNER" && (',
-    '{!isDemo && user?.role === "OWNER" && ('
-  );
-  content = content.replace(
-    '{isAdminEmail(user?.email) && (',
-    '{!isDemo && isAdminEmail(user?.email) && ('
-  );
+// ─── 2. ФРОНТЕНД: guestAdapter.ts (Обновляем версию БД) ───────────
+patchFile("frontend/src/api/guestAdapter.ts", [
+  [
+    `const initDb = () => {
+  if (!localStorage.getItem("guest_db") || localStorage.getItem("guest_db_version") !== "4") {
+    localStorage.setItem("guest_db_version", "4");`,
+    `const initDb = () => {
+  if (!localStorage.getItem("guest_db") || localStorage.getItem("guest_db_version") !== "5") {
+    localStorage.setItem("guest_db_version", "5");`
+  ]
+]);
 
-  // 5. Заменяем кнопку выхода/входа для демо
-  content = content.replace(
-    '<button onClick={handleLogout} className="flex items-center justify-center p-2 rounded-lg text-sm text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors" title="Выйти">\n              <LogOut className="w-4 h-4" />\n            </button>',
-    `{isDemo ? (
-              <button onClick={() => navigate("/login?mode=register")} className="px-3 py-1.5 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors">
-                Зарегистрироваться
-              </button>
-            ) : (
-              <button onClick={handleLogout} className="flex items-center justify-center p-2 rounded-lg text-sm text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors" title="Выйти">
-                <LogOut className="w-4 h-4" />
-              </button>
-            )}`
-  );
-
-  fs.writeFileSync(navBarPath, content, 'utf8');
-  console.log("   [+] NavBar.tsx: добавлен префикс /demo, скрыты платные вкладки");
-}
-
-// ==========================================
-// 5. ОГРАНИЧЕНИЕ СОТРУДНИКОВ В USEGUESTMODE.TS
-// ==========================================
-const useGuestModePath = path.join(srcDir, 'hooks', 'useGuestMode.ts');
-if (fs.existsSync(useGuestModePath)) {
-  let content = fs.readFileSync(useGuestModePath, 'utf8');
-  
-  // Внедряем проверку лимита
-  const oldAddEmployee = `const addGuestEmployee = (emp: any) => {\n    setGuestData((prev: any) => ({ ...prev, employees: [...prev.employees, emp] }));\n  };`;
-  const newAddEmployee = `const addGuestEmployee = (emp: any) => {\n    setGuestData((prev: any) => {\n      if (prev.employees.length >= 3) {\n        alert("В демо-режиме можно добавить не более 3 сотрудников. Зарегистрируйтесь, чтобы снять ограничение!");\n        return prev;\n      }\n      return { ...prev, employees: [...prev.employees, emp] };\n    });\n  };`;
-
-  if (content.includes('addGuestEmployee')) {
-    content = content.replace(oldAddEmployee, newAddEmployee);
-    fs.writeFileSync(useGuestModePath, content, 'utf8');
-    console.log("   [+] useGuestMode.ts: добавлен лимит в 3 сотрудника");
-  }
-}
-
-// ==========================================
-// 6. ОБНОВЛЕНИЕ ROBOTS.TXT
-// ==========================================
-const robotsPath = path.join(__dirname, 'frontend', 'public', 'robots.txt');
-if (fs.existsSync(robotsPath)) {
-  let content = fs.readFileSync(robotsPath, 'utf8');
-  if (!content.includes('Disallow: /demo')) {
-    content += '\nUser-agent: *\nDisallow: /demo\n';
-    fs.writeFileSync(robotsPath, content, 'utf8');
-  }
-  console.log("   [+] robots.txt: закрыта индексация /demo");
-}
-
-console.log("✅ УСПЕХ! Демо-режим полностью изолирован в /demo. Перезапустите сервер.");
+console.log("\nПравка применена успешно.");

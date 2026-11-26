@@ -68,7 +68,8 @@ const ADMIN_EMAIL = String(import.meta.env.VITE_ADMIN_EMAIL ?? "prihodko999@inbo
 const isAdminEmail = (email?: string | null) => String(email ?? "").trim().toLowerCase() === ADMIN_EMAIL;
 
 function isActive(pathname: string, path: string): boolean {
-  return pathname === path || pathname.startsWith(path + "/");
+  const cleanPathname = pathname.replace(/^\/demo/, "");
+  return cleanPathname === path || cleanPathname.startsWith(path + "/");
 }
 
 function Badge({ value }: { value: number }) {
@@ -110,6 +111,8 @@ export default function NavBar() {
 
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  const isDemo = pathname.startsWith("/demo");
+  const prefix = isDemo ? "/demo" : "";
   const { user, logout } = useAuth();
   
   const { vacationsPending, swapsIncoming, shiftChangesIncoming, timeOffsPending = 0, swapsAvailable = 0, refresh } = useNotifications();
@@ -138,19 +141,22 @@ export default function NavBar() {
 
   
   
-    const isAdmin = user?.role === "OWNER" || user?.role === "MANAGER";
+    const isAdmin = isDemo || user?.role === "OWNER" || user?.role === "MANAGER";
 
   const timeTrackingOn = org?.timeTrackingEnabled === true;
 
-  const visibleCategories = CATEGORIES.map((cat) => ({
-    ...cat,
-    links: cat.links.filter((link) => !(link.hideIfTimeTrackingOff && !timeTrackingOn)),
-  }));
+  const visibleCategories = CATEGORIES.map((cat) => {
+    let links = cat.links.filter((link) => !(link.hideIfTimeTrackingOff && !timeTrackingOn));
+    if (isDemo) {
+      
+    }
+    return { ...cat, links };
+  });
 
   const currentCategory = (() => {
     for (const cat of visibleCategories) {
       for (const link of cat.links) {
-        if (pathname === link.path || pathname.startsWith(link.path + "/")) {
+        if (isActive(pathname, link.path)) {
           return cat;
         }
       }
@@ -171,7 +177,7 @@ export default function NavBar() {
     // Не уводим на /login: после выхода пользователь попадает в гостевой режим.
     // App.initGuest (эффект на token) создаст гостевую сессию и перезагрузит страницу;
     // а мы заранее уходим с приватной страницы, чтобы не рендерить её с user=null.
-    navigate("/");
+    navigate(prefix + "/dashboard");
   };
 
   const focusEmailInput = () => {
@@ -350,22 +356,22 @@ export default function NavBar() {
       {guestBanner}
         <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2 sm:py-3 flex items-center justify-between gap-2 sm:gap-4 flex-wrap sm:flex-nowrap">
           <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
-            <button onClick={() => navigate("/dashboard")} className="flex items-center gap-2 shrink-0">
+            <button onClick={() => navigate(prefix + "/dashboard")} className="flex items-center gap-2 shrink-0">
               <img src="/favicon.svg" alt="Логотип" className="w-8 h-8 object-contain" />
             </button>
 
             <nav className="flex items-center gap-1 overflow-x-auto whitespace-nowrap pb-1 sm:pb-0 scrollbar-none flex-1">
-              <button onClick={() => navigate("/")} className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${isActive(pathname, "/") ? "bg-brand-50 text-brand-700 font-medium" : "text-slate-600 hover:bg-slate-100"}`}>
+              <button onClick={() => navigate(prefix + "/dashboard")} className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${isActive(pathname, prefix + "/dashboard") ? "bg-brand-50 text-brand-700 font-medium" : "text-slate-600 hover:bg-slate-100"}`}>
                 Дашборд
               </button>
-              <button onClick={() => navigate("/my")} className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${isActive(pathname, "/my") ? "bg-brand-50 text-brand-700 font-medium" : "text-slate-600 hover:bg-slate-100"}`}>
+              <button onClick={() => navigate(prefix + "/my")} className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${isActive(pathname, prefix + "/my") ? "bg-brand-50 text-brand-700 font-medium" : "text-slate-600 hover:bg-slate-100"}`}>
                 Мой график
               </button>
-              <button onClick={() => navigate("/swaps")} className={`relative px-3 py-1.5 rounded-lg text-sm transition-colors ${isActive(pathname, "/swaps") ? "bg-brand-50 text-brand-700 font-medium" : "text-slate-600 hover:bg-slate-100"}`}>
+              <button onClick={() => navigate(prefix + "/swaps")} className={`relative px-3 py-1.5 rounded-lg text-sm transition-colors ${isActive(pathname, prefix + "/swaps") ? "bg-brand-50 text-brand-700 font-medium" : "text-slate-600 hover:bg-slate-100"}`}>
                 Обмены
                 <Badge value={swapsAvailable} />
               </button>
-              <button onClick={() => navigate("/my-analytics")} className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${isActive(pathname, "/my-analytics") ? "bg-brand-50 text-brand-700 font-medium" : "text-slate-600 hover:bg-slate-100"}`}>
+              <button onClick={() => navigate(prefix + "/my-analytics")} className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${isActive(pathname, prefix + "/my-analytics") ? "bg-brand-50 text-brand-700 font-medium" : "text-slate-600 hover:bg-slate-100"}`}>
                 Аналитика
               </button>
             </nav>
@@ -373,7 +379,7 @@ export default function NavBar() {
           
           <div className="flex items-center gap-2 shrink-0">
             <NotificationBell />
-            {isAdminEmail(user?.email) && (
+            {!isDemo && isAdminEmail(user?.email) && (
               <button onClick={() => navigate("/admin-support")} className="relative flex items-center justify-center p-2 rounded-lg text-sm text-brand-600 bg-brand-50 hover:bg-brand-100 transition-colors" title="Панель поддержки">
                 <MessageSquare className="w-4 h-4" />
                 <Badge value={supportUnread} />
@@ -382,7 +388,7 @@ export default function NavBar() {
             <button
               onClick={() => navigate("/help")}
               className={`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors ${
-                isActive(pathname, "/help")
+                isActive(pathname, prefix + "/help")
                   ? "bg-brand-50 text-brand-700"
                   : "text-slate-600 hover:bg-slate-100"
               }`}
@@ -396,7 +402,7 @@ export default function NavBar() {
                 <button
                   onClick={() => navigate("/profile")}
                   className={`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors ${
-                    isActive(pathname, "/profile")
+                    isActive(pathname, prefix + "/profile")
                       ? "bg-brand-50 text-brand-700"
                       : "text-slate-600 hover:bg-slate-100"
                   }`}
@@ -433,7 +439,7 @@ export default function NavBar() {
       {guestBanner}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
         <div className="flex items-center gap-6 min-w-0">
-          <button onClick={() => navigate("/dashboard")} className="flex items-center gap-2 shrink-0">
+          <button onClick={() => navigate(prefix + "/dashboard")} className="flex items-center gap-2 shrink-0">
             <img src="/favicon.svg" alt="Логотип" className="w-8 h-8 rounded-lg object-cover" />
             <span className="font-semibold text-slate-900 hidden sm:inline">Планировщик</span>
           </button>
@@ -451,7 +457,7 @@ export default function NavBar() {
               return (
                 <button
                   key={cat.id}
-                  onClick={() => navigate(firstLink.path)}
+                  onClick={() => navigate(prefix + firstLink.path)}
                   className={`relative inline-flex items-center px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors ${
                     active ? "bg-brand-50 text-brand-700 font-medium" : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
                   }`}
@@ -470,30 +476,36 @@ export default function NavBar() {
             <ListChecks className="w-4 h-4" />
           </button>
           
-          {isAdminEmail(user?.email) && (
+          {!isDemo && isAdminEmail(user?.email) && (
             <button onClick={() => navigate("/admin-support")} className="relative flex items-center justify-center p-2 rounded-lg text-sm text-brand-600 bg-brand-50 hover:bg-brand-100 transition-colors" title="Панель поддержки">
               <MessageSquare className="w-4 h-4" />
               <Badge value={supportUnread} />
             </button>
           )}
 
-          <button onClick={() => navigate("/help")} className={`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors ${isActive(pathname, "/help") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`} title="Справка">
+          <button onClick={() => navigate("/help")} className={`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors ${isActive(pathname, prefix + "/help") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`} title="Справка">
             <HelpCircle className="w-4 h-4" />
           </button>
-          {user?.role === "OWNER" && (
-            <button onClick={() => navigate("/wallet")} className={`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors ${isActive(pathname, "/wallet") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`} title="Текущий тариф">
+          {!isDemo && user?.role === "OWNER" && (
+            <button onClick={() => navigate("/wallet")} className={`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors ${isActive(pathname, prefix + "/wallet") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`} title="Текущий тариф">
               <Wallet className="w-4 h-4" />
             </button>
           )}
 
           {(!isGuest || emailAttached) ? (
             <>
-              <button onClick={() => navigate("/profile")} className={`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors ${isActive(pathname, "/profile") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`} title="Профиль">
+              <button onClick={() => navigate("/profile")} className={`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors ${isActive(pathname, prefix + "/profile") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`} title="Профиль">
                 <UserCircle className="w-4 h-4" />
               </button>
+              {isDemo ? (
+              <button onClick={() => navigate("/login?mode=register")} className="px-3 py-1.5 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors">
+                Зарегистрироваться
+              </button>
+            ) : (
               <button onClick={handleLogout} className="flex items-center justify-center p-2 rounded-lg text-sm text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors" title="Выйти">
                 <LogOut className="w-4 h-4" />
               </button>
+            )}
             </>
           ) : (
             <button
@@ -523,7 +535,7 @@ export default function NavBar() {
                 return (
                   <button
                     key={link.path}
-                    onClick={() => navigate(link.path)}
+                    onClick={() => navigate(prefix + link.path)}
                     className={`relative inline-flex items-center gap-2 px-3 py-2 text-sm whitespace-nowrap border-b-2 transition-colors ${
                       active ? "border-brand-600 text-brand-700 font-medium" : "border-transparent text-slate-600 hover:text-slate-900"
                     }`}

@@ -1,19 +1,11 @@
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001/api";
-
-function authHeaders(): HeadersInit {
-  const token = localStorage.getItem("token");
-  return {
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
-  };
-}
+import { api } from "./client";
 
 export type ShiftChangeRequest = {
   id: string;
-  shiftId: string | null;         // ← теперь nullable
-  kind: "UPDATE" | "CREATE";      // ← новое
-  weekId?: string | null;         // ← новое
-  templateId?: string | null;     // ← новое
+  shiftId: string | null;
+  kind: "UPDATE" | "CREATE";
+  weekId?: string | null;
+  templateId?: string | null;
   requestedBy: string;
   targetUserId: string;
   oldShiftDate: string;
@@ -35,78 +27,34 @@ export type ShiftChangeRequest = {
 
 export const shiftChangeRequestsApi = {
   list: async (): Promise<ShiftChangeRequest[]> => {
-    const res = await fetch(`${API_URL}/shift-change-requests`, {
-      headers: authHeaders(),
-    });
-    if (!res.ok) throw new Error("Ошибка");
-    return res.json();
+    const res = await api.get("/shift-change-requests");
+    return res.data;
   },
 
   incoming: async (): Promise<ShiftChangeRequest[]> => {
-    const res = await fetch(`${API_URL}/shift-change-requests/incoming`, {
-      headers: authHeaders(),
-    });
-    if (!res.ok) throw new Error("Ошибка");
-    return res.json();
+    const res = await api.get("/shift-change-requests/incoming");
+    return res.data;
   },
 
   incomingCount: async (): Promise<number> => {
-    const res = await fetch(
-      `${API_URL}/shift-change-requests/incoming/count`,
-      { headers: authHeaders() }
-    );
-    if (!res.ok) return 0;
-    const data = await res.json();
-    return data.count ?? 0;
+    const res = await api.get("/shift-change-requests/incoming/count");
+    return res.data.count ?? 0;
   },
 
   outgoing: async (): Promise<ShiftChangeRequest[]> => {
-    const res = await fetch(`${API_URL}/shift-change-requests/outgoing`, {
-      headers: authHeaders(),
-    });
-    if (!res.ok) throw new Error("Ошибка");
-    return res.json();
+    const res = await api.get("/shift-change-requests/outgoing");
+    return res.data;
   },
 
   approve: async (id: string): Promise<void> => {
-    const res = await fetch(
-      `${API_URL}/shift-change-requests/${id}/approve`,
-      {
-        method: "POST",
-        headers: authHeaders(),
-        // ⚠️ ВАЖНО: Fastify требует тело при Content-Type: application/json
-        body: JSON.stringify({}),
-      }
-    );
-    if (!res.ok) {
-      const e = await res.json().catch(() => ({}));
-      throw new Error(e.error ?? "Ошибка согласования");
-    }
+    await api.post(`/shift-change-requests/${id}/approve`, {});
   },
 
   reject: async (id: string): Promise<void> => {
-    const res = await fetch(
-      `${API_URL}/shift-change-requests/${id}/reject`,
-      {
-        method: "POST",
-        headers: authHeaders(),
-        // ⚠️ ВАЖНО: то же самое — тело обязательно
-        body: JSON.stringify({}),
-      }
-    );
-    if (!res.ok) {
-      const e = await res.json().catch(() => ({}));
-      throw new Error(e.error ?? "Ошибка отклонения");
-    }
+    await api.post(`/shift-change-requests/${id}/reject`, {});
   },
 
   cancel: async (id: string): Promise<void> => {
-    // 🔥 Для DELETE не отправляем Content-Type, чтобы Fastify не ждал тело
-    const token = localStorage.getItem("token");
-    const res = await fetch(`${API_URL}/shift-change-requests/${id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error("Ошибка отмены");
+    await api.delete(`/shift-change-requests/${id}`);
   },
 };

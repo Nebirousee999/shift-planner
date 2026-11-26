@@ -72,11 +72,12 @@ function getCategoryIcon(category: string): React.ElementType {
   }
 }
 
-function getDocMeta(type: string): {
+function getDocMeta(type?: string | null): {
   icon: React.ElementType;
   bg: string;
   text: string;
 } {
+  if (!type) return { icon: FileText, bg: "bg-slate-100", text: "text-slate-600" };
   if (type.includes("safety")) {
     return { icon: Shield, bg: "bg-emerald-50", text: "text-emerald-600" };
   }
@@ -463,8 +464,10 @@ export default function DocumentsPage() {
 
   const byCategory = templates.reduce<Record<string, DocumentType[]>>(
     (acc, t) => {
-      if (!acc[t.category]) acc[t.category] = [];
-      acc[t.category].push(t);
+      if (!t || !t.id) return acc;
+      const cat = t.category || "Прочее";
+      if (!acc[cat]) acc[cat] = [];
+      acc[cat].push(t);
       return acc;
     },
     {}
@@ -508,7 +511,7 @@ export default function DocumentsPage() {
         {!selected && (
           <>
             {Object.entries(byCategory).map(([category, docs]) => {
-              const isCategoryLocked = isFree && category !== "Приказы";
+              const isCategoryLocked = false; // Разблокировано для всех
               const CategoryIcon = getCategoryIcon(category);
               return (
                 <div key={category} className="mb-8">
@@ -523,19 +526,13 @@ export default function DocumentsPage() {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {docs.map((t) => {
+                    {docs.filter((t) => t && t.id).map((t) => {
                       const meta = getDocMeta(t.id);
                       const Icon = meta.icon;
                       return (
                         <button
                           key={t.id}
-                          onClick={() => {
-                            if (isCategoryLocked) {
-                              setLockedModalOpen(true);
-                            } else {
-                              openForm(t);
-                            }
-                          }}
+                          onClick={() => openForm(t)}
                           className={`group bg-white rounded-2xl border border-slate-200 shadow-sm p-5 text-left transition-all animate-fade-in ${isCategoryLocked ? "opacity-70 grayscale cursor-pointer hover:border-amber-300" : "hover:shadow-md hover:border-slate-300"}`}
                         >
                           <div className="flex items-start gap-4 mb-3">
@@ -598,7 +595,7 @@ export default function DocumentsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {generated.map((d) => {
+                      {generated.filter((d) => d && d.id).map((d) => {
                         const meta = getDocMeta(d.type);
                         const Icon = meta.icon;
                         return (

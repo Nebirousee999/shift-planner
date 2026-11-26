@@ -8,3 +8,6 @@ Disallow: /dashboard
 Disallow: /my
 
 Sitemap: https://shift-planner.ru/sitemap.xml
+
+User-agent: *
+Disallow: /demo
