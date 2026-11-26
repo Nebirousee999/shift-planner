@@ -3,18 +3,32 @@ import { GUEST_SEED } from "../lib/guestSeed";
 
 // Инициализация пустой базы (версия 3 — чтобы сбросить старые ошибки)
 const initDb = () => {
-  if (!localStorage.getItem("guest_db") || localStorage.getItem("guest_db_version") !== "3") {
-    localStorage.setItem("guest_db_version", "3");
+  const dbStr = localStorage.getItem("guest_db");
+  let needsUpdate = !dbStr || localStorage.getItem("guest_db_version") !== "12";
+  
+  if (!needsUpdate && dbStr) {
+    try {
+      const db = JSON.parse(dbStr);
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const hasCurrent = db.weeks?.some((w: any) => {
+        const start = new Date(w.weekStartDate + "T00:00:00Z");
+        const end = new Date(start);
+        end.setUTCDate(end.getUTCDate() + 6);
+        return todayStr >= w.weekStartDate && todayStr <= end.toISOString().slice(0, 10);
+      });
+      if (!hasCurrent) needsUpdate = true;
+    } catch { needsUpdate = true; }
+  }
+
+  if (needsUpdate) {
+    localStorage.setItem("guest_db_version", "12");
     localStorage.setItem("guest_db", JSON.stringify({
-      weeks: [{
-        id: GUEST_SEED.weekId,
-        weekStartDate: GUEST_SEED.weekStart,
-        status: "PUBLISHED",
-        shifts: GUEST_SEED.shifts,
-      }],
+      weeks: GUEST_SEED.weeks,
       users: GUEST_SEED.employees,
       templates: GUEST_SEED.templates,
       locations: GUEST_SEED.locations,
+      areas: GUEST_SEED.areas,
+      positions: GUEST_SEED.positions,
     }));
   }
 };
@@ -31,7 +45,47 @@ export const guestAdapter: AxiosAdapter = async (config: InternalAxiosRequestCon
   let data: any = null;
   let status = 200;
 
-  // === ДОКУМЕНТЫ (строго в начале, чтобы не перехватывались шаблонами смен) ===
+  // Перехватываем все запросы счетчиков (чтобы не было NaN)
+  if (url.includes("count") && method === "get") {
+    return { data: { count: 0 }, status: 200, statusText: "OK", headers: {}, config };
+  }
+
+  // === ДАШБОРД ===
+  if (url.includes("/dashboard") && method === "get") {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      // Берем недели из базы, если там пусто — берем прямо из сида
+      const weeks = (db.weeks && db.weeks.length > 0) ? db.weeks : GUEST_SEED.weeks;
+      
+      // Ищем текущую неделю по датам
+      let currentWeek = weeks.find((w: any) => {
+        if (!w.weekStartDate) return false;
+        const start = new Date(w.weekStartDate + "T00:00:00Z");
+        const end = new Date(start);
+        end.setUTCDate(end.getUTCDate() + 6);
+        return todayStr >= w.weekStartDate && todayStr <= end.toISOString().slice(0, 10);
+      });
+      
+      // Если не нашли — берем 7-ю неделю (она 100% текущая по сиду)
+      if (!currentWeek) {
+        currentWeek = weeks[6] || weeks[0] || null;
+      }
+
+      const todayShifts = currentWeek ? (currentWeek.shifts || []).filter((s: any) => s.shiftDate === todayStr) : [];
+
+      data = {
+        currentWeek: currentWeek || null,
+        weekTimeEntries: [],
+        users: db.users || GUEST_SEED.employees,
+        userCount: (db.users || GUEST_SEED.employees).length,
+        todayShifts: todayShifts,
+        monthlyHours: 0,
+      };
+    }
+  // === ПРОФИЛЬ (me) ===
+  else if (url.endsWith("/me") && method === "get") {
+    data = GUEST_SEED.me;
+  }
+  // === ДОКУМЕНТЫ ===
   if (url.includes("/documents/templates") && method === "get") {
     data = [
       { id: "order_safety_responsible", title: "Приказ о назначении ответственного за охрану труда", category: "Приказы", description: "Назначает сотрудника ответственным за охрану труда.", fields: [ { name: "orgName", label: "Название организации", type: "text", required: true }, { name: "city", label: "Город", type: "text", required: true, defaultValue: "Москва" }, { name: "orderNumber", label: "Номер приказа", type: "text", required: true, defaultValue: "1" }, { name: "orderDate", label: "Дата приказа", type: "date", required: true }, { name: "directorName", label: "ФИО директора", type: "text", required: true }, { name: "responsibleName", label: "ФИО ответственного", type: "employee_select", required: true }, { name: "responsiblePosition", label: "Должность ответственного", type: "text", required: true, defaultValue: "менеджер" } ] },
@@ -50,35 +104,67 @@ export const guestAdapter: AxiosAdapter = async (config: InternalAxiosRequestCon
   }
 
   // === ШАБЛОНЫ СМЕН ===
-  else if (url.includes("/templates") && method === "get") {
+  else if ((url.includes("/templates") || url.includes("/shift-templates")) && method === "get") {
     data = db.templates;
+  }
+  // === ДОЛЖНОСТИ ===
+  else if (url.includes("/positions") && method === "get") {
+    data = GUEST_SEED.positions || [];
+  }
+  // === ЛОКАЦИИ (зоны) ===
+  else if (url.includes("/areas") && method === "get") {
+    data = GUEST_SEED.areas || [];
   }
 
   // 1. Получение недели (GET /weeks/:id)
-  else if (url.includes("/weeks") && method === "get") {
-      if (url.endsWith("/weeks")) {
-        data = [db.weeks[0]];
+  else if ((url.includes("/weeks") || url.includes("/schedule-weeks")) && method === "get") {
+      const cleanUrl = url.split("?")[0];
+      const parts = cleanUrl.split("/");
+      const isDetail = parts.length > 2 && parts[2] !== "";
+      if (isDetail) {
+        const weekId = parts[2];
+        if (weekId === "current" || weekId === "current-week") {
+          const todayStr = new Date().toISOString().slice(0, 10);
+          data = db.weeks.find((w: any) => {
+            const start = new Date(w.weekStartDate + "T00:00:00Z");
+            const end = new Date(start);
+            end.setUTCDate(end.getUTCDate() + 6);
+            return todayStr >= w.weekStartDate && todayStr <= end.toISOString().slice(0, 10);
+          }) || db.weeks[0];
+        } else {
+          data = db.weeks.find((w: any) => w.id === weekId) || db.weeks[0];
+        }
       } else {
-        data = db.weeks[0];
+        data = db.weeks;
       }
     }
   // 2. Публикация недели (POST /weeks/:id/publish)
   else if (url.includes("/publish") && method === "post") {
-    db.weeks[0].status = "PUBLISHED";
+    const parts = url.split("?")[0].split("/");
+    const id = parts.length > 2 ? parts[parts.length - 2] : null;
+    if (id) {
+      const week = db.weeks.find((w: any) => w.id === id);
+      if (week) week.status = "PUBLISHED";
+    } else {
+      db.weeks[0].status = "PUBLISHED";
+    }
     saveDb(db);
     data = { ok: true };
   }
   // 3. Добавление смены (POST /shifts)
   else if (url.includes("/shifts") && method === "post") {
     const payload = typeof config.data === "string" ? JSON.parse(config.data || "{}") : (config.data || {});
-    db.weeks[0].shifts.push({ ...payload, id: "shift-" + Date.now() });
+    const targetWeek = db.weeks.find((w: any) => w.id === payload.weekId) || db.weeks[0];
+    targetWeek.shifts.push({ ...payload, id: "shift-" + Date.now() });
     saveDb(db);
     data = { ok: true };
   }
   // 4. Удаление смены (DELETE /shifts/:id)
   else if (url.includes("/shifts/") && method === "delete") {
     const id = url.split("/").pop();
-    db.weeks[0].shifts = db.weeks[0].shifts.filter((s: any) => s.id !== id);
+    for (const w of db.weeks) {
+      w.shifts = w.shifts.filter((s: any) => s.id !== id);
+    }
     saveDb(db);
     data = { ok: true };
   }
@@ -114,9 +200,7 @@ export const guestAdapter: AxiosAdapter = async (config: InternalAxiosRequestCon
       { id: "h1", action: "PUBLISH_WEEK", createdAt: new Date().toISOString(), userName: "Анна Смирнова" }
     ];
   }
-  else if (url.includes("/count")) {
-    data = { count: 0 };
-  }
+  
   // Заглушка для Табеля
   else if (url.includes("/timesheet")) {
     data = {
