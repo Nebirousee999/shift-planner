@@ -55,7 +55,7 @@ const unhighlightTarget = () => {
 export default function OnboardingWidget() {
   const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
-  const [isDismissed, setIsDismissed] = useState(() => localStorage.getItem("onboarding_dismissed") === "true");
+  const [isDismissed, setIsDismissed] = useState(true); // Всегда скрыт по умолчанию, открывается только по кнопке
 
   const { items: users, fetch: fetchUsers } = useUsers();
   const { items: areas, fetch: fetchAreas } = useAreas();

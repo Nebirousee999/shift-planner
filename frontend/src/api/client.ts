@@ -5,10 +5,22 @@ import { guestAdapter } from "./guestAdapter";
 const API_URL =
   import.meta.env.VITE_API_URL ?? "http://localhost:3001/api";
 
-export const api = axios.create({
+export 
+const api = axios.create({
   baseURL: API_URL,
   headers: { "Content-Type": "application/json" },
 });
+
+// Убираем гостевые ID локаций (gloc1, gloc2), чтобы они не улетали на реальный бэкенд
+api.interceptors.request.use((config) => {
+  if (typeof window !== "undefined" && localStorage.getItem("isGuest") !== "true") {
+    if (config.params && config.params.locationId && String(config.params.locationId).startsWith("gloc")) {
+      delete config.params.locationId;
+    }
+  }
+  return config;
+});
+
 
   
   

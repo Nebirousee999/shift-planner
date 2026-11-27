@@ -4,7 +4,7 @@ import { GUEST_SEED } from "../lib/guestSeed";
 // Инициализация пустой базы (версия 3 — чтобы сбросить старые ошибки)
 const initDb = () => {
   const dbStr = localStorage.getItem("guest_db");
-  let needsUpdate = !dbStr || localStorage.getItem("guest_db_version") !== "15";
+  let needsUpdate = !dbStr || localStorage.getItem("guest_db_version") !== "16";
   
   if (!needsUpdate && dbStr) {
     try {
@@ -21,7 +21,7 @@ const initDb = () => {
   }
 
   if (needsUpdate) {
-    localStorage.setItem("guest_db_version", "15");
+    localStorage.setItem("guest_db_version", "16");
     localStorage.setItem("guest_db", JSON.stringify({
       weeks: GUEST_SEED.weeks,
       users: GUEST_SEED.employees,

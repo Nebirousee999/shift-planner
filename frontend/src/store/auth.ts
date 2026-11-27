@@ -103,6 +103,7 @@ export const useAuth = create<AuthState>((set) => ({
       // Реальный вход — снимаем гостевые флаги
       localStorage.removeItem("isGuest");
       localStorage.removeItem("guestEmailAttached");
+      localStorage.removeItem("activeLocationId");
       resetOrganizationStore();
       set({ user: data.user, token: data.token, loading: false });
       return true;

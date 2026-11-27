@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { createHash } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { isValidRealEmail } from "../../utils/email-validator.js";
 import { eq, and } from "drizzle-orm";
@@ -174,8 +173,9 @@ export const authService = {
           }
           const finalEmpEmail = empEmail || `temp_${Date.now()}_${Math.floor(Math.random() * 1000)}@shift-planner.ru`;
           
-          const empPass = emp.password && emp.password.length >= 6 ? emp.password : generateTempPassword();
-          const empHash = await bcrypt.hash(empPass, 10);
+          const hasRealEmail = !!empEmail;
+          const empPass = hasRealEmail ? (emp.password && emp.password.length >= 6 ? emp.password : generateTempPassword()) : null;
+          const empHash = empPass ? await bcrypt.hash(empPass, 10) : await bcrypt.hash(generateTempPassword(), 10);
           
           const [newEmp] = await tx.insert(users).values({
             orgId: org.id,
@@ -185,8 +185,8 @@ export const authService = {
             tempPassword: empPass,
             role: "EMPLOYEE",
             color: emp.color || "#3B82F6",
-            hourlyRate: emp.rate ? String(emp.rate) : "300",
-            position: "Должность 1",
+            hourlyRate: emp.hourlyRate ? String(emp.hourlyRate) : (emp.rate ? String(emp.rate) : "300"),
+            position: emp.position || "Должность 1",
           }).returning();
           const userLocIds = (emp.locationIds || []).map((id: string) => locationsMap.get(id)).filter(Boolean);
           const userAreaIds = (emp.areaIds || []).map((id: string) => areasMap.get(id)).filter(Boolean);
@@ -440,7 +440,7 @@ export const authService = {
         };
       }
 
-      return { org, user, excelDataForExport, firstWeekId };
+      return { org, user, excelDataForExport, firstWeekId, defaultLocId };
     });
 
     // Генерируем Excel или ZIP для письма.
@@ -480,7 +480,7 @@ export const authService = {
       console.error("Ошибка отправки письма:", e);
     }
 
-    return { id: result.user.id, email: result.user.email, orgId: result.org.id, role: result.user.role, firstWeekId: result.firstWeekId };
+    return { id: result.user.id, email: result.user.email, orgId: result.org.id, role: result.user.role, firstWeekId: result.firstWeekId, locationId: result.defaultLocId };
   },
 
 

@@ -60,23 +60,22 @@ const AREAS: GuestArea[] = [
 const EMPLOYEES: GuestEmployee[] = [
   { id: "gu1", name: "Алексей Смирнов", email: "alex@guest.ru", phone: null, role: "OWNER", position: "Управляющий", hourlyRate: "600", createdAt: new Date().toISOString(), locationIds: ["gloc1"], areaIds: ["garea2"], paymentType: "HOURLY", employmentType: "SHTAT", color: "#3b82f6", tempPassword: null, isTempPasswordSent: false },
   { id: "gu2", name: "Мария Иванова", email: "maria@guest.ru", phone: null, role: "MANAGER", position: "Шеф-повар", hourlyRate: "550", createdAt: new Date().toISOString(), locationIds: ["gloc1"], areaIds: ["garea1"], paymentType: "HOURLY", employmentType: "SHTAT", color: "#ef4444", tempPassword: null, isTempPasswordSent: false },
-  { id: "gu3", name: "Дмитрий Петров", email: "dmitry@guest.ru", phone: null, role: "EMPLOYEE", position: "Бармен", hourlyRate: "450", createdAt: new Date().toISOString(), locationIds: ["gloc1", "gloc3"], areaIds: ["garea3"], paymentType: "HOURLY", employmentType: "SHTAT", color: "#8b5cf6", tempPassword: null, isTempPasswordSent: false },
+  { id: "gu3", name: "Дмитрий Петров", email: "dmitry@guest.ru", phone: null, role: "EMPLOYEE", position: "Бармен", hourlyRate: "450", createdAt: new Date().toISOString(), locationIds: ["gloc1"], areaIds: ["garea3"], paymentType: "HOURLY", employmentType: "SHTAT", color: "#8b5cf6", tempPassword: null, isTempPasswordSent: false },
   { id: "gu4", name: "Елена Козлова", email: "elena@guest.ru", phone: null, role: "EMPLOYEE", position: "Официант", hourlyRate: "400", createdAt: new Date().toISOString(), locationIds: ["gloc1"], areaIds: ["garea2"], paymentType: "HOURLY", employmentType: "SHTAT", color: "#f59e0b", tempPassword: null, isTempPasswordSent: false },
   { id: "gu5", name: "Сергей Волков", email: "sergey@guest.ru", phone: null, role: "EMPLOYEE", position: "Повар", hourlyRate: "450", createdAt: new Date().toISOString(), locationIds: ["gloc1"], areaIds: ["garea1"], paymentType: "HOURLY", employmentType: "SHTAT", color: "#10b981", tempPassword: null, isTempPasswordSent: false },
   { id: "gu6", name: "Анна Соколова", email: "anna.s@guest.ru", phone: null, role: "EMPLOYEE", position: "Официант", hourlyRate: "400", createdAt: new Date().toISOString(), locationIds: ["gloc2"], areaIds: ["garea2"], paymentType: "HOURLY", employmentType: "SHTAT", color: "#ec4899", tempPassword: null, isTempPasswordSent: false },
   { id: "gu7", name: "Иван Морозов", email: "ivan@guest.ru", phone: null, role: "EMPLOYEE", position: "Официант", hourlyRate: "400", createdAt: new Date().toISOString(), locationIds: ["gloc3"], areaIds: ["garea2"], paymentType: "HOURLY", employmentType: "GPH", color: "#06b6d4", tempPassword: null, isTempPasswordSent: false },
   { id: "gu8", name: "Ольга Новикова", email: "olga@guest.ru", phone: null, role: "EMPLOYEE", position: "Хостес", hourlyRate: "350", createdAt: new Date().toISOString(), locationIds: ["gloc1", "gloc2"], areaIds: ["garea2"], paymentType: "HOURLY", employmentType: "SHTAT", color: "#6366f1", tempPassword: null, isTempPasswordSent: false },
   { id: "gu9", name: "Павел Зайцев", email: "pavel@guest.ru", phone: null, role: "EMPLOYEE", position: "Кальянщик", hourlyRate: "500", createdAt: new Date().toISOString(), locationIds: ["gloc3"], areaIds: ["garea2"], paymentType: "HOURLY", employmentType: "GPH", color: "#84cc16", tempPassword: null, isTempPasswordSent: false },
-  { id: "gu10", name: "Виктория Павлова", email: "vika@guest.ru", phone: null, role: "EMPLOYEE", position: "Уборщик", hourlyRate: "300", createdAt: new Date().toISOString(), locationIds: ["gloc1", "gloc2", "gloc3"], areaIds: [], paymentType: "HOURLY", employmentType: "SHTAT", color: "#f97316", tempPassword: null, isTempPasswordSent: false },
+  { id: "gu10", name: "Виктория Павлова", email: "vika@guest.ru", phone: null, role: "EMPLOYEE", position: "Уборщик", hourlyRate: "300", createdAt: new Date().toISOString(), locationIds: ["gloc1"], areaIds: [], paymentType: "HOURLY", employmentType: "SHTAT", color: "#f97316", tempPassword: null, isTempPasswordSent: false },
   { id: "gu11", name: "Андрей Николаев", email: "andrey@guest.ru", phone: null, role: "EMPLOYEE", position: "Су-шеф", hourlyRate: "500", createdAt: new Date().toISOString(), locationIds: ["gloc1"], areaIds: ["garea1"], paymentType: "HOURLY", employmentType: "SHTAT", color: "#14b8a6", tempPassword: null, isTempPasswordSent: false },
   { id: "gu12", name: "Кристина Белова", email: "kristina@guest.ru", phone: null, role: "EMPLOYEE", position: "Повар", hourlyRate: "450", createdAt: new Date().toISOString(), locationIds: ["gloc1"], areaIds: ["garea1"], paymentType: "HOURLY", employmentType: "SHTAT", color: "#a855f7", tempPassword: null, isTempPasswordSent: false },
-].map(u => ({ ...u, locationIds: Array.from(new Set([...u.locationIds, "gloc1"])) }));
+].map(u => ({ ...u, locationIds: ["gloc1"] }));
 
 
 
 const LOCATIONS: GuestLocation[] = [
-  { id: "gloc1", name: "Основная точка", orgId: "gorg" },
-  { id: "gloc2", name: "Вторая точка", orgId: "gorg" },
+  { id: "gloc1", name: "Основная точка", orgId: "gorg" },
 ];
 
 const TEMPLATES: GuestTemplate[] = [

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Check, Sparkles, ArrowRight, Loader2, Gift } from "lucide-react";
+import { trackEvent } from "../../lib/metrika";
 import ContactModal from "./ContactModal";
 
 type Plan = {
@@ -91,23 +92,20 @@ export default function PricingSection({ onStartGuest }: { onStartGuest?: (sourc
     }
     if (plan.id === "free") {
       if (onStartGuest) {
-        onStartGuest("pricing_free", "/"); // Ведём на главную
+        onStartGuest("pricing_free", "/demo/dashboard"); // Ведём на главную
       } else {
-        navigate("/login?mode=register");
+        navigate("/demo/dashboard");
       }
       return;
     }
 
     const token = localStorage.getItem("token");
     if (!token) {
-      if (onStartGuest) {
-        // 💾 Создаём гостя и ведём прямо в кошелёк
-        sessionStorage.setItem("pendingCheckout", JSON.stringify({ plan: plan.id, yearly }));
-        onStartGuest("pricing_pro", "/wallet"); 
-      } else {
-        sessionStorage.setItem("pendingCheckout", JSON.stringify({ plan: plan.id, yearly }));
-        navigate("/login?mode=register");
-      }
+      // Не залогинен — сначала окно входа/регистрации,
+      // намерение покупки сохраняем: LoginPage после авторизации отправит на /wallet?checkout=plan
+      sessionStorage.setItem("pendingCheckout", JSON.stringify({ plan: plan.id, yearly }));
+      trackEvent("CTA_click", { source: "pricing_pro", plan: plan.id });
+      navigate("/login?mode=register");
       return;
     }
 

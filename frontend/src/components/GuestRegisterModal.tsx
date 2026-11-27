@@ -44,9 +44,14 @@ export default function GuestRegisterModal({ guestData, onClose, mode, year, exp
       localStorage.removeItem("guestEmailAttached");
       localStorage.removeItem("guest_db");
       localStorage.removeItem("guest_workspace");
+      localStorage.removeItem("guest_db_version");
+      localStorage.removeItem("guest_shifts");
       localStorage.setItem("guest_migrated", "true");
       localStorage.setItem("migrated_email", email);
       localStorage.removeItem("activeLocationId");
+      if (data.locationId) {
+        localStorage.setItem("activeLocationId", data.locationId);
+      }
       setAuth(data.token, data.user);
       
       // Отправляем цель в Метрику (только после успешного сохранения!)

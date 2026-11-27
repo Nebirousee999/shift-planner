@@ -1453,6 +1453,9 @@ function EditUserModal({
   const [employmentType, setEmploymentType] = useState<"GPH" | "SHTAT">(user.employmentType ?? "SHTAT");
   const [phone, setPhone] = useState(user.phone ?? "");
   const [tempPassword, setTempPassword] = useState(user.tempPassword ?? "");
+  const [showGrantModal, setShowGrantModal] = useState(false);
+  const [grantEmail, setGrantEmail] = useState("");
+  const [grantBusy, setGrantBusy] = useState(false);
   const [color, setColor] = useState(user.color ?? "#3B82F6");
   const [managePosOpen, setManagePosOpen] = useState(false);
   const [manageAreaOpen, setManageAreaOpen] = useState(false);
@@ -1519,7 +1522,7 @@ function EditUserModal({
     setBusy(true);
     try {
       const payload: any = {
-        name, email, role,
+        name, role,
         position: position.trim() || null,
         hourlyRate: hourlyRate.trim() || null,
         paymentType,
@@ -1529,6 +1532,7 @@ function EditUserModal({
         areaIds: Array.from(areaIds),
         color,
       };
+      if (!isTempEmail) payload.email = email;
       // Отправляем пароль только если он был изменен вручную
       if (tempPassword !== (user.tempPassword ?? "")) {
         payload.tempPassword = tempPassword.trim() || null;
@@ -1577,30 +1581,74 @@ function EditUserModal({
               {!isDemo && (
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">Email (для доступа к сайту)</label>
-                  <input
-                    type="email"
-                    value={email === user.email && isTempEmail ? "" : email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder={isTempEmail ? "Введите реальную почту для доступа..." : ""}
-                    className={isTempEmail && email === user.email ? "placeholder:text-red-500 placeholder:font-medium !border-red-300" : ""}
-                    required
-                  />
+                  {isTempEmail ? (
+                    <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg p-2 px-3">
+                      <span className="text-sm text-slate-500 italic">Доступ к сайту не выдан</span>
+                      <button type="button" onClick={() => setShowGrantModal(true)} className="text-xs font-medium bg-brand-600 text-white px-3 py-1.5 rounded-lg hover:bg-brand-700 shadow-sm">
+                        Выдать доступ
+                      </button>
+                    </div>
+                  ) : (
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="Введите email..."
+                      className="w-full"
+                    />
+                  )}
                 </div>
               )}
-              {!isDemo && (
+              {!isDemo && !isTempEmail && (
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                    Временный пароль
+                    {user.tempPassword ? "Временный пароль" : "Пароль"}
                   </label>
-                  <input
-                    value={tempPassword}
-                    onChange={(e) => setTempPassword(e.target.value)}
-                    placeholder="Оставьте пустым, чтобы не менять"
-                    className="w-full font-mono text-sm"
-                  />
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    Если изменить пароль, сотруднику нужно будет сообщить новый.
-                  </p>
+                  {user.tempPassword ? (
+                    <div className="flex gap-2">
+                      <input
+                        value={tempPassword}
+                        onChange={(e) => setTempPassword(e.target.value)}
+                        placeholder="Оставьте пустым, чтобы не менять"
+                        className="w-full font-mono text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const res = await usersApi.sendPasswords([user.id]);
+                            if (res.sent === 0) throw new Error("Письмо не отправлено");
+                            await alertDialog("Пароль успешно отправлен!", { variant: "success" });
+                          } catch (e: any) {
+                            await alertDialog("Ошибка отправки: " + (e.response?.data?.error || e.message), { variant: "error" });
+                          }
+                        }}
+                        className="whitespace-nowrap px-3 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-200 transition-colors"
+                      >
+                        Переотправить
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg p-2 px-3">
+                      <span className="text-sm text-slate-600">Пароль установлен сотрудником</span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const res = await usersApi.sendPasswords([user.id]);
+                            if (res.sent === 0) throw new Error("Письмо не отправлено");
+                            await alertDialog("Новый пароль отправлен на почту!", { variant: "success" });
+                            onClose();
+                          } catch (e: any) {
+                            await alertDialog("Ошибка отправки: " + (e.response?.data?.error || e.message), { variant: "error" });
+                          }
+                        }}
+                        className="text-xs font-medium text-brand-600 hover:underline"
+                      >
+                        Сбросить пароль
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
               <div>
@@ -1765,6 +1813,49 @@ function EditUserModal({
           </div>
         </form>
       </div>
+
+      {showGrantModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 animate-fade-in" onClick={() => setShowGrantModal(false)}>
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-bold text-slate-900 text-lg mb-2">Выдать доступ к сайту</h3>
+            <p className="text-sm text-slate-500 mb-4">Введите email сотрудника. На него будет отправлено письмо с временным паролем.</p>
+            <input
+              type="email"
+              value={grantEmail}
+              onChange={(e) => setGrantEmail(e.target.value)}
+              placeholder="mail@example.com"
+              className="w-full mb-4"
+            />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={grantBusy || !grantEmail.includes("@")}
+                onClick={async () => {
+                  setGrantBusy(true);
+                  try {
+                    await onSave({ email: grantEmail });
+                    const res = await usersApi.sendPasswords([user.id]);
+                    if (res.sent === 0) throw new Error("Письмо не отправлено сервером");
+                    await alertDialog("Доступ выдан, пароль отправлен!", { variant: "success" });
+                    setShowGrantModal(false);
+                    onClose();
+                  } catch (e: any) {
+                    await alertDialog(e.response?.data?.error || e.message, { variant: "error" });
+                  } finally {
+                    setGrantBusy(false);
+                  }
+                }}
+                className="flex-1 bg-brand-600 text-white px-4 py-2 rounded-xl hover:bg-brand-700 disabled:opacity-50 text-sm font-medium shadow-sm transition-all"
+              >
+                {grantBusy ? "Отправка..." : "Выдать доступ"}
+              </button>
+              <button type="button" onClick={() => setShowGrantModal(false)} className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 text-sm font-medium">
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {managePosOpen && (
         <ManageTemplatesModal type="position" onClose={() => setManagePosOpen(false)} />
