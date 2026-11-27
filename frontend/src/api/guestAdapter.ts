@@ -4,7 +4,7 @@ import { GUEST_SEED } from "../lib/guestSeed";
 // Инициализация пустой базы (версия 3 — чтобы сбросить старые ошибки)
 const initDb = () => {
   const dbStr = localStorage.getItem("guest_db");
-  let needsUpdate = !dbStr || localStorage.getItem("guest_db_version") !== "14";
+  let needsUpdate = !dbStr || localStorage.getItem("guest_db_version") !== "15";
   
   if (!needsUpdate && dbStr) {
     try {
@@ -21,7 +21,7 @@ const initDb = () => {
   }
 
   if (needsUpdate) {
-    localStorage.setItem("guest_db_version", "14");
+    localStorage.setItem("guest_db_version", "15");
     localStorage.setItem("guest_db", JSON.stringify({
       weeks: GUEST_SEED.weeks,
       users: GUEST_SEED.employees,
@@ -187,9 +187,62 @@ export const guestAdapter: AxiosAdapter = async (config: InternalAxiosRequestCon
     saveDb(db);
     data = { ok: true };
   }
+  // Мок для привязки почты
+  else if (url.includes("/auth/update-email") && method === "post") {
+    data = { ok: true };
+  }
   // 5. Получение списка сотрудников (GET /users)
   else if (url.includes("/users") && method === "get") {
     data = db.users;
+  }
+  // 5.1 Создание пользователя (POST /users)
+  else if (url.includes("/users") && method === "post") {
+    const payload = typeof config.data === "string" ? JSON.parse(config.data || "{}") : (config.data || {});
+    const newUser = {
+      id: "gu" + Date.now(),
+      name: payload.name || "Новый сотрудник",
+      email: payload.email || `demo_${Date.now()}@guest.ru`,
+      phone: payload.phone || null,
+      role: payload.role || "EMPLOYEE",
+      position: payload.position || null,
+      hourlyRate: payload.hourlyRate || null,
+      createdAt: new Date().toISOString(),
+      locationIds: payload.locationIds && payload.locationIds.length > 0 ? payload.locationIds : ["gloc1"],
+      areaIds: payload.areaIds || [],
+      paymentType: payload.paymentType || "HOURLY",
+      employmentType: payload.employmentType || "SHTAT",
+      color: payload.color || "#3B82F6",
+      tempPassword: "123456",
+      isTempPasswordSent: false
+    };
+    if (!db.users) db.users = [];
+    db.users.push(newUser);
+    saveDb(db);
+    data = { user: newUser, tempPassword: "123456" };
+  }
+  // 5.2 Обновление пользователя (PATCH /users/:id)
+  else if (url.includes("/users/") && method === "patch") {
+    const parts = url.split("?")[0].split("/");
+    const id = parts[parts.length - 1];
+    const payload = typeof config.data === "string" ? JSON.parse(config.data || "{}") : (config.data || {});
+    if (!db.users) db.users = [];
+    const idx = db.users.findIndex((u: any) => u.id === id);
+    if (idx !== -1) {
+      db.users[idx] = { ...db.users[idx], ...payload };
+      saveDb(db);
+      data = db.users[idx];
+    } else {
+      data = { ok: true };
+    }
+  }
+  // 5.3 Удаление пользователя (DELETE /users/:id)
+  else if (url.includes("/users/") && method === "delete") {
+    const parts = url.split("?")[0].split("/");
+    const id = parts[parts.length - 1];
+    if (!db.users) db.users = [];
+    db.users = db.users.filter((u: any) => u.id !== id);
+    saveDb(db);
+    data = { ok: true };
   }
   // 7. Получение локаций (GET /locations)
   else if (url.includes("/locations") && method === "get") {

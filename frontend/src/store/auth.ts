@@ -16,6 +16,7 @@ type AuthState = {
     orgName: string;
   }) => Promise<boolean>;
   logout: () => void;
+  setAuth: (token: string, user: User) => void;
   hydrate: () => void;
   changePassword: (oldPassword: string, newPassword: string) => Promise<void>;
 };
@@ -63,15 +64,24 @@ export const useAuth = create<AuthState>((set) => ({
   login: async (email, password) => {
     set({ loading: true, error: null });
     try {
-      const { data } = await api.post<AuthResponse>("/auth/login", {
-        email,
-        password,
-      });
+      const wasGuest = localStorage.getItem("isGuest") === "true" || window.location.pathname.startsWith("/demo");
+      const { data } = await api.post<AuthResponse>("/auth/login", { email, password });
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
       // Реальный вход — снимаем гостевые флаги
       localStorage.removeItem("isGuest");
+      if (wasGuest) {
+        localStorage.setItem("guest_migrated", "true");
+        localStorage.setItem("migrated_email", payload.email);
+      }
       localStorage.removeItem("guestEmailAttached");
+      if (wasGuest) {
+        localStorage.setItem("guest_migrated", "true");
+        localStorage.setItem("migrated_email", email);
+      }
+      localStorage.removeItem("migrated_email");
+      localStorage.removeItem("activeLocationId");
+      localStorage.removeItem("activeLocationId");
       // Сбрасываем старую организацию (если пользователь до этого был другой)
       resetOrganizationStore();
       set({ user: data.user, token: data.token, loading: false });
@@ -86,6 +96,7 @@ export const useAuth = create<AuthState>((set) => ({
   register: async (payload) => {
     set({ loading: true, error: null });
     try {
+      const wasGuest = localStorage.getItem("isGuest") === "true" || window.location.pathname.startsWith("/demo");
       const { data } = await api.post<AuthResponse>("/auth/register", payload);
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
@@ -102,11 +113,15 @@ export const useAuth = create<AuthState>((set) => ({
     }
   },
 
+  setAuth: (token, user) => set({ token, user, hydrated: true }),
+
   logout: () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     localStorage.removeItem("support_session_token"); // Очищаем сессию чата
     localStorage.removeItem("guestEmailAttached");
+    // ВАЖНО: guest_migrated НЕ удаляем. Именно благодаря этому флагу 
+    // после выхода из профиля при клике на "Попробовать" появится развилка.
     localStorage.setItem("isGuest", "true");
     
     // Сбрасываем кэш организации и пользователей, чтобы при следующем входе

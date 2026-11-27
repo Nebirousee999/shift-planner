@@ -88,7 +88,7 @@ export default function LandingHeader({ onStartGuest }: { onStartGuest?: (source
         </nav>
 
         {/* Десктоп-кнопки */}
-        <div className="hidden md:flex items-center gap-2">
+        <div className="hidden md:flex items-center gap-3">
           
           {token ? (
             <button
@@ -99,13 +99,21 @@ export default function LandingHeader({ onStartGuest }: { onStartGuest?: (source
               <LayoutDashboard className="w-4 h-4" />
             </button>
           ) : (
-            <button
-              onClick={goRegister}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-xl hover:bg-brand-700 transition-colors shadow-sm hover:shadow"
-            >
-              Попробовать бесплатно и без регистрации
-              <ArrowRight className="w-4 h-4" />
-            </button>
+            <>
+              <button
+                onClick={() => navigate("/login")}
+                className="px-4 py-2 text-sm font-medium text-slate-700 hover:text-slate-900 transition-colors"
+              >
+                Войти
+              </button>
+              <button
+                onClick={goRegister}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-xl hover:bg-brand-700 transition-colors shadow-sm hover:shadow"
+              >
+                Попробовать бесплатно
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </>
           )}
         </div>
 
@@ -142,12 +150,20 @@ export default function LandingHeader({ onStartGuest }: { onStartGuest?: (source
                   Перейти в кабинет
                 </button>
               ) : (
-                <button
-                  onClick={goRegister}
-                  className="w-full px-3 py-2.5 text-sm font-medium bg-brand-600 text-white rounded-xl hover:bg-brand-700"
-                >
-                  Попробовать бесплатно и без регистрации
-                </button>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => { setMobileOpen(false); navigate("/login"); }}
+                    className="w-full px-3 py-2.5 text-sm font-medium bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200"
+                  >
+                    Войти
+                  </button>
+                  <button
+                    onClick={goRegister}
+                    className="w-full px-3 py-2.5 text-sm font-medium bg-brand-600 text-white rounded-xl hover:bg-brand-700"
+                  >
+                    Попробовать бесплатно
+                  </button>
+                </div>
               )}
             </div>
           </div>

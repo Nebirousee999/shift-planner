@@ -201,6 +201,8 @@ export default function WalletPage() {
       }
       localStorage.setItem("guestEmailAttached", "true");
       trackEvent("wallet_attach_email");
+      localStorage.setItem("guest_migrated", "true");
+      localStorage.setItem("migrated_email", guestEmail);
       setIsGuest(false);
       setShowEmailInput(false);
       setEmailMode("input");

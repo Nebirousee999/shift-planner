@@ -102,9 +102,9 @@ export const authService = {
     const result = await db.transaction(async (tx) => {
       const [org] = await tx.insert(organizations).values({
         name: "Моя организация",
-        trialEndsAt: null,
-        tariffId: "free",
-        maxLocations: 1
+        trialEndsAt: (() => { const d = new Date(); d.setDate(d.getDate() + 14); return d; })(),
+        tariffId: "pro",
+        maxLocations: 5
       }).returning();
 
       const [user] = await tx.insert(users).values({
@@ -116,18 +116,50 @@ export const authService = {
         role: "OWNER",
       }).returning();
 
-      const [loc] = await tx.insert(locations).values({ orgId: org.id, name: "Основная" }).returning();
-      await tx.insert(userLocations).values({ userId: user.id, locationId: loc.id });
+      // 1. Локации
+      const locationsMap = new Map();
+      if (input.guestData?.locations && input.guestData.locations.length > 0) {
+        for (const loc of input.guestData.locations) {
+          const [nl] = await tx.insert(locations).values({ orgId: org.id, name: loc.name || "Точка" }).returning();
+          locationsMap.set(loc.id, nl.id);
+        }
+      } else {
+        const [nl] = await tx.insert(locations).values({ orgId: org.id, name: "Основная" }).returning();
+        locationsMap.set("default", nl.id);
+      }
+      const defaultLocId = Array.from(locationsMap.values())[0];
+      await tx.insert(userLocations).values({ userId: user.id, locationId: defaultLocId });
 
-      const [defaultArea] = await tx.insert(areas).values({ orgId: org.id, locationId: loc.id, name: "Локация 1" }).returning();
-      await tx.insert(positionTemplates).values({ orgId: org.id, name: "Должность 1", color: "#3B82F6" });
+      // 2. Зоны (привязаны к локациям)
+      const areasMap = new Map();
+      let defaultAreaId = null;
+      if (input.guestData?.areas && input.guestData.areas.length > 0) {
+        for (const area of input.guestData.areas) {
+          const newLocId = locationsMap.get(area.locationId) || defaultLocId;
+          const [na] = await tx.insert(areas).values({ orgId: org.id, locationId: newLocId, name: area.name || "Зона" }).returning();
+          areasMap.set(area.id, na.id);
+          if (!defaultAreaId) defaultAreaId = na.id;
+        }
+      } else {
+        const [na] = await tx.insert(areas).values({ orgId: org.id, locationId: defaultLocId, name: "Локация 1" }).returning();
+        defaultAreaId = na.id;
+      }
+
+      // 3. Должности
+      if (input.guestData?.positions && input.guestData.positions.length > 0) {
+        for (const pos of input.guestData.positions) {
+          await tx.insert(positionTemplates).values({ orgId: org.id, name: pos.name || "Должность", color: pos.color || "#3B82F6" });
+        }
+      } else {
+        await tx.insert(positionTemplates).values({ orgId: org.id, name: "Должность 1", color: "#3B82F6" });
+      }
 
       const createdEmployees = [];
       const usedGuestEmails = new Set<string>();
       let empCount = 0;
       if (input.guestData && input.guestData.employees) {
         for (const emp of input.guestData.employees) {
-          if (empCount >= 3) break;
+          
           if (!emp.name.trim()) continue;
           empCount++;
           // Проверяем, ввел ли владелец почту. Если да и она не занята — используем её. Иначе — генерируем заглушку.
@@ -156,8 +188,19 @@ export const authService = {
             hourlyRate: emp.rate ? String(emp.rate) : "300",
             position: "Должность 1",
           }).returning();
-          await tx.insert(userAreas).values({ userId: newEmp.id, areaId: defaultArea.id });
-          await tx.insert(userLocations).values({ userId: newEmp.id, locationId: loc.id });
+          const userLocIds = (emp.locationIds || []).map((id: string) => locationsMap.get(id)).filter(Boolean);
+          const userAreaIds = (emp.areaIds || []).map((id: string) => areasMap.get(id)).filter(Boolean);
+          
+          if (userLocIds.length === 0) userLocIds.push(defaultLocId);
+          if (userAreaIds.length === 0 && defaultAreaId) userAreaIds.push(defaultAreaId);
+
+          for (const lid of userLocIds) {
+            await tx.insert(userLocations).values({ userId: newEmp.id, locationId: lid });
+          }
+          for (const aid of userAreaIds) {
+            await tx.insert(userAreas).values({ userId: newEmp.id, areaId: aid });
+          }
+          
           createdEmployees.push({ ...newEmp, rawPassword: empPass });
         }
       }
@@ -165,7 +208,105 @@ export const authService = {
       let excelDataForExport = null;
       let firstWeekId = null;
 
-      if (createdEmployees.length > 0 && input.guestData.startDate) {
+      if (createdEmployees.length > 0 && input.guestData.weeks && input.guestData.weeks.length > 0) {
+        // ПРЯМОЙ ПЕРЕНОС НЕДЕЛЬ И СМЕН ИЗ ГОСТЕВОГО РЕЖИМА
+        const guestUserMap = new Map();
+        for (let i = 0; i < input.guestData.employees.length; i++) {
+          if (createdEmployees[i]) {
+            guestUserMap.set(input.guestData.employees[i].id, createdEmployees[i].id);
+          }
+        }
+
+        const templatesMap = new Map();
+        // Переносим шаблоны смен
+        if (input.guestData.templates && input.guestData.templates.length > 0) {
+          for (const tpl of input.guestData.templates) {
+            const [nt] = await tx.insert(shiftTemplates).values({
+              orgId: org.id,
+              name: tpl.name || "Смена",
+              startTime: tpl.startTime,
+              endTime: tpl.endTime,
+              color: tpl.color || "#3B82F6"
+            }).returning();
+            templatesMap.set(tpl.id, nt.id);
+          }
+        }
+
+        const guestWeeks = input.guestData.weeks;
+
+        for (const gw of guestWeeks) {
+          const [newWeek] = await tx.insert(scheduleWeeks).values({
+            orgId: org.id,
+            locationId: defaultLocId,
+            weekStartDate: gw.weekStartDate,
+            status: gw.status || "PUBLISHED",
+            publishedAt: gw.status === "PUBLISHED" ? new Date() : null
+          }).returning();
+
+          if (!firstWeekId) firstWeekId = newWeek.id;
+
+          if (gw.shifts && gw.shifts.length > 0) {
+            const shiftsToInsert = [];
+            for (const s of gw.shifts) {
+              const realUserId = guestUserMap.get(s.userId);
+              if (!realUserId) continue;
+
+              let tplId = s.templateId ? templatesMap.get(s.templateId) : null;
+              if (!tplId) {
+                // Фоллбэк, если шаблон не передался
+                const tplKey = `${s.startTime}-${s.endTime}`;
+                tplId = templatesMap.get(tplKey);
+                if (!tplId) {
+                  const [nt] = await tx.insert(shiftTemplates).values({
+                    orgId: org.id, name: `Смена ${templatesMap.size + 1}`, startTime: s.startTime, endTime: s.endTime, color: nightColorFor(s.startTime, s.endTime)
+                  }).returning();
+                  tplId = nt.id;
+                  templatesMap.set(tplKey, tplId);
+                }
+              }
+
+              shiftsToInsert.push({
+                weekId: newWeek.id,
+                templateId: tplId,
+                userId: realUserId,
+                shiftDate: s.shiftDate,
+                startTime: s.startTime,
+                endTime: s.endTime,
+                status: "SCHEDULED"
+              });
+            }
+            if (shiftsToInsert.length > 0) {
+              await tx.insert(scheduledShifts).values(shiftsToInsert);
+            }
+          }
+        }
+
+        // Собираем данные для Excel
+        const allShiftsForExport = [];
+        for (const gw of guestWeeks) {
+          if (!gw.shifts) continue;
+          for (const s of gw.shifts) {
+            const realUserId = guestUserMap.get(s.userId);
+            if (!realUserId) continue;
+            allShiftsForExport.push({
+              userId: realUserId,
+              userName: createdEmployees.find(e => e.id === realUserId)?.name || "—",
+              shiftDate: s.shiftDate,
+              startTime: s.startTime,
+              endTime: s.endTime,
+              templateName: "Смена",
+              templateColor: nightColorFor(s.startTime, s.endTime)
+            });
+          }
+        }
+
+        excelDataForExport = {
+          orgName: org.name,
+          monthStartDate: guestWeeks[0]?.weekStartDate || input.guestData.startDate || new Date().toISOString().slice(0, 10),
+          employees: createdEmployees.map(e => ({ id: e.id, name: e.name, hourlyRate: Number(e.hourlyRate || 0) })),
+          shifts: allShiftsForExport
+        };
+      } else if (createdEmployees.length > 0 && input.guestData.startDate) {
         const monday = getMonday(input.guestData.startDate);
         const globalStartDate = new Date(input.guestData.startDate + "T00:00:00Z");
         
@@ -179,7 +320,7 @@ export const authService = {
           
           const [newWeek] = await tx.insert(scheduleWeeks).values({
             orgId: org.id,
-            locationId: loc.id,
+            locationId: defaultLocId,
             weekStartDate: wStart.toISOString().slice(0, 10),
             status: isPublished ? "PUBLISHED" : "DRAFT",
             publishedAt: isPublished ? new Date() : null
@@ -532,7 +673,7 @@ export const authService = {
       const areaNames = ['Кухня', 'Столовая'];
       const areasCreated = [];
       for (const name of areaNames) {
-        const [area] = await tx.insert(areas).values({ orgId: org.id, locationId: loc.id, name }).returning();
+        const [area] = await tx.insert(areas).values({ orgId: org.id, locationId: defaultLocId, name }).returning();
         areasCreated.push(area);
       }
 
@@ -578,7 +719,7 @@ export const authService = {
       const monday = typeof mondayRaw === "string" ? mondayRaw : mondayRaw.toISOString().slice(0, 10);
 
       const [week] = await tx.insert(scheduleWeeks).values({
-        orgId: org.id, locationId: loc.id, weekStartDate: monday, status: 'PUBLISHED', publishedAt: new Date(),
+        orgId: org.id, locationId: defaultLocId, weekStartDate: monday, status: 'PUBLISHED', publishedAt: new Date(),
       }).returning();
 
       const addDays = (dateStr, n) => {

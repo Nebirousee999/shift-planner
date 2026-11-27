@@ -84,24 +84,41 @@ export default function LandingPage() {
     setInteractions((n) => n + 1);
   };
 
-  const handleRegisterClick = async (source: string, target: string = "/") => {
+  const handleRegisterClick = async (source: string, target: string = "/demo/dashboard") => {
     trackEvent("CTA_click", { source });
-    if (localStorage.getItem("isGuest") === "true" && localStorage.getItem("token")) {
+
+    const isGuest = localStorage.getItem("isGuest") === "true";
+    const isRealUser = !!localStorage.getItem("token") && !isGuest;
+    const hasGuestData = !!localStorage.getItem("guest_db") || !!localStorage.getItem("guest_workspace");
+
+    // 0. Реальный пользователь — просто показываем демо, не трогая токен
+    if (isRealUser) {
       window.location.href = target;
       return;
     }
+
+    // 1. Уже в гостевом режиме с данными — продолжаем без сброса
+    if (isGuest && hasGuestData) {
+      window.location.href = target;
+      return;
+    }
+
+    // 2. Новый пользователь — создаём гостевую сессию
     try {
       const { api } = await import("../api/client");
       const { data } = await api.post("/auth/guest-seed");
+      
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
       localStorage.setItem("isGuest", "true");
+      
       localStorage.removeItem("activeLocationId");
       localStorage.removeItem("guest_workspace");
       localStorage.removeItem("guest_db");
       localStorage.removeItem("guest_db_version");
       localStorage.removeItem("guest_shifts");
       localStorage.removeItem("guestEmailAttached");
+
       window.location.href = target;
     } catch (e) {
       console.error("Ошибка создания гостевой сессии:", e);
@@ -299,104 +316,91 @@ export default function LandingPage() {
           <div className="flex flex-wrap gap-2">
             
               <a 
-                href="/grafik-2-2/" 
-                onClick={(e) => { e.preventDefault(); window.location.href = "/grafik-2-2/"; }}
+                href="/grafik-2-2/index.html" 
                 className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm"
               >
                 График 2/2
               </a>
             
               <a 
-                href="/grafik-3-3/" 
-                onClick={(e) => { e.preventDefault(); window.location.href = "/grafik-3-3/"; }}
+                href="/grafik-3-3/index.html" 
                 className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm"
               >
                 График 3/3
               </a>
             
               <a 
-                href="/grafik-sutki-cherez-troe/" 
-                onClick={(e) => { e.preventDefault(); window.location.href = "/grafik-sutki-cherez-troe/"; }}
+                href="/grafik-sutki-cherez-troe/index.html" 
                 className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm"
               >
                 Сутки через трое (1/3)
               </a>
             
               <a 
-                href="/grafik-sutki-cherez-sutki/" 
-                onClick={(e) => { e.preventDefault(); window.location.href = "/grafik-sutki-cherez-sutki/"; }}
+                href="/grafik-sutki-cherez-sutki/index.html" 
                 className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm"
               >
                 Сутки через сутки (1/1)
               </a>
             
               <a 
-                href="/grafik-sutki-cherez-dvoe/" 
-                onClick={(e) => { e.preventDefault(); window.location.href = "/grafik-sutki-cherez-dvoe/"; }}
+                href="/grafik-sutki-cherez-dvoe/index.html" 
                 className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm"
               >
                 Сутки через двое (1/2)
               </a>
             
               <a 
-                href="/grafik-5-2/" 
-                onClick={(e) => { e.preventDefault(); window.location.href = "/grafik-5-2/"; }}
+                href="/grafik-5-2/index.html" 
                 className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm"
               >
                 График 5/2
               </a>
             
               <a 
-                href="/grafik-4-4/" 
-                onClick={(e) => { e.preventDefault(); window.location.href = "/grafik-4-4/"; }}
+                href="/grafik-4-4/index.html" 
                 className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm"
               >
                 График 4/4
               </a>
             
               <a 
-                href="/grafik-den-noch-otspynoy-vyhodnoy/" 
-                onClick={(e) => { e.preventDefault(); window.location.href = "/grafik-den-noch-otspynoy-vyhodnoy/"; }}
+                href="/grafik-den-noch-otspynoy-vyhodnoy/index.html" 
                 className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm"
               >
                 День-ночь-отспной-выходной
               </a>
             
               <a 
-                href="/grafik-2-dnya-2-nochi/" 
-                onClick={(e) => { e.preventDefault(); window.location.href = "/grafik-2-dnya-2-nochi/"; }}
+                href="/grafik-2-dnya-2-nochi/index.html" 
                 className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm"
               >
                 2 дня / 2 ночи / 2 выходных
               </a>
             
               <a 
-                href="/grafik-nochnye-2-2/" 
-                onClick={(e) => { e.preventDefault(); window.location.href = "/grafik-nochnye-2-2/"; }}
+                href="/grafik-nochnye-2-2/index.html" 
                 className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm"
               >
                 Только ночные 2/2
               </a>
             
               <a 
-                href="/grafik-2-2-3/" 
-                onClick={(e) => { e.preventDefault(); window.location.href = "/grafik-2-2-3/"; }}
+                href="/grafik-2-2-3/index.html" 
                 className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm"
               >
                 График 2/2/3
               </a>
             
               <a 
-                href="/grafik-6-1/" 
-                onClick={(e) => { e.preventDefault(); window.location.href = "/grafik-6-1/"; }}
+                href="/grafik-6-1/index.html" 
                 className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm"
               >
                 График 6/1
               </a>
             
               <a 
-                href="/grafik-5-5/" 
-                onClick={(e) => { e.preventDefault(); window.location.href = "/grafik-5-5/"; }}
+                href="/grafik-5-5/index.html" 
                 className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm"
               >
                 График 5/5

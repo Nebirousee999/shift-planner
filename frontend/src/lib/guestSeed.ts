@@ -70,7 +70,7 @@ const EMPLOYEES: GuestEmployee[] = [
   { id: "gu10", name: "Виктория Павлова", email: "vika@guest.ru", phone: null, role: "EMPLOYEE", position: "Уборщик", hourlyRate: "300", createdAt: new Date().toISOString(), locationIds: ["gloc1", "gloc2", "gloc3"], areaIds: [], paymentType: "HOURLY", employmentType: "SHTAT", color: "#f97316", tempPassword: null, isTempPasswordSent: false },
   { id: "gu11", name: "Андрей Николаев", email: "andrey@guest.ru", phone: null, role: "EMPLOYEE", position: "Су-шеф", hourlyRate: "500", createdAt: new Date().toISOString(), locationIds: ["gloc1"], areaIds: ["garea1"], paymentType: "HOURLY", employmentType: "SHTAT", color: "#14b8a6", tempPassword: null, isTempPasswordSent: false },
   { id: "gu12", name: "Кристина Белова", email: "kristina@guest.ru", phone: null, role: "EMPLOYEE", position: "Повар", hourlyRate: "450", createdAt: new Date().toISOString(), locationIds: ["gloc1"], areaIds: ["garea1"], paymentType: "HOURLY", employmentType: "SHTAT", color: "#a855f7", tempPassword: null, isTempPasswordSent: false },
-];
+].map(u => ({ ...u, locationIds: Array.from(new Set([...u.locationIds, "gloc1"])) }));
 
 
 
@@ -158,6 +158,6 @@ export const GUEST_SEED = {
   },
   me: {
     id: "gu1", name: "Алексей Смирнов", role: "OWNER", email: "alex@guest.ru", orgId: "gorg",
-    position: "Управляющий", hourlyRate: "600", phone: null, createdAt: new Date().toISOString(),
+    position: "Управляющий", hourlyRate: "600", phone: null, createdAt: new Date().toISOString(), locationIds: ["gloc1"],
   },
 };

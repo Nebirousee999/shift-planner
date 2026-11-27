@@ -52,10 +52,11 @@ export default function SickLeavesPage() {
   const { items: users, fetch: fetchUsers } = useUsers();
 
   const org = useOrganization((s) => s.org);
+  const isDemo = localStorage.getItem("isGuest") === "true";
   const isTrial = org?.trialEndsAt && new Date(org.trialEndsAt) > new Date();
   const isPaid = org?.tariffExpiresAt && new Date(org.tariffExpiresAt) > new Date();
   const effectiveTariff = isTrial ? "pro" : (isPaid ? org?.tariffId : "free");
-  const isFree = effectiveTariff === "free";
+  const isFree = effectiveTariff === "free" && !isDemo;
 
   const [editMode, setEditMode] = useState(false);
   const [showForm, setShowForm] = useState(false);

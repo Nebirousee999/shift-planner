@@ -16,7 +16,7 @@ export default function GuestRegisterModal({ guestData, onClose, mode, year, exp
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { login } = useAuth(); // Функция сохранения токена
+  const { setAuth } = useAuth(); // Функция сохранения сессии
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,7 +44,10 @@ export default function GuestRegisterModal({ guestData, onClose, mode, year, exp
       localStorage.removeItem("guestEmailAttached");
       localStorage.removeItem("guest_db");
       localStorage.removeItem("guest_workspace");
-      login(data.token, data.user);
+      localStorage.setItem("guest_migrated", "true");
+      localStorage.setItem("migrated_email", email);
+      localStorage.removeItem("activeLocationId");
+      setAuth(data.token, data.user);
       
       // Отправляем цель в Метрику (только после успешного сохранения!)
       if (typeof window !== "undefined" && (window as any).ym) {

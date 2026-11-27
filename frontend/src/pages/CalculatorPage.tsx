@@ -436,6 +436,8 @@ export default function CalculatorPage() {
       
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
+      localStorage.setItem("guest_migrated", "true");
+      localStorage.setItem("migrated_email", email);
       // ВАЖНО: снимаем гостевые флаги — иначе пользователь после регистрации
       // с калькулятора снова попадает в гостевой режим (см. api/client.ts).
       localStorage.removeItem("isGuest");

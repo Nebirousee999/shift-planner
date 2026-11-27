@@ -77,6 +77,7 @@ export default function TeamPage() {
   const { items: areas, fetch: fetchAreas } = useAreas();
   const { items: positions, fetch: fetchPositions } = usePositions();
   const org = useOrganization((s) => s.org);
+  const isDemo = localStorage.getItem("isGuest") === "true";
   const headerOpacity = org?.positionHeaderOpacity ?? 70;
   const rowOpacity = org?.positionRowOpacity ?? 20;
 
@@ -393,13 +394,13 @@ export default function TeamPage() {
   // ─── Создание и Удаление ─────────────────────────
   const onCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!createForm.name.trim() || !createForm.email.trim()) return;
+    if (!createForm.name.trim() || (!isDemo && !createForm.email.trim())) return;
 
     setCreating(true);
     try {
       const payload: any = {
         name: createForm.name.trim(),
-        email: createForm.email.trim(),
+        email: isDemo ? `demo_${Date.now()}@guest.ru` : createForm.email.trim(),
         role: createForm.role,
         paymentType: createForm.paymentType,
         employmentType: createForm.employmentType,
@@ -592,7 +593,7 @@ export default function TeamPage() {
     <div className="min-h-screen bg-slate-50">
       <NavBar />
 
-      {org?.tariffId === "free" && (
+      {org?.tariffId === "free" && !isDemo && (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4">
           <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
             <div>
@@ -702,10 +703,12 @@ export default function TeamPage() {
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">Имя</label>
                   <input value={createForm.name} onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))} placeholder="Мария Иванова" required />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Email</label>
-                  <input type="email" value={createForm.email} onChange={(e) => setCreateForm((f) => ({ ...f, email: e.target.value }))} placeholder="maria@cafe.ru" required />
-                </div>
+                {!isDemo && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Email</label>
+                    <input type="email" value={createForm.email} onChange={(e) => setCreateForm((f) => ({ ...f, email: e.target.value }))} placeholder="maria@cafe.ru" required />
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">Роль</label>
                   <select value={createForm.role} onChange={(e) => setCreateForm((f) => ({ ...f, role: e.target.value as any }))}>
@@ -1022,7 +1025,7 @@ export default function TeamPage() {
         )}
       </main>
 
-      {createdUserData && (
+      {createdUserData && !isDemo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={() => setCreatedUserData(null)}>
           <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-6 animate-fade-in" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between mb-4">
@@ -1439,6 +1442,7 @@ function EditUserModal({
     tempPassword?: string | null;
   }>) => Promise<void>;
 }) {
+  const isDemo = localStorage.getItem("isGuest") === "true";
   const [name, setName] = useState(user.name);
   const [email, setEmail] = useState(user.email);
   const isTempEmail = user.email?.includes("@shift-planner.ru");
@@ -1545,9 +1549,11 @@ function EditUserModal({
             </div>
             <div>
               <h3 className="font-semibold text-slate-900">Редактировать сотрудника</h3>
-              <p className={`text-xs mt-0.5 ${isTempEmail ? "text-red-500 font-medium" : "text-slate-500"}`}>
-        {isTempEmail ? "Введите реальную почту для доступа" : user.email}
-      </p>
+              {!isDemo && (
+                <p className={`text-xs mt-0.5 ${isTempEmail ? "text-red-500 font-medium" : "text-slate-500"}`}>
+                  {isTempEmail ? "Введите реальную почту для доступа" : user.email}
+                </p>
+              )}
             </div>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100">
@@ -1568,31 +1574,35 @@ function EditUserModal({
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">Имя</label>
                 <input value={name} onChange={(e) => setName(e.target.value)} required />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Email (для доступа к сайту)</label>
-                <input
-                  type="email"
-                  value={email === user.email && isTempEmail ? "" : email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder={isTempEmail ? "Введите реальную почту для доступа..." : ""}
-                  className={isTempEmail && email === user.email ? "placeholder:text-red-500 placeholder:font-medium !border-red-300" : ""}
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                  Временный пароль
-                </label>
-                <input
-                  value={tempPassword}
-                  onChange={(e) => setTempPassword(e.target.value)}
-                  placeholder="Оставьте пустым, чтобы не менять"
-                  className="w-full font-mono text-sm"
-                />
-                <p className="text-[10px] text-slate-400 mt-1">
-                  Если изменить пароль, сотруднику нужно будет сообщить новый.
-                </p>
-              </div>
+              {!isDemo && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Email (для доступа к сайту)</label>
+                  <input
+                    type="email"
+                    value={email === user.email && isTempEmail ? "" : email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder={isTempEmail ? "Введите реальную почту для доступа..." : ""}
+                    className={isTempEmail && email === user.email ? "placeholder:text-red-500 placeholder:font-medium !border-red-300" : ""}
+                    required
+                  />
+                </div>
+              )}
+              {!isDemo && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                    Временный пароль
+                  </label>
+                  <input
+                    value={tempPassword}
+                    onChange={(e) => setTempPassword(e.target.value)}
+                    placeholder="Оставьте пустым, чтобы не менять"
+                    className="w-full font-mono text-sm"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Если изменить пароль, сотруднику нужно будет сообщить новый.
+                  </p>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">Телефон</label>
                 <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+7 999 123-45-67" />
@@ -1669,23 +1679,25 @@ function EditUserModal({
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Точки</label>
-                <div className="border border-slate-200 rounded-xl p-2 max-h-32 overflow-y-auto">
-                  {locations.length === 0 && <div className="text-xs text-slate-400 p-2">Нет точек.</div>}
-                  {locations.map((loc, idx) => {
-                    const isFirstFree = org?.tariffId === "free" && idx === 0;
-                    const isChecked = isFirstFree ? true : locationIds.has(loc.id);
-                    return (
-                      <label key={loc.id} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg ${isFirstFree ? 'cursor-not-allowed opacity-75' : 'hover:bg-slate-50 cursor-pointer'}`}>
-                        <input type="checkbox" checked={isChecked} onChange={() => !isFirstFree && toggleLocation(loc.id)} disabled={isFirstFree} className="!w-4 !h-4 !p-0" />
-                        <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                        <span className="text-sm text-slate-800">{loc.name}</span>
-                      </label>
-                    );
-                  })}
+              {!isDemo && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Точки</label>
+                  <div className="border border-slate-200 rounded-xl p-2 max-h-32 overflow-y-auto">
+                    {locations.length === 0 && <div className="text-xs text-slate-400 p-2">Нет точек.</div>}
+                    {locations.map((loc, idx) => {
+                      const isFirstFree = org?.tariffId === "free" && idx === 0;
+                      const isChecked = isFirstFree ? true : locationIds.has(loc.id);
+                      return (
+                        <label key={loc.id} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg ${isFirstFree ? 'cursor-not-allowed opacity-75' : 'hover:bg-slate-50 cursor-pointer'}`}>
+                          <input type="checkbox" checked={isChecked} onChange={() => !isFirstFree && toggleLocation(loc.id)} disabled={isFirstFree} className="!w-4 !h-4 !p-0" />
+                          <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                          <span className="text-sm text-slate-800">{loc.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div>
                 <div className="flex items-center justify-between mb-1.5">

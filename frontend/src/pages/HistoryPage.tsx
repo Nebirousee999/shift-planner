@@ -1,9 +1,13 @@
 import { useEffect, useState } from "react";
+import { Navigate } from "react-router-dom";
 import { History, Loader2, X } from "lucide-react";
 import { historyApi } from "../api/history";
 import NavBar from "../components/NavBar";
 
 export default function HistoryPage() {
+  const isGuest = localStorage.getItem("isGuest") === "true";
+  if (isGuest) return <Navigate to="/analytics" replace />;
+
   const [historyData, setHistoryData] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [hFrom, setHFrom] = useState("");

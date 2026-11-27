@@ -1,50 +1,44 @@
-// superpatch.mjs
-import { readFileSync, writeFileSync, existsSync } from "fs";
-import { resolve } from "path";
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-function patchFile(relPath, replacements) {
-  const filePath = resolve(process.cwd(), relPath);
-  if (!existsSync(filePath)) {
-    console.error(`✗ Файл не найден: ${relPath}`);
-    process.exit(1);
-  }
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const publicDir = path.join(__dirname, 'frontend', 'public');
 
-  let content = readFileSync(filePath, "utf8");
-  let applied = 0;
+console.log("⏳ Исправляем внутренние ссылки в сгенерированных HTML-файлах...");
 
-  for (const { from, to } of replacements) {
-    if (!from.test(content)) {
-      console.log(`- Паттерн не найден (возможно, уже применен) в ${relPath}`);
-      continue;
-    }
-    content = content.replace(from, to);
-    applied++;
-  }
-
-  writeFileSync(filePath, content, "utf8");
-  console.log(`✓ ${relPath} — применено замен: ${applied}`);
+if (!fs.existsSync(publicDir)) {
+  console.error("❌ Папка public не найдена");
+  process.exit(1);
 }
 
-patchFile("frontend/src/pages/AnalyticsPage.tsx", [
-  // 1. Добавляем проверку на демо-режим и отключаем isFree для гостя
-  {
-    from: /const effectiveTariff = isTrial \? "pro" : \(isPaid \? org\?\.tariffId : "free"\);\s*const isFree = effectiveTariff === "free";/,
-    to: `const isDemo = localStorage.getItem("isGuest") === "true";
-  const effectiveTariff = isTrial ? "pro" : (isPaid ? org?.tariffId : "free");
-  const isFree = effectiveTariff === "free" && !isDemo;`
-  },
-  
-  // 2. Разрешаем загрузку MOCK_DATA в демо-режиме (чтобы не шло в реальный API)
-  {
-    from: /if \(isFree && !isEmployee\) \{\s*setTimeout\(\(\) => \{\s*setData\(MOCK_DATA\);\s*setLoading\(false\);\s*\}, 200\);\s*return;\s*\}/,
-    to: `if (isDemo || (isFree && !isEmployee)) {
-      setTimeout(() => {
-        setData(MOCK_DATA);
-        setLoading(false);
-      }, 200);
-      return;
-    }`
-  }
-]);
+// Получаем список всех папок в public
+const folders = fs.readdirSync(publicDir).filter(f => {
+  const fullPath = path.join(publicDir, f);
+  return fs.statSync(fullPath).isDirectory() && f.startsWith('grafik-');
+});
 
-console.log("\nПравка применена успешно.");
+let patchedCount = 0;
+
+folders.forEach(folder => {
+  const filePath = path.join(publicDir, folder, 'index.html');
+  if (!fs.existsSync(filePath)) return;
+
+  let content = fs.readFileSync(filePath, 'utf8');
+  
+  // Ищем все ссылки вида href="/grafik-..." 
+  // и заменяем на href="/grafik-.../index.html"
+  content = content.replace(/href="(\/grafik-[^"]+)"/g, (match, p1) => {
+    // Если ссылка уже заканчивается на .html или слеш, не трогаем
+    if (p1.endsWith('.html') || p1.endsWith('/')) return match;
+    // Иначе добавляем /index.html
+    return `href="${p1}/index.html"`;
+  });
+
+  fs.writeFileSync(filePath, content, 'utf8');
+  patchedCount++;
+});
+
+console.log(`✅ Успех! Исправлены ссылки в ${patchedCount} HTML-файлах.`);
+console.log("👉 Теперь при клике внутри статьи вы будете переходить на другие статьи, а не на лендинг.");

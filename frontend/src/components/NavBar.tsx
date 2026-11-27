@@ -147,8 +147,9 @@ export default function NavBar() {
 
   const visibleCategories = CATEGORIES.map((cat) => {
     let links = cat.links.filter((link) => !(link.hideIfTimeTrackingOff && !timeTrackingOn));
-    if (isDemo) {
-      
+    // В демо-режиме и режиме гостя скрываем "Историю действий"
+    if (isDemo || isGuest) {
+      links = links.filter((link) => link.path !== "/history" && link.path !== "/locations");
     }
     return { ...cat, links };
   });
@@ -199,27 +200,65 @@ export default function NavBar() {
       return;
     }
     try {
-      const res: any = await api.post("/auth/update-email", { email: guestEmail });
-      const body = res?.data ?? res;
-      const status = res?.status ?? res?.response?.status;
-      if (body?.error) {
-        if (status === 409 || String(body.error).includes("занят")) {
-          setEmailError(false);
-          setEmailMode("login");
-        } else {
-          setEmailError(true);
-          alert(body.error);
-        }
+      // Достаем данные гостя из localStorage, чтобы перенести их на сервер
+      const dbStr = localStorage.getItem("guest_db");
+      const db = dbStr ? JSON.parse(dbStr) : { users: [], weeks: [] };
+      
+      // Исключаем владельца, чтобы он не дублировался
+      const employees = (db.users || []).filter((u: any) => u.role !== "OWNER").map((u: any) => ({
+        id: u.id,
+        name: u.name,
+        position: u.position || "",
+        rate: Number(u.hourlyRate) || 300,
+        color: u.color || "#3B82F6",
+        locationIds: u.locationIds || [],
+        areaIds: u.areaIds || [],
+      }));
+      
+      const startDate = db.weeks && db.weeks.length > 0 ? db.weeks[0].weekStartDate : new Date().toISOString().slice(0, 10);
+      
+      const guestData = {
+        startDate,
+        employees: employees.length > 0 ? employees : [{ id: "default1", name: "Сотрудник 1", startTime: "09:00", endTime: "18:00", cycle: "2/2" }],
+        weeks: db.weeks || [],
+        locations: db.locations || [],
+        areas: db.areas || [],
+        positions: db.positions || [],
+        templates: db.templates || []
+      };
+
+      // Отправляем на реальный эндпоинт регистрации
+      const res: any = await api.post("/auth/quick-register", {
+        email: guestEmail.trim().toLowerCase(),
+        name: "Владелец",
+        guestData,
+      });
+      
+      const data = res?.data ?? res;
+      const tk = data?.token;
+      
+      if (!tk) {
+        setEmailError(true);
         return;
       }
-      localStorage.setItem("guestEmailAttached", "true");
+      
+      // Сохраняем токен и чистим гостевые флаги
+      localStorage.setItem("token", tk);
+      localStorage.setItem("user", JSON.stringify(data.user));
+      localStorage.setItem("guest_migrated", "true");
+      localStorage.setItem("migrated_email", guestEmail);
+      localStorage.removeItem("isGuest");
+      localStorage.removeItem("guestEmailAttached");
+      localStorage.removeItem("guest_db");
+      localStorage.removeItem("guest_workspace");
+      
       trackEvent("guest_week_attach_email");
-      setEmailAttached(true);
-      setShowEmailInput(false);
-      setEmailMode("input");
+      
+      // Перекидываем в реальный личный кабинет
+      window.location.href = "/dashboard";
     } catch (e: any) {
       const err = e.response?.data?.error ?? e.response?.data?.message ?? "";
-      if (e.response?.status === 409 || String(err).includes("занят")) {
+      if (e.response?.status === 409 || String(err).includes("занят") || String(err).includes("зарегистрирован")) {
         setEmailError(false);
         setEmailMode("login");
         return;
@@ -243,6 +282,8 @@ export default function NavBar() {
       }
       localStorage.setItem("guestEmailAttached", "true");
       localStorage.setItem("isGuest", "false");
+      localStorage.removeItem("guest_migrated");
+      localStorage.removeItem("migrated_email");
       localStorage.setItem("token", tk);
             if (data?.user) { localStorage.setItem("user", JSON.stringify(data.user)); }
       localStorage.removeItem("activeLocationId");
@@ -385,7 +426,7 @@ export default function NavBar() {
                 <Badge value={supportUnread} />
               </button>
             )}
-            <button
+            {!isDemo && !isGuest && (<button
               onClick={() => navigate("/help")}
               className={`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors ${
                 isActive(pathname, prefix + "/help")
@@ -395,7 +436,7 @@ export default function NavBar() {
               title="Справка"
             >
               <HelpCircle className="w-4 h-4" />
-            </button>
+            </button>)}
 
             {(!isGuest || emailAttached) ? (
               <>
@@ -472,9 +513,9 @@ export default function NavBar() {
 
         <div className="flex items-center gap-2 shrink-0">
           <NotificationBell />
-          <button onClick={() => window.dispatchEvent(new Event("show-onboarding"))} className="relative flex items-center justify-center p-2 rounded-lg text-sm text-slate-600 hover:bg-slate-100 transition-colors" title="С чего начать">
+          {!isDemo && !isGuest && (<button onClick={() => window.dispatchEvent(new Event("show-onboarding"))} className="relative flex items-center justify-center p-2 rounded-lg text-sm text-slate-600 hover:bg-slate-100 transition-colors" title="С чего начать">
             <ListChecks className="w-4 h-4" />
-          </button>
+          </button>)}
           
           {!isDemo && isAdminEmail(user?.email) && (
             <button onClick={() => navigate("/admin-support")} className="relative flex items-center justify-center p-2 rounded-lg text-sm text-brand-600 bg-brand-50 hover:bg-brand-100 transition-colors" title="Панель поддержки">
@@ -483,9 +524,9 @@ export default function NavBar() {
             </button>
           )}
 
-          <button onClick={() => navigate("/help")} className={`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors ${isActive(pathname, prefix + "/help") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`} title="Справка">
+          {!isDemo && !isGuest && (<button onClick={() => navigate("/help")} className={`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors ${isActive(pathname, prefix + "/help") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`} title="Справка">
             <HelpCircle className="w-4 h-4" />
-          </button>
+          </button>)}
           {!isDemo && user?.role === "OWNER" && (
             <button onClick={() => navigate("/wallet")} className={`relative flex items-center justify-center p-2 rounded-lg text-sm transition-colors ${isActive(pathname, prefix + "/wallet") ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`} title="Текущий тариф">
               <Wallet className="w-4 h-4" />

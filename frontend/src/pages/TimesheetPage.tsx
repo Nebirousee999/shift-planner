@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  ChevronLeft, ChevronRight, Download, Loader2, CalendarDays, AlertTriangle, Sparkles,
+  ChevronLeft, ChevronRight, Download, Loader2, CalendarDays, AlertTriangle, Sparkles, Mail, X
 } from "lucide-react";
+import { api } from "../api/client";
 import { timesheetApi, type TimesheetResponse, type TimesheetCellStatus } from "../api/timesheet";
 import { exportApi } from "../api/export";
 import NavBar from "../components/NavBar";
@@ -49,6 +50,17 @@ export default function TimesheetPage() {
   const [exporting, setExporting] = useState(false);
   const [search, setSearch] = useState("");
 
+  // Стейты для панели гостя (привязка почты)
+  const isGuestMode = typeof window !== "undefined" ? localStorage.getItem("isGuest") === "true" : false;
+  const [showExportPanel, setShowExportPanel] = useState(false);
+  const [guestEmail, setGuestEmail] = useState("");
+  const [emailMode, setEmailMode] = useState<"input" | "login">("input");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState(false);
+  const [sentNote, setSentNote] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [emailError, setEmailError] = useState(false);
+
   const dragScroll = useDragScroll<HTMLDivElement>();
 
   useEffect(() => {
@@ -70,7 +82,115 @@ export default function TimesheetPage() {
     finally { setExporting(false); }
   };
 
+  const handleAttachEmail = async () => {
+    if (!guestEmail.includes("@")) {
+      setEmailError(true);
+      return;
+    }
+    
+    if (isGuestMode) {
+      // В демо-режиме просто сохраняем локально, без запроса на сервер
+      localStorage.setItem("guestEmailAttached", "true");
+      setShowExportPanel(false);
+      window.dispatchEvent(new Event("guest-email-attached"));
+      await onExport();
+      setTimeout(() => { window.location.href = "/"; }, 500);
+      return;
+    }
+
+    try {
+      const res: any = await api.post("/auth/update-email", { email: guestEmail });
+      const body = res?.data ?? res;
+      const status = res?.status ?? res?.response?.status;
+      if (body?.error) {
+        if (status === 409 || String(body.error).includes("занят")) {
+          setEmailError(false);
+          setEmailMode("login");
+        } else {
+          setEmailError(true);
+          alert(body.error);
+        }
+        return;
+      }
+      localStorage.setItem("guestEmailAttached", "true");
+      setShowExportPanel(false);
+      window.dispatchEvent(new Event("guest-email-attached"));
+      await onExport();
+      setTimeout(() => { window.location.href = "/"; }, 500);
+    } catch (e: any) {
+      const err = e.response?.data?.error ?? e.response?.data?.message ?? "";
+      if (e.response?.status === 409 || String(err).includes("занят")) {
+        setEmailError(false);
+        setEmailMode("login");
+        return;
+      }
+      setEmailError(true);
+      alert(err || "Ошибка привязки почты");
+    }
+  };
+
+  const handleLogin = async () => {
+    try {
+      const res: any = await api.post("/auth/login", {
+        email: guestEmail.trim().toLowerCase(),
+        password: loginPassword.trim(),
+      });
+      const data = res?.data ?? res;
+      const tk = data?.token ?? data?.accessToken;
+      if (!tk || data?.error) {
+        setLoginError(true);
+        return;
+      }
+      localStorage.setItem("guestEmailAttached", "true");
+      localStorage.setItem("isGuest", "false");
+      localStorage.setItem("token", tk);
+      if (data?.user) localStorage.setItem("user", JSON.stringify(data.user));
+      localStorage.removeItem("activeLocationId");
+      
+      setShowExportPanel(false);
+      await onExport();
+      setTimeout(() => { window.location.href = "/"; }, 500);
+    } catch (e: any) {
+      const err = e.response?.data?.error ?? e.response?.data?.message ?? "";
+      if (e.response?.status === 401 || String(err).includes("Неверный")) {
+        setLoginError(true);
+      } else {
+        alert(err || "Ошибка входа");
+      }
+    }
+  };
+
+  const handleResetPassword = async () => {
+    setResetting(true);
+    try {
+      const base = import.meta.env.VITE_API_URL ?? "http://localhost:3001/api";
+      const res = await fetch(`${base}/auth/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: guestEmail.trim().toLowerCase() }),
+      });
+      const data = await res.json().catch(() => null);
+      if (data?.mailSent === false) {
+        alert("Не удалось отправить письмо.");
+        return;
+      }
+      setSentNote(true);
+      setLoginPassword("");
+      setLoginError(false);
+    } catch (e: any) {
+      alert("Ошибка отправки пароля: " + (e?.message ?? e));
+    } finally {
+      setResetting(false);
+    }
+  };
+
   const handleExportClick = async () => {
+    // Если это гость, показываем панель
+    if (isGuestMode && localStorage.getItem("guestEmailAttached") !== "true") {
+      setShowExportPanel((prev) => !prev);
+      return;
+    }
+    
     if (isFree) {
       const ok = await confirmDialog(
         "Скачивание табеля в Excel доступно только на Pro. Разблокировать все функции на 14 дней?",
@@ -97,11 +217,62 @@ export default function TimesheetPage() {
             <h1 className="text-3xl font-bold text-slate-900">Табель</h1>
             <p className="text-sm text-slate-500 mt-1">Электронный табель за месяц</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="relative">
             <button onClick={handleExportClick} disabled={exporting || !data}
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium shadow-sm transition-all bg-brand-600 text-white hover:bg-brand-700">
                 <Download className="w-4 h-4" /> Скачать Excel
             </button>
+
+            {/* Панель гостя (выпадает прямо под кнопкой) */}
+            {showExportPanel && (
+              <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-slate-200 shadow-xl rounded-xl p-4 z-50 animate-fade-in text-left">
+                <button onClick={() => setShowExportPanel(false)} className="absolute top-3 right-3 text-slate-400 hover:text-slate-700">
+                  <X className="w-4 h-4" />
+                </button>
+                <h3 className="font-semibold text-slate-900 mb-1">Сохранить данные</h3>
+                <p className="text-xs text-slate-500 mb-3">Введите почту, чтобы сохранить табель и экспортировать его.</p>
+
+                {emailMode === "login" && (
+                  <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                    <p className="text-xs text-amber-900 mb-2">Эта почта уже зарегистрирована. Введите пароль.</p>
+                    {sentNote && <p className="text-xs text-emerald-700 mb-2">Пароль выслан на почту.</p>}
+                    {loginError && (
+                      <p className="text-xs text-rose-600 mb-2">
+                        Пароль неверный.{" "}
+                        <button type="button" onClick={handleResetPassword} disabled={resetting} className="underline font-semibold">
+                          {resetting ? "Отправляем..." : "Восстановить"}
+                        </button>
+                      </p>
+                    )}
+                    <div className="flex gap-2">
+                      <input
+                        type="password"
+                        value={loginPassword}
+                        onChange={(e) => { setLoginPassword(e.target.value); setLoginError(false); }}
+                        placeholder="Пароль"
+                        className="!py-1.5 !px-3 !text-sm !w-full"
+                      />
+                      <button onClick={handleLogin} className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-medium hover:bg-amber-700">
+                        Войти
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <input
+                    type="email"
+                    value={guestEmail}
+                    onChange={(e) => { setGuestEmail(e.target.value); setEmailError(false); }}
+                    placeholder="your@email.ru"
+                    className={`!py-1.5 !px-3 !text-sm !w-full ${emailError ? "!border-red-500" : ""}`}
+                  />
+                  <button onClick={handleAttachEmail} className="px-3 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-medium hover:bg-brand-700">
+                    Сохранить
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

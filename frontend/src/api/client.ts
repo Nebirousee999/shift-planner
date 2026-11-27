@@ -21,7 +21,9 @@ api.interceptors.request.use((config) => {
   const url = config.url || "";
 
   // Если это демо-режим и не авторизация — используем локальный адаптер (localStorage)
-  if (isGuest && !url.includes("/auth/")) {
+  const bypassAuth = url.includes("/auth/login") || url.includes("/auth/register") || url.includes("/auth/quick-register") || url.includes("/auth/reset-password");
+  
+  if (isGuest && !bypassAuth) {
     config.adapter = guestAdapter;
   }
 
