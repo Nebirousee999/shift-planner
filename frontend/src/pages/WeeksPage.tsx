@@ -120,6 +120,20 @@ function ShiftLines({
 }) {
   if (shifts.length === 0) return null;
 
+  // Обводка полоски смены: толщина рамки в пикселях (0 — без рамки)
+  const BAR_BORDER_WIDTH = 2;
+
+  // Обводка полоски смены: доля цвета сотрудника в рамке (0 — чёрная, 1 — чистый цвет)
+  const BAR_BORDER_BLACK = 1;
+
+  // НАСТРОЙКИ ВИДА СЕТКИ
+  // Полоска смены: доля белого в цвете (0 — чистый цвет, 1 — белый)
+  const BAR_WHITE = 0.6;
+  // Полупрозрачная заливка дорожки:
+  const FILL_SAT = 0.2; // сброшено патчем: цвет заливки = цвет сотрудника     // насыщенность: 0 — серая, 1 — исходная
+  const FILL_WHITE = 0.8; // сброшено патчем: цвет заливки = цвет сотрудника   // доля белого: 0 — нет, 1 — чистый белый
+  const FILL_BLACK = 1; // сброшено патчем: цвет заливки = цвет сотрудника // доля чёрного: 0.5 — текущий тёмный фон
+
   const parsedShifts = shifts.map((s) => {
     const [sh, sm] = s.startTime.split(":").map(Number);
     const [eh, em] = s.endTime.split(":").map(Number);
@@ -154,61 +168,100 @@ function ShiftLines({
     }
   }
 
-  // Функция смешивания цвета с белым
-  const getLightColor = (hex: string, opacity: number) => {
+    // Смешивание цвета с чёрным: k — доля исходного цвета (0.5 = 50/50 с чёрным)
+  const mixWithBlack = (hex: string, k: number) => {
     const r = parseInt(hex.slice(1, 3), 16);
     const g = parseInt(hex.slice(3, 5), 16);
     const b = parseInt(hex.slice(5, 7), 16);
-    const mix = 1 - opacity;
-    const nr = Math.round(r + (255 - r) * mix);
-    const ng = Math.round(g + (255 - g) * mix);
-    const nb = Math.round(b + (255 - b) * mix);
-    return `#${nr.toString(16).padStart(2, '0')}${ng.toString(16).padStart(2, '0')}${nb.toString(16).padStart(2, '0')}`;
+    const nr = Math.round(r * k);
+    const ng = Math.round(g * k);
+    const nb = Math.round(b * k);
+    return `#${nr.toString(16).padStart(2, "0")}${ng.toString(16).padStart(2, "0")}${nb.toString(16).padStart(2, "0")}`;
   };
 
+  // Смешивание с белым: k — доля исходного цвета (0 — белый, 1 — исходный)
+  const mixWithWhite = (hex: string, k: number) => {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    const nr = Math.round(r * k + 255 * (1 - k));
+    const ng = Math.round(g * k + 255 * (1 - k));
+    const nb = Math.round(b * k + 255 * (1 - k));
+    return `#${nr.toString(16).padStart(2, "0")}${ng.toString(16).padStart(2, "0")}${nb.toString(16).padStart(2, "0")}`;
+  };
+  // Насыщенность цвета: f — множитель (0 — серый, 1 — исходный, 2 — ярче)
+  const setSaturation = (hex: string, f: number) => {
+    const r = parseInt(hex.slice(1, 3), 16) / 255;
+    const g = parseInt(hex.slice(3, 5), 16) / 255;
+    const b = parseInt(hex.slice(5, 7), 16) / 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    const d = max - min;
+    let s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+    let h = d === 0 ? 0 : max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    s = Math.max(0, Math.min(1, s * f));
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs(((h + 6) % 6) - 1));
+    const m = l - c / 2;
+    let nr = 0, ng = 0, nb = 0;
+    if (d === 0) { nr = 0; ng = 0; nb = 0; }
+    else if (h < 1) { nr = c; ng = x; }
+    else if (h < 2) { nr = x; ng = c; }
+    else if (h < 3) { ng = c; nb = x; }
+    else if (h < 4) { nr = x; nb = c; }
+    else if (h < 5) { nr = c; nb = x; }
+    else { nr = x; nb = c; }
+    const to = (v: number) => Math.round((v + m) * 255).toString(16).padStart(2, "0");
+    return `#${to(nr)}${to(ng)}${to(nb)}`;
+  };
   return (
-    <div className="absolute inset-0 flex flex-col w-full h-full pointer-events-none z-0">
+    <div className="absolute bottom-0 left-0 right-0 h-[68%] flex flex-col w-full pointer-events-none z-0">
       {lanes.map((lane, idx) => {
         const topPct = (idx / lanes.length) * 100;
         const heightPct = (1 / lanes.length) * 100;
-        
-        // Строим градиент для заливки всей ширины (0-100%)
+
+                // Заливка промежутков: слева от смены — цвет смены, что касается слева,
+        // справа — цвет смены, что касается справа. Граница — середина промежутка.
+        const fillLight = (c: string) =>
+          mixWithBlack(mixWithWhite(setSaturation(c, FILL_SAT), 1 - FILL_WHITE), FILL_BLACK);
         const stops: string[] = [];
         for (let i = 0; i < lane.length; i++) {
           const s = lane[i];
-          const light = getLightColor(s.color, 0.85);
+          const light = fillLight(s.color);
           const startPct = (s.startMins / 1440) * 100;
           const endPct = (s.endMins / 1440) * 100;
-          
+
           if (i === 0) {
             stops.push(`${light} 0%`);
             stops.push(`${light} ${startPct}%`);
           } else {
-            const prev = lane[i-1];
+            const prev = lane[i - 1];
             const prevEndPct = (prev.endMins / 1440) * 100;
             const mid = (prevEndPct + startPct) / 2;
+            stops.push(`${fillLight(prev.color)} ${mid}%`);
             stops.push(`${light} ${mid}%`);
             stops.push(`${light} ${startPct}%`);
           }
-          
+
           if (i === lane.length - 1) {
             stops.push(`${light} ${endPct}%`);
             stops.push(`${light} 100%`);
           }
         }
 
-        const backgroundStyle = lane.length > 0 
-          ? `linear-gradient(to right, ${stops.join(", ")})` 
+        const backgroundStyle = lane.length > 0
+          ? `linear-gradient(to right, ${stops.join(", ")})`
           : "transparent";
 
         return (
-          <div 
-            key={idx} 
-            className="absolute w-full" 
-            style={{ 
-              top: `${topPct}%`, 
+          <div
+            key={idx}
+            className="absolute w-full"
+            style={{
+              top: `${topPct}%`,
               height: `${heightPct}%`,
-              background: backgroundStyle
+              background: backgroundStyle,
             }}
           >
             {lane.map((s) => {
@@ -218,11 +271,12 @@ function ShiftLines({
               return (
                 <div
                   key={s.id}
-                  className="absolute top-0 bottom-0 rounded-sm shadow-sm"
+                  className="absolute top-0 bottom-0 rounded-sm"
                   style={{
                     left: `${leftPct}%`,
                     width: `${Math.max(widthPct, 1.5)}%`,
-                    backgroundColor: s.color,
+                    backgroundColor: mixWithWhite(s.color, 1 - BAR_WHITE),
+                    border: `${BAR_BORDER_WIDTH}px solid ${mixWithBlack(s.color, BAR_BORDER_BLACK)}`,
                   }}
                 />
               );
@@ -710,7 +764,7 @@ export default function WeeksPage() {
         {error && <p className="text-red-500 text-sm">{error}</p>}
 
         {/* Календарь */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
           <div className="flex bg-slate-50 border-b border-slate-200">
             <div className="flex-1 grid grid-cols-7">
               {WEEKDAYS_RU.map((d, i) => (
@@ -752,9 +806,9 @@ export default function WeeksPage() {
               <div
                 key={key}
                 onClick={() => onWeekClick(weekStart)}
-                className={`flex w-full border-b border-slate-100 last:border-0 relative text-left transition-all group cursor-pointer ${
+                className={`flex w-full border-b-2 border-slate-300 last:border-0 relative text-left transition-all group cursor-pointer ${
                   hasToday ? "bg-blue-50/60" : "hover:bg-blue-50/30"
-                } hover:ring-2 hover:ring-inset hover:ring-blue-500/40 hover:z-10`}
+                } [outline-width:4px] [outline-style:solid] [outline-color:transparent] hover:[outline-color:#2563eb] hover:z-10`}
               >
                 {meta && (
                   <div className={`absolute left-0 top-0 bottom-0 w-1 ${meta.bar}`} />
@@ -777,10 +831,12 @@ export default function WeeksPage() {
                     return (
                       <div
                         key={dateStr}
-                        className={`relative pt-1 px-1 pb-1 flex flex-col border-r border-slate-100 last:border-0 min-h-[85px] overflow-hidden ${
+                        className={`relative pt-1 px-1 pb-1 flex flex-col border-r border-slate-100 last:border-0 aspect-[4/3] overflow-hidden ${
                           isToday ? "bg-blue-100/60" : isWeekend ? "bg-slate-50/40" : ""
                         }`}
                       >
+                        <div className="absolute top-[31%] bottom-0 left-0 right-0 bg-slate-200 z-0 pointer-events-none" />
+                        <div className="absolute top-0 left-0 right-0 h-[32%] bg-white z-0 pointer-events-none" />
                         <ShiftLines shifts={dayShifts} templateColorById={templateColorById} userColorById={userColorById} />
 
                         {hasPendingRequest && (
@@ -790,24 +846,23 @@ export default function WeeksPage() {
                           />
                         )}
 
-                        <div className="relative z-10 flex items-start justify-start pl-1 pt-0.5 pointer-events-none">
+                        <div className="relative z-10 flex items-start justify-start pl-0.5 pt-0 pointer-events-none">
                           <div
                             className={`text-sm font-bold leading-none ${
                               isToday
                                 ? "w-6 h-6 rounded-full bg-brand-600 flex items-center justify-center text-xs text-white"
-                                : dayShifts.length > 0
-                                ? "text-white"
-                                : "text-slate-900"
+                                : "text-white"
                             }`}
                           >
-                            {d.getUTCDate()}
+                            <span className={isToday ? "" : "text-slate-900"}>{d.getUTCDate()}</span>
                           </div>
                         </div>
 
                         {dayShifts.length > 0 && (
-                          <div className="absolute bottom-0 left-0 right-0 z-10 pb-1 flex justify-center w-full pointer-events-none">
-                            <div className="text-[10px] text-white font-bold leading-tight bg-black/20 px-1.5 py-0.5 rounded shadow-sm">
-                              {dayShifts.length} см. • {new Intl.NumberFormat("ru-RU").format(dayCost)} ₽
+                          <div className="absolute top-6 left-0 right-0 z-10 px-1 pt-0 flex items-center gap-1 pointer-events-none">
+                            <div className="flex items-center gap-1 leading-tight">
+                              <span className="text-[10px] font-bold text-slate-700">{dayShifts.length} см.</span>
+                              <span className="text-[10px] font-bold text-emerald-700">{new Intl.NumberFormat("ru-RU").format(dayCost)} ₽</span>
                             </div>
                           </div>
                         )}

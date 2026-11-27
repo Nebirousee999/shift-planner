@@ -106,8 +106,8 @@ function pushShift(dayOffset: number, userId: string, templateId: string) {
   };
   
   if (dayOffset === todayOffset) {
-    if (userId === "gu1" || userId === "gu5") shift.latenessMinutes = 15;
-    if (userId === "gu3") shift.latenessMinutes = 30;
+    if (userId === "gu2") shift.latenessMinutes = 12; // утренняя 08:00-16:00
+    if (userId === "gu4") shift.latenessMinutes = 25; // дневная 10:00-22:00
   }
   
   SHIFTS.push(shift);
@@ -157,7 +157,7 @@ export const GUEST_SEED = {
     trialEndsAt: null, tariffExpiresAt: null, requireShiftApproval: true, disciplineEditWindowDays: 3,
   },
   me: {
-    id: "gu1", name: "Анна Смирнова", role: "OWNER", email: "anna@guest.ru", orgId: "gorg",
-    position: "Повар", hourlyRate: "450", phone: null, createdAt: new Date().toISOString(),
+    id: "gu1", name: "Алексей Смирнов", role: "OWNER", email: "alex@guest.ru", orgId: "gorg",
+    position: "Управляющий", hourlyRate: "600", phone: null, createdAt: new Date().toISOString(),
   },
 };

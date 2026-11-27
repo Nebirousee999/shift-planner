@@ -33,6 +33,54 @@ const calcHours = (start: string, end: string) => {
 
 const formatMoney = (n: number) => new Intl.NumberFormat("ru-RU").format(n) + " ₽";
 
+// ── Цветовые утилиты (те же, что в календаре WeeksPage) ──
+// Смешивание с чёрным: k — доля исходного цвета (0 — чёрный, 1 — исходный)
+const mixWithBlack = (hex: string, k: number) => {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const nr = Math.round(r * k);
+  const ng = Math.round(g * k);
+  const nb = Math.round(b * k);
+  return `#${nr.toString(16).padStart(2, "0")}${ng.toString(16).padStart(2, "0")}${nb.toString(16).padStart(2, "0")}`;
+};
+// Смешивание с белым: k — доля исходного цвета (0 — белый, 1 — исходный)
+const mixWithWhite = (hex: string, k: number) => {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const nr = Math.round(r * k + 255 * (1 - k));
+  const ng = Math.round(g * k + 255 * (1 - k));
+  const nb = Math.round(b * k + 255 * (1 - k));
+  return `#${nr.toString(16).padStart(2, "0")}${ng.toString(16).padStart(2, "0")}${nb.toString(16).padStart(2, "0")}`;
+};
+// Насыщенность цвета: f — множитель (0 — серый, 1 — исходный, 2 — ярче)
+const setSaturation = (hex: string, f: number) => {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+  let s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+  let h = d === 0 ? 0 : max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  s = Math.max(0, Math.min(1, s * f));
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h + 6) % 6) - 1));
+  const m = l - c / 2;
+  let nr = 0, ng = 0, nb = 0;
+  if (d === 0) { nr = 0; ng = 0; nb = 0; }
+  else if (h < 1) { nr = c; ng = x; }
+  else if (h < 2) { nr = x; ng = c; }
+  else if (h < 3) { ng = c; nb = x; }
+  else if (h < 4) { nr = x; nb = c; }
+  else if (h < 5) { nr = c; nb = x; }
+  else { nr = x; nb = c; }
+  const to = (v: number) => Math.round((v + m) * 255).toString(16).padStart(2, "0");
+  return `#${to(nr)}${to(ng)}${to(nb)}`;
+};
+
 const addDays = (dateStr: string, n: number): string => {
   const d = new Date(dateStr + "T00:00:00Z");
   d.setUTCDate(d.getUTCDate() + n);
@@ -438,11 +486,11 @@ export default function DashboardPage() {
                       e.stopPropagation();
                       setSelectedDate(date);
                     }}
-                    className={`w-1/3 min-w-[100px] shrink-0 snap-start p-2 flex flex-col min-h-[140px] transition-colors cursor-pointer md:w-auto md:flex-1 ${
+                    className={`w-1/3 min-w-[100px] shrink-0 snap-start p-2 flex flex-col transition-colors cursor-pointer md:w-auto md:flex-1 ${
                       isSelected ? "bg-brand-50 ring-2 ring-brand-500/30" : isToday ? "bg-brand-50/30" : "hover:bg-slate-50"
                     }`}
                   >
-                    <div className="flex items-center justify-between text-sm sm:text-base whitespace-nowrap mb-1.5">
+                    <div className="flex items-center justify-between text-sm sm:text-base whitespace-nowrap mb-1">
                       <div className="flex items-center gap-1.5">
                         <span className={`font-bold text-lg sm:text-xl ${isSelected || isToday ? "text-brand-700" : "text-slate-900"}`}>
                           {parseInt(date.slice(8), 10)}
@@ -450,30 +498,95 @@ export default function DashboardPage() {
                         <span className="text-slate-500 font-medium ml-1">{WEEKDAYS_RU[idx]}</span>
                       </div>
                     </div>
-                    <div className="text-xs sm:text-sm text-slate-600 mb-2 font-medium">
+                    <div className="text-xs sm:text-sm text-slate-600 mb-1 font-medium">
                       {dayShifts.length} см. • {new Intl.NumberFormat("ru-RU").format(dayCost)} ₽
                     </div>
-                    <div className="relative flex-1 bg-slate-50 rounded-sm border border-slate-100 p-1 overflow-hidden">
-                      <div className="relative w-full h-full flex flex-col gap-1 items-start pt-1">
-                        {dayShifts.map((s, i) => {
-                          let startPct = timeToPercent(s.startTime);
-                          let endPct = timeToPercent(s.endTime);
-                          if (endPct <= startPct) endPct = 100;
-                          return (
-                            <div key={i} className="relative w-full h-1.5 shrink-0">
+                    <div className="relative h-24 bg-slate-50 rounded-sm border border-slate-100 p-1 overflow-hidden">
+                        {(() => {
+                          // НАСТРОЙКИ МИНИ-НЕДЕЛИ — те же значения, что в календаре WeeksPage
+                          const BAR_WHITE = 0.6;
+                          const BAR_BORDER_WIDTH = 2;
+                          const BAR_BORDER_BLACK = 1;
+                          const FILL_SAT = 0.4;
+                          const FILL_WHITE = 0.8;
+                          const FILL_BLACK = 1;
+
+                          const fillLight = (c: string) =>
+                            mixWithBlack(mixWithWhite(setSaturation(c, FILL_SAT), 1 - FILL_WHITE), FILL_BLACK);
+
+                          const parsed = dayShifts.map((s: any) => {
+                            const startMins = timeToMins(s.startTime);
+                            let endMins = timeToMins(s.endTime);
+                            if (endMins <= startMins) endMins += 24 * 60;
+                            const u = data?.users?.find((x: any) => x.id === s.userId);
+                            const tpl = templates.find((t: any) => t.id === s.templateId);
+                            return { ...s, startMins, endMins, color: u?.color || tpl?.color || "#3B82F6" };
+                          });
+                          parsed.sort((a: any, b: any) => a.startMins - b.startMins);
+
+                          const lanes: any[][] = [];
+                          for (const shift of parsed) {
+                            let placed = false;
+                            for (const lane of lanes) {
+                              const last = lane[lane.length - 1];
+                              if (shift.startMins >= last.endMins) { lane.push(shift); placed = true; break; }
+                            }
+                            if (!placed) lanes.push([shift]);
+                          }
+
+                          return lanes.map((lane, li) => {
+                            const topPct = (li / lanes.length) * 100;
+                            const heightPct = (1 / lanes.length) * 100;
+
+                            const stops: string[] = [];
+                            for (let i = 0; i < lane.length; i++) {
+                              const s = lane[i];
+                              const light = fillLight(s.color);
+                              const sp = (s.startMins / 1440) * 100;
+                              const ep = (s.endMins / 1440) * 100;
+                              if (i === 0) {
+                                stops.push(`${light} 0%`);
+                                stops.push(`${light} ${sp}%`);
+                              } else {
+                                const mid = ((lane[i - 1].endMins / 1440) * 100 + sp) / 2;
+                                stops.push(`${fillLight(lane[i - 1].color)} ${mid}%`);
+                                stops.push(`${light} ${mid}%`);
+                                stops.push(`${light} ${sp}%`);
+                              }
+                              if (i === lane.length - 1) {
+                                stops.push(`${light} ${ep}%`);
+                                stops.push(`${light} 100%`);
+                              }
+                            }
+
+                            return (
                               <div
-                                className="absolute inset-y-0 rounded-full bg-blue-500 hover:bg-blue-600 transition-colors"
+                                key={li}
+                                className="absolute w-full"
                                 style={{
-                                  left: `${startPct}%`,
-                                  width: `${Math.max(endPct - startPct, 1)}%`,
+                                  top: `${topPct}%`,
+                                  height: `${heightPct}%`,
+                                  background: `linear-gradient(to right, ${stops.join(", ")})`,
                                 }}
-                                title={`${s.startTime}–${s.endTime}`}
-                              />
-                            </div>
-                          );
-                        })}
+                              >
+                                {lane.map((s: any) => (
+                                  <div
+                                    key={s.id ?? `${s.startTime}-${s.endTime}`}
+                                    className="absolute top-0 bottom-0 rounded-sm"
+                                    style={{
+                                      left: `${(s.startMins / 1440) * 100}%`,
+                                      width: `${Math.max(((s.endMins - s.startMins) / 1440) * 100, 1.5)}%`,
+                                      backgroundColor: mixWithWhite(s.color, 1 - BAR_WHITE),
+                                      border: `${BAR_BORDER_WIDTH}px solid ${mixWithBlack(s.color, BAR_BORDER_BLACK)}`,
+                                    }}
+                                    title={`${s.startTime}–${s.endTime}`}
+                                  />
+                                ))}
+                              </div>
+                            );
+                          });
+                        })()}
                       </div>
-                    </div>
                   </div>
                 );
               })}

@@ -87,8 +87,9 @@ export default function AnalyticsPage() {
   const org = useOrganization((s) => s.org);
   const isTrial = org?.trialEndsAt && new Date(org.trialEndsAt) > new Date();
   const isPaid = org?.tariffExpiresAt && new Date(org.tariffExpiresAt) > new Date();
+  const isDemo = localStorage.getItem("isGuest") === "true";
   const effectiveTariff = isTrial ? "pro" : (isPaid ? org?.tariffId : "free");
-  const isFree = effectiveTariff === "free";
+  const isFree = effectiveTariff === "free" && !isDemo;
 
   const { user } = useAuth();
   const isEmployee = user?.role === "EMPLOYEE";
@@ -115,7 +116,7 @@ export default function AnalyticsPage() {
     const { from, to } = monthRange(year, month);
     setLoading(true);
     
-    if (isFree && !isEmployee) {
+    if (isDemo || (isFree && !isEmployee)) {
       setTimeout(() => {
         setData(MOCK_DATA);
         setLoading(false);

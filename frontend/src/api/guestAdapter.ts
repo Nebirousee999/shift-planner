@@ -4,7 +4,7 @@ import { GUEST_SEED } from "../lib/guestSeed";
 // Инициализация пустой базы (версия 3 — чтобы сбросить старые ошибки)
 const initDb = () => {
   const dbStr = localStorage.getItem("guest_db");
-  let needsUpdate = !dbStr || localStorage.getItem("guest_db_version") !== "12";
+  let needsUpdate = !dbStr || localStorage.getItem("guest_db_version") !== "14";
   
   if (!needsUpdate && dbStr) {
     try {
@@ -21,7 +21,7 @@ const initDb = () => {
   }
 
   if (needsUpdate) {
-    localStorage.setItem("guest_db_version", "12");
+    localStorage.setItem("guest_db_version", "14");
     localStorage.setItem("guest_db", JSON.stringify({
       weeks: GUEST_SEED.weeks,
       users: GUEST_SEED.employees,
@@ -52,11 +52,9 @@ export const guestAdapter: AxiosAdapter = async (config: InternalAxiosRequestCon
 
   // === ДАШБОРД ===
   if (url.includes("/dashboard") && method === "get") {
-      const todayStr = new Date().toISOString().slice(0, 10);
-      // Берем недели из базы, если там пусто — берем прямо из сида
-      const weeks = (db.weeks && db.weeks.length > 0) ? db.weeks : GUEST_SEED.weeks;
-      
-      // Ищем текущую неделю по датам
+      const todayStr = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD по местному времени
+      let weeks = (db.weeks && db.weeks.length > 0) ? db.weeks : GUEST_SEED.weeks;
+
       let currentWeek = weeks.find((w: any) => {
         if (!w.weekStartDate) return false;
         const start = new Date(w.weekStartDate + "T00:00:00Z");
@@ -64,24 +62,45 @@ export const guestAdapter: AxiosAdapter = async (config: InternalAxiosRequestCon
         end.setUTCDate(end.getUTCDate() + 6);
         return todayStr >= w.weekStartDate && todayStr <= end.toISOString().slice(0, 10);
       });
-      
-      // Если не нашли — берем 7-ю неделю (она 100% текущая по сиду)
       if (!currentWeek) {
         currentWeek = weeks[6] || weeks[0] || null;
       }
 
-      const todayShifts = currentWeek ? (currentWeek.shifts || []).filter((s: any) => s.shiftDate === todayStr) : [];
+      const users = db.users || GUEST_SEED.employees;
+      const templates = db.templates || GUEST_SEED.templates;
+
+      // Обогащаем смены: подставляем user/template и считаем статус в реальном времени
+      const enrich = (s: any) => {
+        const start = new Date(`${s.shiftDate}T${s.startTime || "00:00"}:00`);
+        const end = new Date(`${s.shiftDate}T${s.endTime || "00:00"}:00`);
+        if ((s.endTime || "00:00") <= (s.startTime || "00:00")) end.setDate(end.getDate() + 1); // ночная через полночь
+        const now = new Date();
+        return {
+          ...s,
+          startTime: s.startTime || "00:00",
+          endTime: s.endTime || "00:00",
+          user: users.find((u: any) => u.id === s.userId) || null,
+          template: templates.find((t: any) => t.id === s.templateId) || null,
+          status: now >= start && now <= end ? "ACTIVE" : (s.status || "SCHEDULED"),
+          // опоздание только у тех, кто уже начал работать
+          latenessMinutes: s.latenessMinutes != null && now < start ? null : (s.latenessMinutes ?? null),
+        };
+      };
+
+      const safeShifts = currentWeek ? (currentWeek.shifts || []).map(enrich) : [];
+      const todayShifts = safeShifts.filter((s: any) => s.shiftDate === todayStr);
 
       data = {
-        currentWeek: currentWeek || null,
+        currentWeek: currentWeek ? { ...currentWeek, shifts: safeShifts } : null,
         weekTimeEntries: [],
-        users: db.users || GUEST_SEED.employees,
-        userCount: (db.users || GUEST_SEED.employees).length,
-        todayShifts: todayShifts,
+        users,
+        userCount: users.length,
+        todayShifts,
         monthlyHours: 0,
       };
     }
-  // === ПРОФИЛЬ (me) ===
+    
+    // === ПРОФИЛЬ (me) ===
   else if (url.endsWith("/me") && method === "get") {
     data = GUEST_SEED.me;
   }
@@ -178,18 +197,21 @@ export const guestAdapter: AxiosAdapter = async (config: InternalAxiosRequestCon
   }
   // Заглушки для страниц
   else if (url.includes("/vacations") && method === "get") {
+    const vs = new Date(GUEST_SEED.weekStart + "T00:00:00Z");
+    vs.setUTCDate(vs.getUTCDate() + 7); // отпуск на следующей неделе
+    const ve = new Date(vs); ve.setUTCDate(ve.getUTCDate() + 4);
     data = [
-      { id: "v1", userId: "gu2", startDate: "2026-11-20", endDate: "2026-11-25", status: "PENDING", userName: "Дмитрий Козлов", userColor: "#F59E0B", days: 5 }
+      { id: "v1", userId: "gu2", startDate: vs.toISOString().slice(0, 10), endDate: ve.toISOString().slice(0, 10), status: "PENDING", userName: "Мария Иванова", userColor: "#ef4444", days: 5 }
     ];
   }
   else if (url.includes("/sick-leaves") && method === "get") {
     data = [
-      { id: "sl1", userId: "gu3", startDate: "2026-11-10", endDate: "2026-11-12", status: "APPROVED", userName: "Елена Волкова", userColor: "#8B5CF6", days: 3 }
+      { id: "sl1", userId: "gu3", startDate: "2026-11-10", endDate: "2026-11-12", status: "APPROVED", userName: "Дмитрий Петров", userColor: "#8B5CF6", days: 3 }
     ];
   }
   else if (url.includes("/swaps") && method === "get") {
     data = [
-      { id: "sw1", status: "PENDING", initiatorUser: { name: "Анна" }, targetUser: { name: "Елена" }, shiftDate: GUEST_SEED.weekStart }
+      { id: "sw1", status: "PENDING", initiatorUser: { id: "gu6", name: "Анна Соколова" }, targetUser: { id: "gu4", name: "Елена Козлова" }, shiftDate: GUEST_SEED.weekStart }
     ];
   }
   else if (url.includes("/analytics") && method === "get") {
@@ -197,12 +219,16 @@ export const guestAdapter: AxiosAdapter = async (config: InternalAxiosRequestCon
   }
   else if (url.includes("/history") && method === "get") {
     data = [
-      { id: "h1", action: "PUBLISH_WEEK", createdAt: new Date().toISOString(), userName: "Анна Смирнова" }
+      { id: "h1", action: "PUBLISH_WEEK", createdAt: new Date().toISOString(), userName: "Алексей Смирнов" }
     ];
   }
   
   // Заглушка для Табеля
   else if (url.includes("/timesheet")) {
+    const tsNow = new Date();
+    const tsYear = tsNow.getFullYear();
+    const tsMonth = tsNow.getMonth() + 1;
+    const daysInMonth = new Date(tsYear, tsMonth, 0).getDate();
     data = {
       users: GUEST_SEED.employees.map((emp: any) => ({
         id: emp.id,
@@ -210,8 +236,8 @@ export const guestAdapter: AxiosAdapter = async (config: InternalAxiosRequestCon
         position: emp.position,
         paymentType: emp.paymentType,
         employmentType: emp.employmentType,
-        days: Array.from({ length: 30 }, (_, i) => ({
-          date: `2026-11-${String(i + 1).padStart(2, "0")}`,
+        days: Array.from({ length: daysInMonth }, (_, i) => ({
+          date: `${tsYear}-${String(tsMonth).padStart(2, "0")}-${String(i + 1).padStart(2, "0")}`,
           cell: { status: null },
           isWeekend: false
         })),
@@ -219,7 +245,7 @@ export const guestAdapter: AxiosAdapter = async (config: InternalAxiosRequestCon
         totalPayGross: 0,
         totalPayNet: 0
       })),
-      daysInMonth: 30,
+      daysInMonth,
       totals: { attendance: 0, hours: 0, gross: 0, tax: 0, net: 0 },
       taxRate: 13,
       timeTrackingOn: false
@@ -229,9 +255,9 @@ export const guestAdapter: AxiosAdapter = async (config: InternalAxiosRequestCon
   else if (method === "get" && data === null) {
     data = [];
   }
-  else {
-    data = { ok: true, mock: true };
-  }
+  if (data === null) {
+      data = method === "get" ? [] : { ok: true, mock: true };
+    }
 
   return {
     data,
