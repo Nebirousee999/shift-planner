@@ -32,6 +32,18 @@ function resetOrganizationStore() {
     });
 }
 
+// Общая логика входа в реальный аккаунт: снимаем гостевые флаги,
+// запоминаем миграцию (для развилки после выхода) и чистим гостевые ключи.
+function enterRealAccount(email: string, wasGuest: boolean) {
+  localStorage.removeItem("isGuest");
+  localStorage.removeItem("guestEmailAttached");
+  localStorage.removeItem("activeLocationId");
+  if (wasGuest) {
+    localStorage.setItem("guest_migrated", "true");
+    localStorage.setItem("migrated_email", email);
+  }
+}
+
 export const useAuth = create<AuthState>((set) => ({
   user: null,
   token: null,
@@ -68,21 +80,8 @@ export const useAuth = create<AuthState>((set) => ({
       const { data } = await api.post<AuthResponse>("/auth/login", { email, password });
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
-      // Реальный вход — снимаем гостевые флаги
-      localStorage.removeItem("isGuest");
-      if (wasGuest) {
-        localStorage.setItem("guest_migrated", "true");
-        localStorage.setItem("migrated_email", payload.email);
-      }
-      localStorage.removeItem("guestEmailAttached");
-      if (wasGuest) {
-        localStorage.setItem("guest_migrated", "true");
-        localStorage.setItem("migrated_email", email);
-      }
-      localStorage.removeItem("migrated_email");
-      localStorage.removeItem("activeLocationId");
-      localStorage.removeItem("activeLocationId");
-      // Сбрасываем старую организацию (если пользователь до этого был другой)
+      enterRealAccount(email, wasGuest);
+      // Сбрасываем старую организацию (если пользователь до этого был в другой)
       resetOrganizationStore();
       set({ user: data.user, token: data.token, loading: false });
       return true;
@@ -100,10 +99,7 @@ export const useAuth = create<AuthState>((set) => ({
       const { data } = await api.post<AuthResponse>("/auth/register", payload);
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
-      // Реальный вход — снимаем гостевые флаги
-      localStorage.removeItem("isGuest");
-      localStorage.removeItem("guestEmailAttached");
-      localStorage.removeItem("activeLocationId");
+      enterRealAccount(payload.email, wasGuest);
       resetOrganizationStore();
       set({ user: data.user, token: data.token, loading: false });
       return true;
@@ -121,10 +117,10 @@ export const useAuth = create<AuthState>((set) => ({
     localStorage.removeItem("user");
     localStorage.removeItem("support_session_token"); // Очищаем сессию чата
     localStorage.removeItem("guestEmailAttached");
-    // ВАЖНО: guest_migrated НЕ удаляем. Именно благодаря этому флагу 
+    // ВАЖНО: guest_migrated НЕ удаляем. Именно благодаря этому флагу
     // после выхода из профиля при клике на "Попробовать" появится развилка.
     localStorage.setItem("isGuest", "true");
-    
+
     // Сбрасываем кэш организации и пользователей, чтобы при следующем входе
     // виджеты и таблицы не показывали данные предыдущего аккаунта
     resetOrganizationStore();

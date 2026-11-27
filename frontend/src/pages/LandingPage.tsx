@@ -93,13 +93,13 @@ export default function LandingPage() {
 
     // 0. Реальный пользователь — просто показываем демо, не трогая токен
     if (isRealUser) {
-      window.location.href = target;
+      window.location.href = target.startsWith("/demo") ? (target.replace("/demo", "") || "/dashboard") : target;
       return;
     }
 
     // 1. Уже в гостевом режиме с данными — продолжаем без сброса
     if (isGuest && hasGuestData) {
-      window.location.href = target;
+      window.location.href = target.startsWith("/demo") ? (target.replace("/demo", "") || "/dashboard") : target;
       return;
     }
 
@@ -119,7 +119,7 @@ export default function LandingPage() {
       localStorage.removeItem("guest_shifts");
       localStorage.removeItem("guestEmailAttached");
 
-      window.location.href = target;
+      window.location.href = target.startsWith("/demo") ? (target.replace("/demo", "") || "/dashboard") : target;
     } catch (e) {
       console.error("Ошибка создания гостевой сессии:", e);
       navigate("/login?mode=register");

@@ -14,11 +14,62 @@ import SickLeavesPage from "./SickLeavesPage";
 import HistoryPage from "./HistoryPage";
 import TemplatesPage from "./TemplatesPage";
 
+// Маппим гостевой путь на настоящий роут приложения.
+// Строковыми методами, без регулярок — чтобы не зависеть от экранирования.
+function mapDemoPath(pathname: string): string {
+  if (pathname === "/demo" || pathname === "/demo/") return "/dashboard";
+  if (pathname.startsWith("/demo/")) {
+    const rest = pathname.slice("/demo".length);
+    return rest || "/dashboard";
+  }
+  return "/dashboard";
+}
+
 export default function GuestApp() {
   const { pathname } = useLocation();
 
+  // Реальный пользователь не должен находиться в гостевом шелле.
+  // Эффект срабатывает и при заходе на /demo/*, и в момент логина
+  // из формы в гостевом новбаре (состояние меняется без перезагрузки),
+  // поэтому опрашиваем localStorage с небольшим интервалом.
+  useEffect(() => {
+    const check = () => {
+      const token = localStorage.getItem("token");
+      const isGuest = localStorage.getItem("isGuest") === "true";
+      const isRealUser = !!token && token !== "guest-mock" && !isGuest;
+      if (isRealUser) {
+        window.location.replace(mapDemoPath(window.location.pathname));
+      }
+    };
+    check();
+    const interval = window.setInterval(check, 800);
+    return () => window.clearInterval(interval);
+  }, []);
+
   const isMigrated = localStorage.getItem("guest_migrated") === "true";
   const migratedEmail = localStorage.getItem("migrated_email") || "вашим аккаунтом";
+
+  // Все хуки объявлены ДО любых условных return — иначе React падает
+  // из-за меняющегося числа хуков между рендерами.
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    // Не ломаем сессию реального пользователя: проставляем гостевые флаги
+    // только тем, кто зашёл в демо без аккаунта.
+    if ((!token || token === "guest-mock") && localStorage.getItem("isGuest") !== "true") {
+      localStorage.setItem("isGuest", "true");
+      localStorage.setItem("token", "guest-mock");
+      localStorage.setItem("user", JSON.stringify({ id: "guest", name: "Гость", role: "OWNER", orgId: "guest-org" }));
+    }
+
+    document.title = "Демо-режим | Планировщик смен";
+    let meta = document.querySelector('meta[name="robots"]');
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.setAttribute("name", "robots");
+      document.head.appendChild(meta);
+    }
+    meta.setAttribute("content", "noindex, follow");
+  }, []);
 
   if (isMigrated) {
     return (
@@ -41,25 +92,6 @@ export default function GuestApp() {
       </div>
     );
   }
-
-  useEffect(() => {
-    const isRealUser = !!localStorage.getItem("token") && localStorage.getItem("isGuest") !== "true";
-    // Не ломаем сессию реального пользователя
-    if (!isRealUser && localStorage.getItem("isGuest") !== "true") {
-      localStorage.setItem("isGuest", "true");
-      localStorage.setItem("token", "guest-mock");
-      localStorage.setItem("user", JSON.stringify({ id: "guest", name: "Гость", role: "OWNER", orgId: "guest-org" }));
-    }
-    
-    document.title = "Демо-режим | Планировщик смен";
-    let meta = document.querySelector('meta[name="robots"]');
-    if (!meta) {
-      meta = document.createElement("meta");
-      meta.setAttribute("name", "robots");
-      document.head.appendChild(meta);
-    }
-    meta.setAttribute("content", "noindex, follow");
-  }, []);
 
   if (pathname === "/demo" || pathname === "/demo/") {
     return <Navigate to="/demo/dashboard" replace />;

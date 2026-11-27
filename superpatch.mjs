@@ -1,6 +1,7 @@
-// superpatch.mjs — ContactModal: реальная отправка заявок + бэкенд-эндпоинт /leads
-// Получатель писем: process.env.ADMIN_EMAIL (fallback: prihodko999@inbox.ru)
-// SMTP берётся из существующих переменных .env: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM
+// superpatch.mjs (v3) — фикс гибрида гость/юзер:
+// 1) GuestApp.tsx — полная перезапись: хуки до return, реактивный редирект реального юзера из /demo/*
+// 2) store/auth.ts — полная перезапись: чистый login без дублей и бага payload.email
+// 3) LandingPage.tsx — маппинг /demo/* для реального юзера (идемпотентно)
 
 import fs from "node:fs";
 import path from "node:path";
@@ -18,232 +19,301 @@ function walk(d, name, out = []) {
   return out;
 }
 
-// ── 1. ContactModal.tsx — переписываем целиком ──
-const [cmFile] = walk(dir, "ContactModal.tsx");
-if (!cmFile) { console.log("[ERROR] ContactModal.tsx не найден"); process.exit(1); }
+// ─────────────────────────────────────────────────────────────
+// 1. GuestApp.tsx — полная перезапись
+// ─────────────────────────────────────────────────────────────
+const guestApp = `import { useEffect } from "react";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { LogIn } from "lucide-react";
+import DashboardPage from "./DashboardPage";
+import WeeksPage from "./WeeksPage";
+import WeekDetailPage from "./WeekDetailPage";
+import SwapsPage from "./SwapsPage";
+import TeamPage from "./TeamPage";
+import AnalyticsPage from "./AnalyticsPage";
+import DocumentsPage from "./DocumentsPage";
+import TimesheetPage from "./TimesheetPage";
+import VacationsPage from "./VacationsPage";
+import SickLeavesPage from "./SickLeavesPage";
+import HistoryPage from "./HistoryPage";
+import TemplatesPage from "./TemplatesPage";
 
-const contactModal = `import { useState } from "react";
-import { X, Send, Loader2 } from "lucide-react";
-import { trackEvent } from "../../lib/metrika";
+export default function GuestApp() {
+  const { pathname } = useLocation();
 
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001/api";
-
-export default function ContactModal({ onClose }: { onClose: () => void }) {
-  const [name, setName] = useState("");
-  const [contact, setContact] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [sent, setSent] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(\`\${API_URL}/leads\`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, contact, source: "pricing_business" }),
-      });
-      if (!res.ok) throw new Error();
-      trackEvent("pricing_business_lead");
-      setSent(true);
-    } catch {
-      setError("Не удалось отправить заявку. Напишите нам напрямую: prihodko999@inbox.ru");
-    } finally {
-      setLoading(false);
+  // Заголовок и noindex — один раз при монтировании (хук до любых return — это важно)
+  useEffect(() => {
+    document.title = "Демо-режим | Планировщик смен";
+    let meta = document.querySelector('meta[name="robots"]');
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.setAttribute("name", "robots");
+      document.head.appendChild(meta);
     }
-  };
+    meta.setAttribute("content", "noindex, follow");
+  }, []);
+
+  // Реальный пользователь не должен жить в гостевом шелле.
+  // Редирект срабатывает и при заходе на /demo/*, и в момент логина
+  // из формы в гостевом новбаре (токен появился — выводим из демо).
+  useEffect(() => {
+    const redirectIfReal = () => {
+      const token = localStorage.getItem("token");
+      const isGuest = localStorage.getItem("isGuest") === "true";
+      if (token && !isGuest) {
+        const rest = pathname.replace(/^\/demo/, "") || "/dashboard";
+        window.location.href = rest;
+      }
+    };
+    redirectIfReal();
+    const timer = setInterval(redirectIfReal, 800);
+    return () => clearInterval(timer);
+  }, [pathname]);
+
+  const isMigrated = localStorage.getItem("guest_migrated") === "true";
+  const migratedEmail = localStorage.getItem("migrated_email") || "вашим аккаунтом";
+
+  if (isMigrated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+        <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full text-center border border-slate-200">
+          <div className="w-16 h-16 bg-brand-50 rounded-full flex items-center justify-center mx-auto mb-4">
+            <LogIn className="w-8 h-8 text-brand-600" />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-900 mb-2">Вы уже работали в аккаунте</h2>
+          <p className="text-slate-600 mb-6 text-sm">
+            Данные вашего графика сохранены в аккаунте <b>{migratedEmail}</b>.<br/>Пожалуйста, войдите, чтобы продолжить.
+          </p>
+          <button onClick={() => window.location.href = "/login"} className="w-full inline-flex items-center justify-center gap-2 bg-brand-600 text-white px-6 py-3.5 rounded-xl font-bold hover:bg-brand-700 shadow-sm transition-all">
+            <LogIn className="w-5 h-5" /> Войти в аккаунт
+          </button>
+          <button onClick={() => { localStorage.removeItem("guest_migrated"); window.location.reload(); }} className="mt-4 text-xs text-slate-400 hover:text-slate-600 underline">
+            Или начать с чистого листа
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Гостю без токена ставим гостевые флаги (не трогаем сессию реального юзера)
+  if (!localStorage.getItem("token") && localStorage.getItem("isGuest") !== "true") {
+    localStorage.setItem("isGuest", "true");
+    localStorage.setItem("token", "guest-mock");
+    localStorage.setItem("user", JSON.stringify({ id: "guest", name: "Гость", role: "OWNER", orgId: "guest-org" }));
+  }
+
+  if (pathname === "/demo" || pathname === "/demo/") {
+    return <Navigate to="/demo/dashboard" replace />;
+  }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 animate-fade-in" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-slate-900">Связаться по поводу Business</h3>
-          <button onClick={onClose} className="text-slate-400 hover:bg-slate-100 p-1 rounded-lg"><X className="w-5 h-5" /></button>
-        </div>
-
-        {sent ? (
-          <div className="text-center py-8">
-            <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-3">
-              <Send className="w-6 h-6 text-emerald-600" />
-            </div>
-            <p className="font-medium text-slate-900">Заявка отправлена!</p>
-            <p className="text-sm text-slate-500 mt-1">Мы свяжемся с вами в ближайшее время.</p>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <p className="text-sm text-slate-500 mb-4">Оставьте контакты, и мы настроим тариф под ваши задачи (несколько точек, интеграция с 1С и т.д.).</p>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Ваше имя"
-              required
-              maxLength={100}
-              className="!text-sm"
-            />
-            <input
-              type="text"
-              value={contact}
-              onChange={(e) => setContact(e.target.value)}
-              placeholder="Телефон или Telegram"
-              required
-              maxLength={200}
-              className="!text-sm"
-            />
-            {error && <p className="text-rose-500 text-xs">{error}</p>}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-brand-600 text-white py-2.5 rounded-xl font-medium hover:bg-brand-700 transition-colors flex justify-center items-center gap-2"
-            >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Отправить"}
-            </button>
-          </form>
-        )}
-      </div>
-    </div>
+    <Routes>
+      <Route path="dashboard" element={<DashboardPage />} />
+      <Route path="weeks" element={<WeeksPage />} />
+      <Route path="weeks/:id" element={<WeekDetailPage />} />
+      <Route path="swaps" element={<SwapsPage />} />
+      <Route path="team" element={<TeamPage />} />
+      <Route path="vacations" element={<VacationsPage />} />
+      <Route path="sick-leaves" element={<SickLeavesPage />} />
+      <Route path="analytics" element={<AnalyticsPage />} />
+      <Route path="history" element={<HistoryPage />} />
+      <Route path="documents" element={<DocumentsPage />} />
+      <Route path="timesheet" element={<TimesheetPage />} />
+      <Route path="templates" element={<TemplatesPage />} />
+      <Route path="*" element={<Navigate to="/demo/dashboard" replace />} />
+    </Routes>
   );
 }
 `;
 
-fs.writeFileSync(cmFile, contactModal, "utf8");
-console.log("[SAVE] ContactModal.tsx переписан: POST /leads, loading/error, trackEvent pricing_business_lead");
+const [guestFile] = walk(dir, "GuestApp.tsx");
+if (!guestFile) { console.log("[ERROR] GuestApp.tsx не найден"); process.exit(1); }
+fs.writeFileSync(guestFile, guestApp, "utf8");
+const g1 = fs.readFileSync(guestFile, "utf8");
+const hooksOk = g1.indexOf("useEffect") < g1.indexOf("if (isMigrated)");
+const redirOk = g1.includes("redirectIfReal");
+console.log(hooksOk && redirOk
+  ? "[OK] GuestApp.tsx перезаписан и проверен: хуки до return, редирект на месте (" + guestFile.replace(dir + path.sep, "") + ")"
+  : "[ERROR] GuestApp.tsx записан некорректно — пришли мне его содержимое");
 
-// ── 2. Ищем бэкенд по auth.service.ts ──
-const [authFile] = walk(dir, "auth.service.ts");
-if (!authFile) {
-  console.log("[WARN] auth.service.ts не найден — роутер придётся создать руками");
-} else {
-  const srcRoot = path.resolve(path.dirname(authFile), "..", "..", "..");
-  console.log("[INFO] корень бэкенда:", srcRoot.replace(dir + path.sep, ""));
-  const routesDir = path.join(srcRoot, "routes");
-  const leadsFile = path.join(routesDir, "leads.routes.ts");
+// ─────────────────────────────────────────────────────────────
+// 2. store/auth.ts — полная перезапись
+// ─────────────────────────────────────────────────────────────
+const authTs = `import { create } from "zustand";
+import { api } from "../api/client";
+import type { AuthResponse, User } from "../api/types";
 
-  // ── 3. routes/leads.routes.ts (получатель — ADMIN_EMAIL из .env) ──
-  if (fs.existsSync(leadsFile)) {
-    console.log("[INFO] routes/leads.routes.ts уже существует — не трогаю");
-  } else {
-    const leadsRoute = `import { Router } from "express";
-import nodemailer from "nodemailer";
+type AuthState = {
+  user: User | null;
+  token: string | null;
+  hydrated: boolean;
+  loading: boolean;
+  error: string | null;
+  login: (email: string, password: string) => Promise<boolean>;
+  register: (data: {
+    name: string;
+    email: string;
+    password: string;
+    orgName: string;
+  }) => Promise<boolean>;
+  logout: () => void;
+  setAuth: (token: string, user: User) => void;
+  hydrate: () => void;
+  changePassword: (oldPassword: string, newPassword: string) => Promise<void>;
+};
 
-const router = Router();
-
-// Получатель заявок: ADMIN_EMAIL из .env (запасной адрес — если переменная не задана)
-const LEAD_EMAIL = process.env.ADMIN_EMAIL || "prihodko999@inbox.ru";
-
-function makeTransport() {
-  const host = process.env.SMTP_HOST;
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
-  if (!host || !user || !pass) return null;
-  const port = Number(process.env.SMTP_PORT || 465);
-  // 465 — неявный SSL, 587 — STARTTLS
-  return nodemailer.createTransport({
-    host,
-    port,
-    secure: port === 465,
-    requireTLS: port !== 465,
-    auth: { user, pass },
-  });
-}
-
-router.post("/", async (req, res) => {
-  try {
-    const name = String(req.body?.name || "").slice(0, 100).trim();
-    const contact = String(req.body?.contact || "").slice(0, 200).trim();
-    const source = String(req.body?.source || "").slice(0, 50);
-    if (!name || !contact) return res.status(400).json({ error: "Заполните имя и контакт" });
-
-    const transport = makeTransport();
-    if (!transport) {
-      // SMTP не настроен — заявка не теряется, пишем в лог сервера
-      console.log("[LEAD]", new Date().toISOString(), "|", name, "|", contact, "|", source);
-      return res.json({ ok: true, stored: "log" });
-    }
-
-    const from = process.env.SMTP_FROM || process.env.SMTP_USER;
-
-    await transport.sendMail({
-      from,
-      to: LEAD_EMAIL,
-      replyTo: contact.includes("@") ? contact : undefined,
-      subject: "Заявка на Business-тариф",
-      text: \`Новая заявка с лендинга (Business)
-
-Имя: \${name}
-Контакт: \${contact}
-Источник: \${source}
-Дата: \${new Date().toLocaleString("ru-RU")}\`,
+// ─── Сброс organization-стора без циклического импорта ──
+function resetOrganizationStore() {
+  import("./organization")
+    .then(({ useOrganization }) => {
+      useOrganization.setState({ org: null });
+    })
+    .catch(() => {
+      // если модуль не загрузился — не критично
     });
-    console.log("[LEAD] отправлен на", LEAD_EMAIL, "|", contact);
-    res.json({ ok: true });
-  } catch (e) {
-    console.error("[LEAD] ошибка отправки:", e);
-    res.status(500).json({ error: "Не удалось отправить заявку" });
-  }
-});
+}
 
-export default router;
+export const useAuth = create<AuthState>((set) => ({
+  user: null,
+  token: null,
+  hydrated: false,
+  loading: false,
+  error: null,
+
+  hydrate: () => {
+    const token = localStorage.getItem("token");
+    // Фейковый пользователь для гостя
+    const guestUser: User = { id: "guest", name: "Гость", email: "guest@local", role: "OWNER", orgId: "guest-org" };
+    if (!token) {
+      set({ token: null, user: guestUser, hydrated: true });
+      return;
+    }
+    const userJson = localStorage.getItem("user");
+    if (token && userJson) {
+      try {
+        const user = JSON.parse(userJson);
+        set({ token, user, hydrated: true });
+        return;
+      } catch {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+      }
+    }
+    set({ hydrated: true });
+  },
+
+  login: async (email, password) => {
+    set({ loading: true, error: null });
+    try {
+      const wasGuest = localStorage.getItem("isGuest") === "true" || window.location.pathname.startsWith("/demo");
+      const { data } = await api.post<AuthResponse>("/auth/login", { email, password });
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+      // Реальный вход — снимаем гостевые флаги
+      localStorage.removeItem("isGuest");
+      localStorage.removeItem("guestEmailAttached");
+      if (wasGuest) {
+        // Запоминаем, что гость перешёл в аккаунт — для развилки "Вы уже работали в аккаунте"
+        localStorage.setItem("guest_migrated", "true");
+        localStorage.setItem("migrated_email", email);
+      }
+      localStorage.removeItem("activeLocationId");
+      // Сбрасываем старую организацию (если пользователь до этого был другой)
+      resetOrganizationStore();
+      set({ user: data.user, token: data.token, loading: false });
+      return true;
+    } catch (e: any) {
+      const msg = e.response?.data?.error ?? "Ошибка входа";
+      set({ error: msg, loading: false });
+      return false;
+    }
+  },
+
+  register: async (payload) => {
+    set({ loading: true, error: null });
+    try {
+      const { data } = await api.post<AuthResponse>("/auth/register", payload);
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+      // Реальный вход — снимаем гостевые флаги
+      localStorage.removeItem("isGuest");
+      localStorage.removeItem("guestEmailAttached");
+      localStorage.removeItem("activeLocationId");
+      resetOrganizationStore();
+      set({ user: data.user, token: data.token, loading: false });
+      return true;
+    } catch (e: any) {
+      const msg = e.response?.data?.error ?? "Ошибка регистрации";
+      set({ error: msg, loading: false });
+      return false;
+    }
+  },
+
+  setAuth: (token, user) => set({ token, user, hydrated: true }),
+
+  logout: () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    localStorage.removeItem("support_session_token"); // Очищаем сессию чата
+    localStorage.removeItem("guestEmailAttached");
+    // ВАЖНО: guest_migrated НЕ удаляем. Именно благодаря этому флагу
+    // после выхода из профиля при клике на "Попробовать" появится развилка.
+    localStorage.setItem("isGuest", "true");
+
+    // Сбрасываем кэш организации и пользователей, чтобы при следующем входе
+    // виджеты и таблицы не показывали данные предыдущего аккаунта
+    resetOrganizationStore();
+    import("./users").then(({ useUsers }) => {
+      useUsers.setState({ items: [] });
+    }).catch(() => {});
+
+    set({ user: null, token: null });
+  },
+
+  changePassword: async (oldPassword, newPassword) => {
+    await api.post("/me/change-password", { oldPassword, newPassword });
+  },
+}));
 `;
-    if (!fs.existsSync(routesDir)) fs.mkdirSync(routesDir, { recursive: true });
-    fs.writeFileSync(leadsFile, leadsRoute, "utf8");
-    console.log("[CREATE] routes/leads.routes.ts (получатель: process.env.ADMIN_EMAIL)");
-  }
 
-  // ── 4. Монтирование роутера в главный файл Express ──
-  const candidates = [];
-  const scan = (d) => {
-    if (!fs.existsSync(d)) return;
-    for (const f of fs.readdirSync(d)) {
-      const p = path.join(d, f);
-      if (fs.statSync(p).isDirectory()) scan(p);
-      else if (/\.(ts|js)$/.test(f)) candidates.push(p);
-    }
-  };
-  scan(srcRoot);
+const [authFile] = walk(dir, "auth.ts");
+if (!authFile) {
+  console.log("[WARN] store/auth.ts не найден — замени его содержимое вручную (код в моём сообщении)");
+} else {
+  fs.writeFileSync(authFile, authTs, "utf8");
+  const a1 = fs.readFileSync(authFile, "utf8");
+  const noBug = !a1.includes("payload.email");
+  const oneMigrated = (a1.match(/migrated_email", email/g) || []).length === 1;
+  console.log(noBug && oneMigrated
+    ? "[OK] auth.ts перезаписан и проверен: бага payload.email нет, migrated_email ставится один раз (" + authFile.replace(dir + path.sep, "") + ")"
+    : "[ERROR] auth.ts записан некорректно — пришли мне его содержимое");
+}
 
-  let mounted = false;
-  for (const f of candidates) {
-    const raw = fs.readFileSync(f, "utf8");
-    if (!raw.includes('"/api/auth"')) continue;
-
-    if (raw.includes("/api/leads")) {
-      console.log("[INFO] leads уже смонтирован в", path.basename(f));
-      mounted = true;
-      break;
-    }
-
-    const isCRLF = raw.includes("\r\n");
-    let text = raw.replace(/\r\n/g, "\n");
-
-    let rel = path.relative(path.dirname(f), leadsFile).replace(/\\/g, "/");
-    if (!rel.startsWith(".")) rel = "./" + rel;
-    rel = rel.replace(/\.ts$/, ".js");
-    const importLine = `import leadsRouter from "${rel}";`;
-
-    const lines = text.split("\n");
-    let lastImport = -1;
-    lines.forEach((ln, i) => { if (/^\s*import\s/.test(ln)) lastImport = i; });
-    if (lastImport >= 0) lines.splice(lastImport + 1, 0, importLine);
-    let out = lines.join("\n");
-
-    const m = out.match(/app\.use\(['"]\/api\/auth['"][^\n]*\n/);
-    if (m) {
-      out = out.replace(m[0], m[0] + 'app.use("/api/leads", leadsRouter);\n');
-      fs.writeFileSync(f, isCRLF ? out.replace(/\n/g, "\r\n") : out, "utf8");
-      console.log("[PATCH] leads смонтирован в", f.replace(dir + path.sep, ""));
-      mounted = true;
-    }
-    break;
-  }
-
-  if (!mounted) {
-    console.log("[MANUAL] Добавь в главный файл Express (рядом с /api/auth):");
-    console.log('  import leadsRouter from "./routes/leads.routes.js";');
-    console.log('  app.use("/api/leads", leadsRouter);');
+// ─────────────────────────────────────────────────────────────
+// 3. LandingPage.tsx — маппинг /demo/* для реального юзера
+// ─────────────────────────────────────────────────────────────
+const [lpFile] = walk(dir, "LandingPage.tsx");
+if (!lpFile) {
+  console.log("[WARN] LandingPage.tsx не найден — пропускаю");
+} else {
+  const raw = fs.readFileSync(lpFile, "utf8");
+  if (raw.includes('target.replace("/demo"')) {
+    console.log("[INFO] LandingPage: маппинг уже стоит — не трогаю");
+  } else if (raw.includes("window.location.href = target;")) {
+    const patched = raw.replaceAll(
+      "window.location.href = target;",
+      'window.location.href = target.startsWith("/demo") ? (target.replace("/demo", "") || "/dashboard") : target;'
+    );
+    fs.writeFileSync(lpFile, patched, "utf8");
+    const l1 = fs.readFileSync(lpFile, "utf8");
+    console.log(l1.includes('target.replace("/demo"')
+      ? "[OK] LandingPage.tsx: /demo/* маппится на настоящий роут для реального юзера (" + lpFile.replace(dir + path.sep, "") + ")"
+      : "[ERROR] LandingPage.tsx записан некорректно");
+  } else {
+    console.log("[WARN] LandingPage: якорь 'window.location.href = target;' не найден — ветка real-user могла измениться. GuestApp перехватит всё равно.");
   }
 }
 
-console.log("\nГотово. Перезапусти бэкенд, Vite подхватит фронт сам.");
+console.log("");
+console.log("Готово. Сделай жёсткую перезагрузку страницы (Ctrl+Shift+R), чтобы Vite отдал свежие модули.");
+console.log("Проверка: гость в демо -> логин из новбара -> должен сам открыться настоящий дашборд.");
